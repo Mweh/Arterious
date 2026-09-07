@@ -8,6 +8,11 @@ struct ContentView: View {
                     Label("Dashboard", systemImage: "heart.text.square.fill")
                 }
             
+            LLMInsightView()
+                .tabItem {
+                    Label("AI Insight", systemImage: "sparkles")
+                }
+            
             NavigationStack {
                 ContentUnavailableView(
                     "Trends Coming Soon",

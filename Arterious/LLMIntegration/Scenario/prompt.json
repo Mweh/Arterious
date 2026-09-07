@@ -1,0 +1,51 @@
+{
+  "_meta": {
+    "description": "Final prompt / LLM input terstruktur — sesuai PRD Bab 12 dan 16",
+    "source": "Dirakit otomatis dari rule yang HIT: rule_results.json + rule_catalog.json",
+    "note": "Semua facts dan allowed_actions berasal dari rule yang aktif (HIT), bukan asumsi bebas LLM.",
+    "hit_rules": ["H2", "H6", "S17", "S20", "A8", "A11"]
+  },
+  "task": "generate_caregiver_insight",
+  "language": "id-ID",
+  "audience": "anak/caregiver lansia",
+  "parent_display_name": "Ibu",
+  "overall_status": "CAUTION",
+  "concern_state": "NEW_CONCERN",
+  "report_period": "3 hari terakhir",
+  "facts": [
+    "[S17] Total tidur kurang dari 6 jam selama 3 malam berturut-turut (280, 250, 220 menit — baseline 395 menit)",
+    "[S20] Sleep efficiency turun ke 69.8% pada malam terakhir (baseline 88.4%)",
+    "[S13] Waktu mulai tidur bergeser lebih dari 2 jam dari kebiasaan (01:00 vs 22:45)",
+    "[A8] Langkah harian turun drastis ke 850 langkah (29.8% dari baseline 2.850)",
+    "[A11] Kecepatan berjalan turun 18.1% dibanding pola biasa",
+    "[H2] Resting heart rate naik 12 bpm dibanding baseline (67 → 79 bpm)",
+    "[H4] HRV turun 37.9% dari baseline (29 → 18 ms)",
+    "[H6] Penurunan terjadi di 3 domain sekaligus (tidur, aktivitas fisik, dan denyut jantung)"
+  ],
+  "triggered_rules_summary": [
+    "H2: Resting HR naik >=10 bpm dari baseline selama >=2-3 hari berturut-turut",
+    "H6: Multi-domain: Resting HR naik >=10 bpm + HRV turun >=20% + sleep worsened",
+    "S17: Total sleep <6 jam selama >=2 malam berturut-turut",
+    "S20: Sleep efficiency <75% selama >=2 malam",
+    "A8: Langkah harian turun >=30% dari baseline selama >=3 hari berturut-turut",
+    "A11: Kecepatan berjalan turun >=15% vs baseline selama >=3 hari"
+  ],
+  "allowed_actions": [
+    "Hubungi Ibu hari ini untuk check-in menanyakan kabar",
+    "Tanyakan keluhan seperti lemas, pusing, nyeri dada, sesak, atau demam (dari rule H2 & H6)",
+    "Ingatkan pengukuran tekanan darah dengan tensimeter bila tersedia (dari rule H2 & policy CAUTION)",
+    "Tanyakan apakah sulit tidur atau sering terbangun di malam hari (dari rule S17 & S20)",
+    "Tanyakan apakah ada keluhan nyeri sendi atau rasa lelah saat beraktivitas (dari rule A8)"
+  ],
+  "prohibited_content": [
+    "Diagnosis penyakit spesifik (misal: gagal jantung, insomnia, aritmia)",
+    "Menyatakan penyebab pasti kejadian",
+    "Menyarankan perubahan dosis atau jadwal obat",
+    "Menyebutkan angka atau fakta di luar input",
+    "Menyarankan olahraga atau aktivitas fisik berat"
+  ],
+  "style": {
+    "tone": "tenang, empatik, objektif, ringkas",
+    "max_sentences": 4
+  }
+}

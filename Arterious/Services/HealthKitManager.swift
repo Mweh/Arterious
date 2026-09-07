@@ -467,8 +467,8 @@ final class HealthKitManager {
                 date: date,
                 latestHeartRate: Double.random(in: 68...75),
                 restingHeartRate: Double.random(in: 60...66),
-                stepCount: Double.random(in: 3500...6000),
-                sleepHours: Double.random(in: 6.5...8.0)
+                sleepHours: Double.random(in: 6.5...8.0),
+                stepCount: Double.random(in: 3500...6000)
             )
         }
     }

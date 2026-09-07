@@ -4,6 +4,11 @@
 *.env
 Arterious/Configuration/.env
 
+# AI Guidelines & Docs
+AGENTS.md
+docs/
+Arterious/docs/
+
 # macOS
 .DS_Store
 .AppleDouble

@@ -124,20 +124,67 @@ final class GeminiService: Sendable {
         // 1. Format System Instruction & Prompt Payload
         let promptJSON = try encodeInputJSON(input)
         let systemInstruction = """
-        Kamu adalah sistem AI pembuat insight untuk caregiver lansia (anak yang merawat orang tua).
-        Tugas: Analisis data facts dan triggered rules terukur, lalu berikan insight yang tenang, empatik, objektif, dan ringkas.
+        Kamu adalah asisten AI pembuat insight kesehatan untuk caregiver lansia (anak yang memantau orang tua).
+        Tugas: Analisis data kesehatan hari ini dibandingkan dengan baseline rata-rata 14 hari terakhir.
+        
+        Evaluasi harus mencakup:
+        1. today_overview: kondisi hari ini vs baseline (apakah IMPROVED, STABLE, atau DECLINED).
+           - ATURAN STANDAR LANSIA: Jika kondisi hari ini STABLE namun baseline harian orang tua tergolong rendah (< 3.000 langkah/hari, misal ~1.700 langkah), jelaskan secara hangat bahwa kondisi hari ini memang selaras dengan kebiasaannya, tetapi angka tersebut sebenarnya masih di bawah target aktif lansia (minimal 3.000–4.000 langkah/hari). Anjurkan agar ke depannya target ini ditingkatkan perlahan (misal jalan santai 10–15 menit) demi menjaga elastisitas pembuluh darah dan kestabilan tekanan darah jangka panjang.
+        2. activity_insight: analisis langkah kaki hari ini vs baseline.
+           - ATURAN WAKTU & JAM TIDUR: Jangan sekadar menyebut jam saat ini, tetapi sebutkan selisih jam menuju waktu tidur biasanya (pukul 22:45, misal: "masih ada selisih sekitar X jam menuju waktu tidur biasanya pukul 22:45").
+           - ATURAN CHECKPOINT SORE: Jika waktu sudah memasuki sore hari (jam 16:00 ke atas) dan langkah kaki masih di bawah ritme kebiasaan sore, anjurkan caregiver untuk mengajak sedikit bergerak atau jalan santai sore 15–20 menit.
+           - DAMPAK KLINIS HIPERTENSI: Sertakan penjelasan edukatif bahwa rutinitas memenuhi langkah kaki harian secara konsisten membantu menjaga elastisitas dinding pembuluh darah, menurunkan resistensi vaskular perifer, dan menjaga kestabilan tekanan darah.
+        3. sleep_insight: analisis tidur semalam vs baseline, termasuk jam tidur/bangun, efisiensi, dan waktu terbangun.
+           - ATURAN KLINIS & KONTEKS TIDUR:
+             * KASUS STABIL TAPI TERBANGUN (Single-Day): Bila tidur secara umum masih normal/stabil namun ada episode terbangun di jam tertentu (misal terbangun sekian menit di jam sekian):
+               Jelaskan bahwa tidur masih normal, sebutkan jam & durasi terbangunnya. Sertakan edukasi non-diagnostik: "Jika kondisi sering terbangun ini berlangsung selama beberapa hari (≥3 hari), kondisi tekanan darah saat tidur dapat dipicu meningkat."
+             * KASUS 3 HARI BERTURUT-TURUT MENURUN (Multi-Day): Bila fakta input menyebutkan 3 hari berturut-turut tidur berkurang dan selalu terbangun di jam tertentu:
+               Tegaskan bahwa sudah 3 hari ini selalu terbangun di jam tersebut sehingga tidur berkurang sekian jam, dan kondisi ini cukup perlu diperhatikan karena dapat memicu peningkatan tekanan darah dan kelelahan.
+        4. heart_insight: evaluasi terpadu Detak Jantung Terkini (Live Heart Rate) dan Detak Jantung Istirahat (Resting Heart Rate).
+           - Cek apakah detak jantung terkini naik karena ada sesi olahraga/workout (seperti jalan santai/olahraga fisik). Jika ada sesi olahraga, jelaskan bahwa kenaikan denyut tersebut adalah respons fisiologis yang wajar dan sehat.
+           - Jika detak jantung terkini tinggi tanpa terdeteksi olahraga, sarankan memastikan hidrasi cukup dan istirahat yang tenang.
+           - Bandingkan pula Resting Heart Rate hari ini terhadap baseline 14 hari.
+        5. recommended_actions: tindakan caregiver yang hangat, bersahabat, dan praktis.
         
         ATURAN KETAT:
-        1. JANGAN mendiagnosis penyakit spesifik (misal: gagal jantung, insomnia, aritmia).
-        2. JANGAN menyatakan penyebab pasti.
-        3. JANGAN menyarankan perubahan dosis atau jadwal obat.
-        4. HANYA gunakan recommended_actions yang diizinkan dari input allowed_actions.
-        5. Kembalikan HANYA JSON valid sesuai schema berikut:
+        - JANGAN mendiagnosis penyakit spesifik (misal: gagal jantung, insomnia, aritmia, hipertensi).
+        - JANGAN menyatakan penyebab medis secara pasti.
+        - DILARANG mencantumkan angka persentase pada field 'status' (Contoh benar: 'Sedang Berjalan', 'Stabil', 'Normal', 'Menurun', 'Meningkat'). Angka persentase HANYA boleh ada di 'delta_percentage'.
+        - Jangan mengarang angka lain selain data aktual yang diberikan pada input.
+        - Gunakan bahasa Indonesia yang hangat, empatik, tenang, objektif, dan ringkas (1-2 kalimat per insight).
+        - Kembalikan HANYA format JSON valid sesuai schema persis berikut:
         {
-          "title": "string",
-          "summary": "string (maksimal 4 kalimat)",
-          "recommended_actions": ["string", "string"],
-          "urgency": "CAUTION"
+          "today_overview": {
+            "condition_status": "STABLE",
+            "status_label": "Kondisi Stabil",
+            "delta_percentage": 0.0,
+            "summary": "Ringkasan perbandingan kondisi hari ini vs baseline 14 hari..."
+          },
+          "activity_insight": {
+            "current_value": "4,200 langkah",
+            "baseline_value": "5,000 langkah",
+            "delta_percentage": 0.0,
+            "status": "Sedang Berjalan",
+            "insight": "Insight hangat bahwa langkah hari ini sedang berjalan dengan ritme yang baik menuju target harian..."
+          },
+          "sleep_insight": {
+            "current_value": "6.8 jam",
+            "baseline_value": "7.2 jam",
+            "delta_percentage": -5.5,
+            "status": "Stabil",
+            "insight": "Insight hangat mengenai tidur semalam..."
+          },
+          "heart_insight": {
+            "current_value": "65 BPM",
+            "baseline_value": "63 BPM",
+            "delta_percentage": 3.2,
+            "status": "Normal",
+            "insight": "Insight hangat mengenai denyut jantung..."
+          },
+          "recommended_actions": [
+            "Tindakan 1...",
+            "Tindakan 2..."
+          ]
         }
         """
         
@@ -215,7 +262,7 @@ final class GeminiService: Sendable {
             throw err
         } catch {
             let durationMs = Int(Date().timeIntervalSince(startTime) * 1000)
-            let log = APILogEntry(
+            _ = APILogEntry(
                 timestamp: startTime,
                 model: targetModel.rawValue,
                 endpointMasked: endpointMasked,

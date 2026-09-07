@@ -376,16 +376,35 @@ enum MockDataLoader {
         return LLMInsightInput(
             task: "generate_caregiver_insight",
             language: "id-ID",
-            audience: "anak/caregiver lansia",
             parentDisplayName: parentDisplayName,
-            overallStatus: evaluation.overallCareStatus,
-            concernState: evaluation.overallConcernState,
             reportPeriod: reportPeriod,
+            overallCondition: evaluation.overallCareStatus,
+            overallSummaryPrompt: "Evaluasi kondisi \(parentDisplayName): status \(evaluation.overallCareStatus)",
+            activity: MetricDataPoint(
+                domain: "Activity",
+                currentValueFormatted: "1,850 langkah",
+                baselineValueFormatted: "4,200 langkah",
+                deltaPercentage: -55.9,
+                status: "DECLINED"
+            ),
+            sleep: MetricDataPoint(
+                domain: "Sleep",
+                currentValueFormatted: "5.2 jam",
+                baselineValueFormatted: "7.0 jam",
+                deltaPercentage: -25.7,
+                status: "DECLINED"
+            ),
+            heart: MetricDataPoint(
+                domain: "Heart",
+                currentValueFormatted: "74 BPM",
+                baselineValueFormatted: "63 BPM",
+                deltaPercentage: 17.5,
+                status: "DECLINED"
+            ),
             facts: facts,
-            triggeredRulesSummary: triggeredSummary,
             allowedActions: allowedActions,
             prohibitedContent: catalog.prohibitedContent,
-            style: LLMInsightStyle(tone: "tenang, empatik, objektif, ringkas", maxSentences: 4)
+            style: LLMInsightStyle(tone: "hangat, empatik, objektif, ringkas", maxSentences: 3)
         )
     }
 }

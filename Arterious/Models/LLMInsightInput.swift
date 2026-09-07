@@ -2,11 +2,29 @@
 //  LLMInsightInput.swift
 //  Arterious
 //
-//  Structured input schema untuk LLM sesuai PRD §12.2.
-//  Ini adalah data yang dikirim ke Gemini API untuk generate caregiver insight.
+//  Structured input schema untuk LLM Gemini.
+//  Mengirimkan perbandingan angka numerik riil hari ini vs baseline 14 hari
+//  beserta status evaluasi rule engine untuk Activity, Sleep, dan Heart.
 //
 
 import Foundation
+
+/// Data metrik spesifik yang dikirimkan ke prompt LLM
+struct MetricDataPoint: Codable {
+    let domain: String
+    let currentValueFormatted: String
+    let baselineValueFormatted: String
+    let deltaPercentage: Double
+    let status: String // "IMPROVED", "STABLE", "DECLINED"
+    
+    enum CodingKeys: String, CodingKey {
+        case domain
+        case currentValueFormatted = "current_value_formatted"
+        case baselineValueFormatted = "baseline_value_formatted"
+        case deltaPercentage = "delta_percentage"
+        case status
+    }
+}
 
 /// Style configuration untuk output LLM
 struct LLMInsightStyle: Codable {
@@ -19,34 +37,18 @@ struct LLMInsightStyle: Codable {
     }
 }
 
-/// Structured input yang dikirim ke LLM — sesuai PRD §12.2
-///
-/// Contoh dari PRD:
-/// ```json
-/// {
-///   "task": "generate_caregiver_insight",
-///   "language": "id-ID",
-///   "audience": "anak/caregiver lansia",
-///   "parent_display_name": "Ibu",
-///   "overall_status": "CAUTION",
-///   "concern_state": "NEW_CONCERN",
-///   "report_period": "3 hari terakhir",
-///   "facts": [...],
-///   "allowed_actions": [...],
-///   "prohibited_content": [...],
-///   "style": { "tone": "...", "max_sentences": 4 }
-/// }
-/// ```
+/// Structured input yang dikirim ke LLM Gemini
 struct LLMInsightInput: Codable {
     let task: String
     let language: String
-    let audience: String
     let parentDisplayName: String
-    let overallStatus: String
-    let concernState: String
     let reportPeriod: String
+    let overallCondition: String // "IMPROVED", "STABLE", "DECLINED"
+    let overallSummaryPrompt: String
+    let activity: MetricDataPoint
+    let sleep: MetricDataPoint
+    let heart: MetricDataPoint
     let facts: [String]
-    let triggeredRulesSummary: [String]?
     let allowedActions: [String]
     let prohibitedContent: [String]
     let style: LLMInsightStyle
@@ -54,13 +56,14 @@ struct LLMInsightInput: Codable {
     enum CodingKeys: String, CodingKey {
         case task
         case language
-        case audience
         case parentDisplayName = "parent_display_name"
-        case overallStatus = "overall_status"
-        case concernState = "concern_state"
         case reportPeriod = "report_period"
+        case overallCondition = "overall_condition"
+        case overallSummaryPrompt = "overall_summary_prompt"
+        case activity
+        case sleep
+        case heart
         case facts
-        case triggeredRulesSummary = "triggered_rules_summary"
         case allowedActions = "allowed_actions"
         case prohibitedContent = "prohibited_content"
         case style

@@ -3,55 +3,76 @@ import SwiftUI
 struct DashboardView: View {
     @State private var viewModel = DashboardViewModel()
     
+    private let gridColumns = [
+        GridItem(.flexible(), spacing: 12),
+        GridItem(.flexible(), spacing: 12)
+    ]
+    
     var body: some View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    // Header Status Summary
-                    wellnessHeader
+                    // Header Status & Authorization Summary
+                    authorizationHeader
                     
-                    // Early Caution Card (Appears on significant deviations)
+                    // Early Caution Card
                     if let caution = viewModel.cautionInsight {
-                        CautionCardView(insight: caution) {
-                            // Action: trigger phone call or quick message
-                        }
-                        .transition(.move(edge: .top).combined(with: .opacity))
+                        CautionCardView(insight: caution) { }
+                            .transition(.move(edge: .top).combined(with: .opacity))
                     }
                     
-                    // Today's Health Metric Grid
+                    // 1. Heart Rate & HRV Core Metrics
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Today's Overview")
+                        Text("1. HRV & HR Core Metrics")
                             .font(.headline)
                             .foregroundStyle(.primary)
                         
-                        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                        LazyVGrid(columns: gridColumns, spacing: 12) {
+                            MetricCardView(metric: .restingHeartRate, value: viewModel.todaySummary.restingHeartRate, baselineValue: viewModel.baselineRestingHeartRate())
+                            MetricCardView(metric: .meanHeartRate24h, value: viewModel.todaySummary.meanHeartRate24h, baselineValue: nil)
+                            MetricCardView(metric: .heartRateSD24h, value: viewModel.todaySummary.heartRateSD24h, baselineValue: nil)
+                            MetricCardView(metric: .maxHeartRate24h, value: viewModel.todaySummary.maxHeartRate24h, baselineValue: nil)
+                            MetricCardView(metric: .hrvSDNN14DayMean, value: viewModel.todaySummary.hrvSDNN14DayMean, baselineValue: nil)
+                            MetricCardView(metric: .hrvRMSSD, value: viewModel.todaySummary.hrvRMSSD, baselineValue: nil)
+                            MetricCardView(metric: .hrvDropFromBaseline, value: viewModel.todaySummary.hrvDropFromBaseline, baselineValue: nil)
+                        }
+                    }
+                    
+                    // 2. Sleep Analysis
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("2. Sleep (Analisis Tidur)")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        
+                        LazyVGrid(columns: gridColumns, spacing: 12) {
+                            MetricCardView(metric: .sleep, value: viewModel.todaySummary.sleepHours, baselineValue: viewModel.baselineSleep())
+                            MetricCardView(metric: .sleepEfficiency, value: viewModel.todaySummary.sleepEfficiency, baselineValue: nil)
+                            MetricCardView(metric: .deepSleepPercentage, value: viewModel.todaySummary.deepSleepPercentage, baselineValue: nil)
+                            MetricCardView(metric: .remSleepPercentage, value: viewModel.todaySummary.remSleepPercentage, baselineValue: nil)
+                            MetricCardView(metric: .sleepConsistency, value: viewModel.todaySummary.sleepBedtimeSDMinutes, baselineValue: nil)
+                        }
+                    }
+                    
+                    // 3. Activity Metrics
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("3. Activity (Aktivitas Fisik)")
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        
+                        LazyVGrid(columns: gridColumns, spacing: 12) {
+                            MetricCardView(metric: .steps, value: viewModel.todaySummary.stepCount, baselineValue: viewModel.baselineSteps())
+                            MetricCardView(metric: .activeMinutes, value: viewModel.todaySummary.activeMinutesToday, baselineValue: nil)
+                            MetricCardView(metric: .exerciseMinutesWeek, value: viewModel.todaySummary.exerciseMinutesWeek, baselineValue: nil)
+                            MetricCardView(metric: .activeEnergy, value: viewModel.todaySummary.activeEnergyKcalToday, baselineValue: nil)
                             MetricCardView(
-                                metric: .steps,
-                                value: viewModel.todaySummary.stepCount,
-                                baselineValue: viewModel.baselineSteps()
-                            )
-                            
-                            MetricCardView(
-                                metric: .restingHeartRate,
-                                value: viewModel.todaySummary.restingHeartRate,
-                                baselineValue: viewModel.baselineRestingHeartRate()
-                            )
-                            
-                            MetricCardView(
-                                metric: .sleep,
-                                value: viewModel.todaySummary.sleepHours,
-                                baselineValue: viewModel.baselineSleep()
-                            )
-                            
-                            MetricCardView(
-                                metric: .heartRate,
-                                value: viewModel.todaySummary.latestHeartRate,
+                                metric: .standHours,
+                                value: viewModel.todaySummary.standHoursToday != nil ? Double(viewModel.todaySummary.standHoursToday!) : nil,
                                 baselineValue: nil
                             )
                         }
                     }
                     
-                    // Gentle Medical Disclaimer (HealthKit Guideline Requirement)
+                    // Medical Disclaimer
                     Text("Arterious reflects general wellness trends from Apple HealthKit and is not intended for medical diagnosis.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -90,9 +111,9 @@ struct DashboardView: View {
         }
     }
     
-    private var wellnessHeader: some View {
+    private var authorizationHeader: some View {
         HStack {
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text("Current Status")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
@@ -109,13 +130,22 @@ struct DashboardView: View {
             
             Spacer()
             
-            Text(Date.now.formatted(date: .abbreviated, time: .omitted))
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(Color(.secondarySystemFill))
+            Button(action: {
+                Task {
+                    await viewModel.loadDashboardData()
+                }
+            }) {
+                HStack(spacing: 4) {
+                    Image(systemName: "arrow.clockwise")
+                    Text("Refresh")
+                }
+                .font(.footnote.weight(.semibold))
+                .foregroundStyle(.white)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(Color.red)
                 .clipShape(Capsule())
+            }
         }
         .padding()
         .background(Color(.secondarySystemGroupedBackground))

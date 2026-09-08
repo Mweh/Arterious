@@ -5,8 +5,42 @@ struct ContentView: View {
     @State private var dashboardVM = DashboardViewModel()
     @State private var selectedTab: Int = 0
     @State private var showConnectedAlert: Bool = false
+    @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
 
     var body: some View {
+        Group {
+            if !hasCompletedOnboarding {
+                OnboardingView(
+                    syncViewModel: dashboardVM.syncViewModel,
+                    hasCompletedOnboarding: $hasCompletedOnboarding
+                )
+            } else {
+                mainAppView
+            }
+        }
+        .onOpenURL { url in
+            // Handle arterious://invite?code=XXXX deep links
+            guard url.scheme?.lowercased() == "arterious" else { return }
+            Task {
+                await dashboardVM.syncViewModel.handleIncomingInvite(url: url)
+                hasCompletedOnboarding = true
+                selectedTab = 2
+                showConnectedAlert = true
+            }
+        }
+        .alert("Berhasil Terhubung!", isPresented: $showConnectedAlert) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text("Data kesehatan kamu sekarang terhubung dan otomatis dikirimkan ke anak kamu secara aman via iCloud.")
+        }
+        .task {
+            await dashboardVM.syncViewModel.refreshIfNeeded()
+        }
+    }
+
+    // MARK: - Main App View
+
+    private var mainAppView: some View {
         ZStack(alignment: .bottom) {
             Group {
                 switch selectedTab {
@@ -25,35 +59,18 @@ struct ContentView: View {
                         .navigationTitle("Riwayat")
                     }
                 case 2:
-                    SyncSetupView(syncViewModel: dashboardVM.syncViewModel)
+                    AksesView(syncViewModel: dashboardVM.syncViewModel)
                 default:
                     EmptyView()
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Floating Pill Tab Bar
+            // Floating Pill Tab Bar (Screenshot 1 & 2)
             FloatingTabBar(selectedTab: $selectedTab)
                 .padding(.bottom, 12)
         }
         .ignoresSafeArea(.keyboard)
-        .onOpenURL { url in
-            // Handle arterious://invite?code=XXXX deep links
-            guard url.scheme?.lowercased() == "arterious" else { return }
-            Task {
-                await dashboardVM.syncViewModel.handleIncomingInvite(url: url)
-                selectedTab = 2
-                showConnectedAlert = true
-            }
-        }
-        .alert("Berhasil Terhubung!", isPresented: $showConnectedAlert) {
-            Button("OK", role: .cancel) { }
-        } message: {
-            Text("Data kesehatan kamu sekarang terhubung dan otomatis dikirimkan ke anak kamu secara aman via iCloud.")
-        }
-        .task {
-            await dashboardVM.syncViewModel.refreshIfNeeded()
-        }
     }
 }
 

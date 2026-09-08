@@ -1,10 +1,12 @@
 import SwiftUI
 
+/// Displays a single HealthKit metric value with an optional baseline comparison badge.
 struct MetricCardView: View {
+
     let metric: MetricType
     let value: Double?
     let baselineValue: Double?
-    
+
     private var formattedValue: String {
         guard let value else { return "Belum ada data" }
         switch metric {
@@ -19,58 +21,58 @@ struct MetricCardView: View {
             return String(format: "%.1f", value)
         }
     }
-    
+
     private var differenceText: String? {
         guard let value, let baselineValue, baselineValue > 0 else { return nil }
         let diffPercent = ((value - baselineValue) / baselineValue) * 100.0
         let sign = diffPercent >= 0 ? "+" : ""
         return "\(sign)\(Int(round(diffPercent)))% vs 14d avg"
     }
-    
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Label(metric.rawValue, systemImage: metric.iconName)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                
-                Spacer()
-            }
-            
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
+        VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Label(metric.rawValue, systemImage: metric.iconName)
+                .font(AppTypography.subheadline)
+                .fontWeight(.medium)
+                .foregroundStyle(AppColor.textSecondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+            HStack(alignment: .firstTextBaseline, spacing: AppSpacing.xs) {
                 Text(formattedValue)
-                    .font(value == nil ? .subheadline : .system(.title2, design: .rounded, weight: .bold))
-                    .foregroundStyle(value == nil ? .secondary : .primary)
-                
+                    .font(value == nil ? AppTypography.subheadline : AppTypography.metricValue)
+                    .foregroundStyle(value == nil ? AppColor.textSecondary : AppColor.textPrimary)
+
                 if value != nil {
                     Text(metric.unitString)
-                        .font(.caption)
+                        .font(AppTypography.caption)
                         .fontWeight(.medium)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(AppColor.textSecondary)
                 }
             }
-            
+
             if let differenceText {
                 Text(differenceText)
-                    .font(.caption2)
+                    .font(AppTypography.caption2)
                     .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 2)
-                    .background(Color(.secondarySystemFill))
+                    .foregroundStyle(AppColor.textSecondary)
+                    .padding(.horizontal, AppSpacing.sm - 2)
+                    .padding(.vertical, AppSpacing.xs / 2)
+                    .background(AppColor.fillSecondary)
                     .clipShape(Capsule())
             }
         }
-        .padding()
+        .padding(AppSpacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        .background(AppColor.backgroundSecondary)
+        .clipShape(RoundedRectangle(cornerRadius: AppRadius.lg, style: .continuous))
     }
 }
 
 #Preview {
-    MetricCardView(metric: .steps, value: 3450, baselineValue: 4800)
-        .padding()
-        .background(Color(.systemGroupedBackground))
+    VStack(spacing: AppSpacing.md) {
+        MetricCardView(metric: .steps, value: 3450, baselineValue: 4800)
+        MetricCardView(metric: .restingHeartRate, value: nil, baselineValue: 64)
+    }
+    .padding()
+    .background(AppColor.backgroundPrimary)
 }

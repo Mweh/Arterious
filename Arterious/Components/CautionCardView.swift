@@ -1,55 +1,44 @@
 import SwiftUI
 
+/// A non-diagnostic wellness alert card that surfaces a gentle family check-in reminder.
 struct CautionCardView: View {
+
     let insight: CautionInsight
-    var onCheckInTapped: (() -> Void)? = nil
-    
+    var onCheckInTapped: (() -> Void)?
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 8) {
+        VStack(alignment: .leading, spacing: AppSpacing.md) {
+            HStack(spacing: AppSpacing.sm) {
                 Image(systemName: "sparkles")
-                    .font(.headline)
-                    .foregroundStyle(.orange)
-                
+                    .font(AppTypography.headline)
+                    .foregroundStyle(AppColor.caution)
+
                 Text(insight.title)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.primary)
-                
+                    .font(AppTypography.headline)
+                    .foregroundStyle(AppColor.textPrimary)
+
                 Spacer()
             }
-            
+
             Text(insight.message)
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .font(AppTypography.subheadline)
+                .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .lineSpacing(2)
-            
-            HStack {
-                Button(action: {
-                    onCheckInTapped?()
-                }) {
-                    Label(insight.suggestedAction, systemImage: "phone.fill")
-                        .font(.subheadline.weight(.semibold))
-                        .foregroundStyle(.white)
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 10)
-                        .background(Color.accentColor)
-                        .clipShape(Capsule())
-                }
-                
-                Spacer()
+
+            AppButton(title: insight.suggestedAction, icon: "phone.fill") {
+                onCheckInTapped?()
             }
         }
-        .padding(18)
+        .padding(AppSpacing.lg + 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .fill(Color.orange.opacity(0.12))
+            RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
+                .fill(AppColor.cautionBackground)
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 20, style: .continuous)
-                .stroke(Color.orange.opacity(0.3), lineWidth: 1)
+            RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous)
+                .stroke(AppColor.cautionBorder, lineWidth: 1)
         )
     }
 }
@@ -64,4 +53,5 @@ struct CautionCardView: View {
         )
     )
     .padding()
+    .background(AppColor.backgroundPrimary)
 }

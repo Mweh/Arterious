@@ -6,13 +6,16 @@ struct MetricCardView: View {
     let baselineValue: Double?
     
     private var formattedValue: String {
-        guard let value else { return "—" }
+        guard let value else { return "Belum ada data" }
         switch metric {
-        case .heartRate, .restingHeartRate:
-            return "\(Int(round(value)))"
+        case .heartRate, .restingHeartRate, .meanHeartRate24h, .heartRateSD24h, .maxHeartRate24h, .hrvSDNN14DayMean, .hrvRMSSD:
+            return String(format: "%.1f", value)
+        case .hrvDropFromBaseline:
+            let prefix = value > 0 ? "+" : ""
+            return "\(prefix)\(String(format: "%.1f", value))"
         case .steps:
             return NumberFormatter.localizedString(from: NSNumber(value: Int(value)), number: .decimal)
-        case .sleep:
+        case .sleep, .sleepEfficiency, .deepSleepPercentage, .remSleepPercentage, .sleepConsistency, .activeMinutes, .exerciseMinutesWeek, .activeEnergy, .standHours:
             return String(format: "%.1f", value)
         }
     }
@@ -37,13 +40,15 @@ struct MetricCardView: View {
             
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(formattedValue)
-                    .font(.system(.title, design: .rounded, weight: .bold))
-                    .foregroundStyle(.primary)
+                    .font(value == nil ? .subheadline : .system(.title2, design: .rounded, weight: .bold))
+                    .foregroundStyle(value == nil ? .secondary : .primary)
                 
-                Text(metric.unitString)
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundStyle(.secondary)
+                if value != nil {
+                    Text(metric.unitString)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundStyle(.secondary)
+                }
             }
             
             if let differenceText {

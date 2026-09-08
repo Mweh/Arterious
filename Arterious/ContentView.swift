@@ -8,6 +8,11 @@ struct ContentView: View {
                     Label("Dashboard", systemImage: "heart.text.square.fill")
                 }
             
+            HealthMetricView()
+                .tabItem {
+                    Label("CloudKit", systemImage: "icloud.fill")
+                }
+
             NavigationStack {
                 ContentUnavailableView(
                     "Trends Coming Soon",
@@ -20,7 +25,7 @@ struct ContentView: View {
                 Label("Trends", systemImage: "chart.line.uptrend.xyaxis")
             }
         }
-        .tint(.red)
+        .tint(AppColor.accent)
     }
 }
 

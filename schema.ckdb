@@ -1,0 +1,32 @@
+DEFINE SCHEMA
+
+    RECORD TYPE DailyHealth (
+        "___recordID" REFERENCE QUERYABLE,
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        date TIMESTAMP QUERYABLE SORTABLE,
+        heartRate DOUBLE,
+        sleepDuration DOUBLE,
+        steps INT64,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE HealthMetric (
+        "___recordID" REFERENCE QUERYABLE,
+        "___createTime" TIMESTAMP QUERYABLE SORTABLE,
+        date TIMESTAMP QUERYABLE SORTABLE,
+        type STRING QUERYABLE,
+        value DOUBLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );
+
+    RECORD TYPE ParentProfile (
+        "___recordID" REFERENCE QUERYABLE,
+        name STRING QUERYABLE,
+        GRANT WRITE TO "_creator",
+        GRANT CREATE TO "_icloud",
+        GRANT READ TO "_world"
+    );

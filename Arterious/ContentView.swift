@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ContentView: View {
 
+    @Environment(\.scenePhase) private var scenePhase
     @State private var dashboardVM = DashboardViewModel()
     @State private var selectedTab: Int = 0
     @State private var showConnectedAlert: Bool = false
@@ -35,6 +36,15 @@ struct ContentView: View {
         }
         .task {
             await dashboardVM.syncViewModel.refreshIfNeeded()
+            await dashboardVM.loadDashboardData()
+        }
+        .onChange(of: scenePhase) { _, newPhase in
+            if newPhase == .active {
+                Task {
+                    await dashboardVM.syncViewModel.refreshIfNeeded()
+                    await dashboardVM.loadDashboardData()
+                }
+            }
         }
     }
 

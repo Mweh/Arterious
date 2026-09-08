@@ -71,7 +71,8 @@ final class CloudKitSyncManager {
     /// Creates a SharingInvite record in CloudKit and returns a deep link URL.
     func generateInviteLink(senderRole: SyncRole = .child, senderName: String = "Keluarga") async throws -> URL {
         let code = generateCode()
-        let record = CKRecord(recordType: CKRecordType.sharingInvite)
+        let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
+        let record = CKRecord(recordType: CKRecordType.sharingInvite, recordID: recordID)
         record[CKField.inviteCode] = code
         record[CKField.status] = "pending"
         record[CKField.childDeviceID] = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
@@ -115,25 +116,25 @@ final class CloudKitSyncManager {
             throw SyncError.encodingFailed
         }
 
-        if let existing = try? await fetchSnapshotRecord(inviteCode: inviteCode) {
-            existing[CKField.snapshotJSON] = jsonString
-            existing[CKField.parentName] = parentName
-            existing[CKField.updatedAt] = Date()
-            _ = try await publicDB.save(existing)
+        let recordID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(inviteCode)")
+        let record: CKRecord
+        if let existing = try? await publicDB.record(for: recordID) {
+            record = existing
         } else {
-            let record = CKRecord(recordType: CKRecordType.parentHealthSnapshot)
+            record = CKRecord(recordType: CKRecordType.parentHealthSnapshot, recordID: recordID)
             record[CKField.inviteCode] = inviteCode
-            record[CKField.snapshotJSON] = jsonString
-            record[CKField.parentName] = parentName
-            record[CKField.updatedAt] = Date()
-            _ = try await publicDB.save(record)
         }
+
+        record[CKField.snapshotJSON] = jsonString
+        record[CKField.parentName] = parentName
+        record[CKField.updatedAt] = Date()
+        _ = try await publicDB.save(record)
     }
 
     // MARK: - Parent: Push Structured HealthRecord
 
     func pushHealthRecord(_ record: HealthRecord) async throws {
-        let recordIDString = "HealthRecord_\(record.inviteCode)_\(record.formattedDate)"
+        let recordIDString = "HealthRecord_\(record.inviteCode)"
         let recordID = CKRecord.ID(recordName: recordIDString)
 
         let ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
@@ -161,14 +162,21 @@ final class CloudKitSyncManager {
     // MARK: - Child: Fetch Latest HealthRecord
 
     func fetchLatestHealthRecord(inviteCode: String) async throws -> HealthRecord? {
-        let predicate = NSPredicate(format: "inviteCode == %@", inviteCode)
-        let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
-        query.sortDescriptors = [NSSortDescriptor(key: CKField.updatedAt, ascending: false)]
+        let recordID = CKRecord.ID(recordName: "HealthRecord_\(inviteCode)")
+        let record: CKRecord
+        if let direct = try? await publicDB.record(for: recordID) {
+            record = direct
+        } else {
+            let predicate = NSPredicate(format: "inviteCode == %@", inviteCode)
+            let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
+            query.sortDescriptors = [NSSortDescriptor(key: CKField.updatedAt, ascending: false)]
 
-        let result = try await publicDB.records(matching: query, resultsLimit: 1)
-        guard let (_, recordResult) = result.matchResults.first,
-              let record = try? recordResult.get() else {
-            return nil
+            guard let result = try? await publicDB.records(matching: query, resultsLimit: 1),
+                  let (_, recordResult) = result.matchResults.first,
+                  let r = try? recordResult.get() else {
+                return nil
+            }
+            record = r
         }
 
         let hrPoints = (record[CKField.recentHeartRatePoints] as? String ?? "")
@@ -255,25 +263,35 @@ final class CloudKitSyncManager {
     }
 
     private func fetchInviteRecord(code: String) async throws -> CKRecord {
+        let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
+        if let record = try? await publicDB.record(for: recordID) {
+            return record
+        }
+        // Fallback for query
         let predicate = NSPredicate(format: "inviteCode == %@", code)
         let query = CKQuery(recordType: CKRecordType.sharingInvite, predicate: predicate)
-        let result = try await publicDB.records(matching: query, resultsLimit: 1)
-        guard let (_, recordResult) = result.matchResults.first,
-              let record = try? recordResult.get() else {
-            throw SyncError.inviteNotFound
+        if let result = try? await publicDB.records(matching: query, resultsLimit: 1),
+           let (_, recordResult) = result.matchResults.first,
+           let record = try? recordResult.get() {
+            return record
         }
-        return record
+        throw SyncError.inviteNotFound
     }
 
     private func fetchSnapshotRecord(inviteCode: String) async throws -> CKRecord {
+        let recordID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(inviteCode)")
+        if let record = try? await publicDB.record(for: recordID) {
+            return record
+        }
+        // Fallback for query
         let predicate = NSPredicate(format: "inviteCode == %@", inviteCode)
         let query = CKQuery(recordType: CKRecordType.parentHealthSnapshot, predicate: predicate)
-        let result = try await publicDB.records(matching: query, resultsLimit: 1)
-        guard let (_, recordResult) = result.matchResults.first,
-              let record = try? recordResult.get() else {
-            throw SyncError.snapshotNotFound
+        if let result = try? await publicDB.records(matching: query, resultsLimit: 1),
+           let (_, recordResult) = result.matchResults.first,
+           let record = try? recordResult.get() {
+            return record
         }
-        return record
+        throw SyncError.snapshotNotFound
     }
 }
 

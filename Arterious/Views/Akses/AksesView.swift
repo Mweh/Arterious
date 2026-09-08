@@ -5,6 +5,8 @@ struct AksesView: View {
     @State private var isSharing: Bool = false
     @State private var showDetailSheet: Bool = false
     @State private var isEditing: Bool = false
+    @State private var showEnterCodeAlert: Bool = false
+    @State private var inputCode: String = ""
 
     private var isParent: Bool {
         syncViewModel.syncState.role == .parent
@@ -78,6 +80,15 @@ struct AksesView: View {
                                         .clipShape(Capsule())
                                     }
                                     .disabled(isSharing || syncViewModel.isLoading)
+
+                                    Button {
+                                        showEnterCodeAlert = true
+                                    } label: {
+                                        Text("Punya kode undangan? Masukkan Kode")
+                                            .font(.system(size: 13, weight: .medium))
+                                            .foregroundStyle(.blue)
+                                    }
+                                    .padding(.top, 2)
                                 }
                                 .padding(20)
                             }
@@ -137,6 +148,23 @@ struct AksesView: View {
             }
             .sheet(isPresented: $showDetailSheet) {
                 partnerDetailSheet
+            }
+            .alert("Masukkan Kode Undangan", isPresented: $showEnterCodeAlert) {
+                TextField("Contoh: AJ7YZ5B5", text: $inputCode)
+                    .textInputAutocapitalization(.characters)
+                Button("Hubungkan") {
+                    let clean = inputCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
+                    guard !clean.isEmpty, let url = URL(string: "arterious://invite?code=\(clean)") else { return }
+                    Task {
+                        await syncViewModel.handleIncomingInvite(url: url)
+                        inputCode = ""
+                    }
+                }
+                Button("Batal", role: .cancel) {
+                    inputCode = ""
+                }
+            } message: {
+                Text("Masukkan 8 digit kode undangan yang dikirimkan oleh keluarga kamu.")
             }
         }
     }

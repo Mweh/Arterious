@@ -76,9 +76,13 @@ final class DashboardViewModel {
                 }
             } else {
                 // CHILD: NEVER request HealthKit authorization!
-                // Read parent's data from CloudKit when paired
+                // Read parent's data from CloudKit when paired or check if parent accepted
                 if let code = syncViewModel.syncState.inviteCode {
-                    await syncViewModel.fetchParentSnapshot(code: code)
+                    if syncViewModel.syncState.status == .accepted {
+                        await syncViewModel.fetchParentSnapshot(code: code)
+                    } else {
+                        await syncViewModel.refreshIfNeeded()
+                    }
                 }
             }
             

@@ -77,36 +77,92 @@ struct HomeNotPairedCardView: View {
                     .padding(.horizontal, 16)
             }
 
-            // Blue Action Button
-            Button {
-                Task {
-                    isSharing = true
-                    if let url = await syncViewModel.requestShareLink() {
-                        ShareSheetHelper.share(url: url)
-                    }
-                    isSharing = false
-                }
-            } label: {
-                HStack(spacing: 8) {
-                    if isSharing || syncViewModel.isLoading {
+            if syncViewModel.syncState.status == .pending, let code = syncViewModel.syncState.inviteCode {
+                // Pending State: Waiting for Parent
+                VStack(spacing: 12) {
+                    HStack(spacing: 8) {
                         ProgressView()
-                            .tint(.white)
-                    } else {
-                        Image(systemName: "person.crop.circle.badge.plus")
-                            .font(.system(size: 17, weight: .semibold))
+                            .scaleEffect(0.8)
+                        Text("Menunggu persetujuan orang tua")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.orange)
                     }
-                    Text("Minta Kontak Membagikan Data")
-                        .font(.system(size: 15, weight: .semibold))
+                    .padding(.horizontal, 14)
+                    .padding(.vertical, 8)
+                    .background(Color.orange.opacity(0.1))
+                    .clipShape(Capsule())
+
+                    Text("Kode: \(code)")
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.primary)
+
+                    // Button: Cek Status Sekarang
+                    Button {
+                        Task {
+                            isSharing = true
+                            await syncViewModel.refreshIfNeeded()
+                            isSharing = false
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "arrow.clockwise")
+                            Text("Cek Status Terhubung")
+                                .font(.system(size: 14, weight: .semibold))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.blue)
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                    }
+                    .disabled(isSharing || syncViewModel.isLoading)
+
+                    // Secondary: Bagikan Ulang
+                    Button {
+                        Task {
+                            if let url = await syncViewModel.requestShareLink() {
+                                ShareSheetHelper.share(url: url)
+                            }
+                        }
+                    } label: {
+                        Text("Bagikan Ulang Tautan")
+                            .font(.system(size: 13, weight: .medium))
+                            .foregroundStyle(.blue)
+                    }
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.blue)
-                .foregroundStyle(.white)
-                .clipShape(Capsule())
-                .shadow(color: Color.blue.opacity(0.28), radius: 8, y: 4)
+                .padding(.horizontal, 8)
+            } else {
+                // Normal Action Button
+                Button {
+                    Task {
+                        isSharing = true
+                        if let url = await syncViewModel.requestShareLink() {
+                            ShareSheetHelper.share(url: url)
+                        }
+                        isSharing = false
+                    }
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSharing || syncViewModel.isLoading {
+                            ProgressView()
+                                .tint(.white)
+                        } else {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                                .font(.system(size: 17, weight: .semibold))
+                        }
+                        Text("Minta Kontak Membagikan Data")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 14)
+                    .background(Color.blue)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.blue.opacity(0.28), radius: 8, y: 4)
+                }
+                .disabled(isSharing || syncViewModel.isLoading)
+                .padding(.horizontal, 8)
             }
-            .disabled(isSharing || syncViewModel.isLoading)
-            .padding(.horizontal, 8)
         }
         .padding(24)
         .background(Color.white)

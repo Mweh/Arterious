@@ -2,72 +2,49 @@ import SwiftUI
 
 struct DashboardView: View {
 
-    @State private var viewModel = DashboardViewModel()
+    @Bindable var viewModel: DashboardViewModel
 
-    private let gridColumns = [
-        GridItem(.flexible(), spacing: AppSpacing.md),
-        GridItem(.flexible(), spacing: AppSpacing.md)
-    ]
+    @MainActor
+    init(viewModel: DashboardViewModel) {
+        self.viewModel = viewModel
+    }
+
+    @MainActor
+    init() {
+        self.viewModel = DashboardViewModel()
+    }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(spacing: AppSpacing.xl) {
+            ZStack {
+                Color(hue: 0.6, saturation: 0.02, brightness: 0.97)
+                    .ignoresSafeArea()
 
-                    statusHeader
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 20) {
+                        if viewModel.syncViewModel.syncState.role == .child && !viewModel.isPaired {
+                            // NOT PAIRED STATE (Screenshot 1)
+                            HomeNotPairedCardView(syncViewModel: viewModel.syncViewModel)
+                                .padding(.top, 8)
+                        } else {
+                            // PAIRED / DEFAULT STATE (Screenshot 2)
+                            pairedContentView
+                        }
 
-                    if let caution = viewModel.cautionInsight {
-                        CautionCardView(insight: caution) { }
-                            .transition(.move(edge: .top).combined(with: .opacity))
+                        // Medical disclaimer
+                        Text("Arterious reflects general wellness trends from Apple HealthKit and is not intended for medical diagnosis.")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary.opacity(0.8))
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .padding(.top, 12)
+                            .padding(.bottom, 60)
                     }
-
-                    // 1. Heart Rate & HRV
-                    metricSection(title: "Heart Rate & HRV") {
-                        MetricCardView(metric: .restingHeartRate, value: viewModel.todaySummary.restingHeartRate, baselineValue: viewModel.baselineRestingHeartRate())
-                        MetricCardView(metric: .meanHeartRate24h, value: viewModel.todaySummary.meanHeartRate24h, baselineValue: nil)
-                        MetricCardView(metric: .heartRateSD24h, value: viewModel.todaySummary.heartRateSD24h, baselineValue: nil)
-                        MetricCardView(metric: .maxHeartRate24h, value: viewModel.todaySummary.maxHeartRate24h, baselineValue: nil)
-                        MetricCardView(metric: .hrvSDNN14DayMean, value: viewModel.todaySummary.hrvSDNN14DayMean, baselineValue: nil)
-                        MetricCardView(metric: .hrvRMSSD, value: viewModel.todaySummary.hrvRMSSD, baselineValue: nil)
-                        MetricCardView(metric: .hrvDropFromBaseline, value: viewModel.todaySummary.hrvDropFromBaseline, baselineValue: nil)
-                    }
-
-                    // 2. Sleep
-                    metricSection(title: "Sleep") {
-                        MetricCardView(metric: .sleep, value: viewModel.todaySummary.sleepHours, baselineValue: viewModel.baselineSleep())
-                        MetricCardView(metric: .sleepEfficiency, value: viewModel.todaySummary.sleepEfficiency, baselineValue: nil)
-                        MetricCardView(metric: .deepSleepPercentage, value: viewModel.todaySummary.deepSleepPercentage, baselineValue: nil)
-                        MetricCardView(metric: .remSleepPercentage, value: viewModel.todaySummary.remSleepPercentage, baselineValue: nil)
-                        MetricCardView(metric: .sleepConsistency, value: viewModel.todaySummary.sleepBedtimeSDMinutes, baselineValue: nil)
-                    }
-
-                    // 3. Activity
-                    metricSection(title: "Activity") {
-                        MetricCardView(metric: .steps, value: viewModel.todaySummary.stepCount, baselineValue: viewModel.baselineSteps())
-                        MetricCardView(metric: .activeMinutes, value: viewModel.todaySummary.activeMinutesToday, baselineValue: nil)
-                        MetricCardView(metric: .exerciseMinutesWeek, value: viewModel.todaySummary.exerciseMinutesWeek, baselineValue: nil)
-                        MetricCardView(metric: .activeEnergy, value: viewModel.todaySummary.activeEnergyKcalToday, baselineValue: nil)
-                        MetricCardView(
-                            metric: .standHours,
-                            value: viewModel.todaySummary.standHoursToday.map(Double.init),
-                            baselineValue: nil
-                        )
-                    }
-
-                    // Medical disclaimer
-                    Text("Arterious reflects general wellness trends from Apple HealthKit and is not intended for medical diagnosis.")
-                        .font(AppTypography.caption)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .multilineTextAlignment(.center)
-                        .padding(.top, AppSpacing.md)
-                        .padding(.horizontal, AppSpacing.xxl)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 8)
                 }
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.sm)
-                .padding(.bottom, AppSpacing.xxl)
             }
-            .background(AppColor.backgroundPrimary)
-            .navigationTitle("\(viewModel.parentName)'s Wellness")
+            .navigationTitle("Beranda")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -82,66 +59,204 @@ struct DashboardView: View {
             .task {
                 await viewModel.loadDashboardData()
             }
-            .alert("Health Access", isPresented: Binding(
-                get: { viewModel.errorMessage != nil },
-                set: { if !$0 { viewModel.errorMessage = nil } }
-            )) {
-                Button("OK", role: .cancel) { }
-            } message: {
-                Text(viewModel.errorMessage ?? "")
-            }
         }
     }
 
-    // MARK: - Subviews
-
-    private var statusHeader: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text("Current Status")
-                    .font(AppTypography.subheadline)
-                    .foregroundStyle(AppColor.textSecondary)
-
-                HStack(spacing: AppSpacing.sm) {
-                    Image(systemName: viewModel.wellnessStatus.iconName)
-                        .foregroundStyle(statusColor)
-
-                    Text(viewModel.wellnessStatus.rawValue)
-                        .font(AppTypography.title)
-                        .foregroundStyle(AppColor.textPrimary)
-                }
-            }
-
-            Spacer()
-
-            AppButton(title: "Refresh", icon: "arrow.clockwise", style: .secondary) {
-                Task { await viewModel.loadDashboardData() }
-            }
-        }
-        .padding(AppSpacing.lg)
-        .background(AppColor.backgroundSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl, style: .continuous))
-    }
+    // MARK: - Paired Content (Screenshot 2)
 
     @ViewBuilder
-    private func metricSection(title: String, @ViewBuilder cards: () -> some View) -> some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            SectionHeader(title: title)
-            LazyVGrid(columns: gridColumns, spacing: AppSpacing.md) {
-                cards()
+    private var pairedContentView: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            // Parent Name Dropdown Header
+            HStack(spacing: 6) {
+                Text(viewModel.displayedParentName)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(.secondary)
             }
+            .padding(.top, 4)
+
+            // Today Summary Card (Light blue gradient/tint card)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Ringkasan Hari Ini")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(Color(hue: 0.6, saturation: 0.6, brightness: 0.6))
+
+                Text(summaryTitle)
+                    .font(.system(size: 18, weight: .bold))
+                    .foregroundStyle(.primary)
+
+                Text(summaryBody)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(Color.primary.opacity(0.75))
+                    .lineSpacing(3)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(20)
+            .background(
+                LinearGradient(
+                    colors: [Color(hue: 0.58, saturation: 0.12, brightness: 0.98),
+                             Color(hue: 0.60, saturation: 0.18, brightness: 0.95)],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+            )
+            .clipShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(Color.blue.opacity(0.08), lineWidth: 1)
+            )
+
+            // Section "Data Hari Ini"
+            Text("Data Hari Ini")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(.primary)
+                .padding(.top, 4)
+
+            // 1. Heart Rate Row Card
+            MetricRowCardView(
+                iconName: "heart.fill",
+                iconColor: Color(hue: 0.98, saturation: 0.75, brightness: 0.95),
+                iconBgColor: Color(hue: 0.98, saturation: 0.12, brightness: 0.98),
+                title: "Detak Jantung",
+                value: heartRateValue,
+                unit: "BPM",
+                statusText: heartRateStatusText,
+                dateText: currentDateText,
+                barHeights: heartRateBarHeights,
+                barColor: Color(hue: 0.98, saturation: 0.65, brightness: 0.9)
+            )
+
+            // 2. Sleep Row Card
+            MetricRowCardView(
+                iconName: "bed.double.fill",
+                iconColor: Color(hue: 0.68, saturation: 0.6, brightness: 0.85),
+                iconBgColor: Color(hue: 0.68, saturation: 0.12, brightness: 0.98),
+                title: "Tidur",
+                value: sleepValue,
+                unit: nil,
+                statusText: sleepStatusText,
+                dateText: currentDateText,
+                barHeights: sleepBarHeights,
+                barColor: Color(hue: 0.68, saturation: 0.65, brightness: 0.8)
+            )
+
+            // 3. Activity Row Card
+            MetricRowCardView(
+                iconName: "figure.walk",
+                iconColor: Color(hue: 0.42, saturation: 0.7, brightness: 0.75),
+                iconBgColor: Color(hue: 0.42, saturation: 0.15, brightness: 0.98),
+                title: "Aktivitas",
+                value: stepsValue,
+                unit: nil,
+                statusText: activityStatusText,
+                dateText: currentDateText,
+                barHeights: stepsBarHeights,
+                barColor: Color(hue: 0.42, saturation: 0.7, brightness: 0.7)
+            )
         }
     }
 
-    private var statusColor: Color {
-        switch viewModel.wellnessStatus {
-        case .good:          return AppColor.healthy
-        case .fair:          return AppColor.info
-        case .needsAttention: return AppColor.caution
+    // MARK: - Formatters & Dynamic Data
+
+    private var summaryTitle: String {
+        viewModel.currentHealthRecord?.summaryTitle ?? "Kondisi cukup stabil"
+    }
+
+    private var summaryBody: String {
+        viewModel.currentHealthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
+    }
+
+    private var currentDateText: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "id_ID")
+        formatter.dateFormat = "d MMM"
+        return formatter.string(from: viewModel.displayedSummary.date)
+    }
+
+    private var heartRateValue: String {
+        if let r = viewModel.currentHealthRecord?.restingHeartRate {
+            return "\(Int(r))"
         }
+        if let rhr = viewModel.displayedSummary.restingHeartRate {
+            return "\(Int(rhr))"
+        }
+        return "72"
+    }
+
+    private var heartRateStatusText: String {
+        viewModel.currentHealthRecord?.heartRateStatus ?? "Dalam rentang normal"
+    }
+
+    private var heartRateBarHeights: [CGFloat] {
+        if let points = viewModel.currentHealthRecord?.recentHeartRatePoints, !points.isEmpty {
+            let maxVal = points.max() ?? 100
+            return points.suffix(6).map { CGFloat($0 / maxVal) }
+        }
+        return [0.4, 0.6, 0.5, 0.8, 0.7, 0.9]
+    }
+
+    private var sleepValue: String {
+        if let f = viewModel.currentHealthRecord?.sleepFormatted {
+            return f
+        }
+        if let hours = viewModel.displayedSummary.sleepHours {
+            let h = Int(hours)
+            let m = Int((hours - Double(h)) * 60)
+            return "\(h)j \(m)m"
+        }
+        return "7j 40m"
+    }
+
+    private var sleepStatusText: String {
+        viewModel.currentHealthRecord?.sleepStatus ?? "Kualitas tidur baik"
+    }
+
+    private var sleepBarHeights: [CGFloat] {
+        if let points = viewModel.currentHealthRecord?.recentSleepPoints, !points.isEmpty {
+            let maxVal = points.max() ?? 10
+            return points.suffix(6).map { CGFloat($0 / maxVal) }
+        }
+        return [0.5, 0.7, 0.6, 0.85, 0.9]
+    }
+
+    private var stepsValue: String {
+        if let s = viewModel.currentHealthRecord?.stepFormatted {
+            return s
+        }
+        if let st = viewModel.displayedSummary.stepCount {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.groupingSeparator = "."
+            return formatter.string(from: NSNumber(value: Int(st))) ?? "\(Int(st))"
+        }
+        return "4.280"
+    }
+
+    private var activityStatusText: String {
+        viewModel.currentHealthRecord?.activityStatus ?? "Lebih baik dari biasanya"
+    }
+
+    private var stepsBarHeights: [CGFloat] {
+        if let points = viewModel.currentHealthRecord?.recentStepPoints, !points.isEmpty {
+            let maxVal = points.max() ?? 10000
+            return points.suffix(6).map { CGFloat($0 / maxVal) }
+        }
+        return [0.3, 0.5, 0.7, 0.85, 0.95]
     }
 }
 
-#Preview {
+#Preview("Not Paired") {
     DashboardView()
 }
+
+#Preview("Paired") {
+    let vm = DashboardViewModel()
+    vm.syncViewModel.syncState.status = .accepted
+    vm.syncViewModel.healthRecord = HealthRecord.previewMock
+    return DashboardView(viewModel: vm)
+}
+

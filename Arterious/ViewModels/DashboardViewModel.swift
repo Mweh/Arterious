@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 
+
 @Observable
 @MainActor
 final class DashboardViewModel {
@@ -11,11 +12,45 @@ final class DashboardViewModel {
     var wellnessStatus: WellnessStatus = .good
     var isLoading: Bool = false
     var errorMessage: String?
-    
+
+    /// The SyncViewModel shared across the app for CloudKit pairing.
+    var syncViewModel: SyncViewModel = SyncViewModel()
+
+    /// Returns the parent's CloudKit snapshot when in child role + accepted,
+    /// otherwise returns the device's own HealthKit data.
+    var displayedSummary: DailyHealthSummary {
+        if syncViewModel.syncState.role == .child,
+           syncViewModel.syncState.status == .accepted,
+           let parentData = syncViewModel.parentSnapshot {
+            return parentData
+        }
+        return todaySummary
+    }
+
+    var displayedParentName: String {
+        if syncViewModel.syncState.role == .child,
+           syncViewModel.syncState.status == .accepted {
+            return syncViewModel.parentName
+        }
+        return parentName
+    }
+
+    var currentHealthRecord: HealthRecord? {
+        syncViewModel.healthRecord
+    }
+
+    var isPaired: Bool {
+        syncViewModel.syncState.status == .accepted
+    }
+
     private let healthKitManager: HealthKitManager
-    
+
     init(healthKitManager: HealthKitManager = .shared) {
         self.healthKitManager = healthKitManager
+        self.syncViewModel.onSnapshotUpdated = { [weak self] in
+            guard let self else { return }
+            self.evaluateWellnessAndCaution(today: self.displayedSummary, history: self.historicalSummaries)
+        }
     }
     
     func loadDashboardData() async {
@@ -23,17 +58,29 @@ final class DashboardViewModel {
         errorMessage = nil
         
         do {
-            try await healthKitManager.requestAuthorization()
+            if syncViewModel.syncState.role == .parent {
+                // ONLY parent requests HealthKit authorization and reads local sensor data
+                try await healthKitManager.requestAuthorization()
+                async let today = healthKitManager.fetchTodaySummary()
+                async let history = healthKitManager.fetchHistoricalSummaries(days: 14)
+                self.todaySummary = await today
+                self.historicalSummaries = await history
+                if let code = syncViewModel.syncState.inviteCode {
+                    await syncViewModel.pushParentHealthData(code: code)
+                }
+            } else {
+                // CHILD: NEVER request HealthKit authorization!
+                // Read parent's data from CloudKit when paired
+                if let code = syncViewModel.syncState.inviteCode {
+                    await syncViewModel.fetchParentSnapshot(code: code)
+                }
+            }
             
-            async let today = healthKitManager.fetchTodaySummary()
-            async let history = healthKitManager.fetchHistoricalSummaries(days: 14)
-            
-            self.todaySummary = await today
-            self.historicalSummaries = await history
-            
-            evaluateWellnessAndCaution(today: self.todaySummary, history: self.historicalSummaries)
+            evaluateWellnessAndCaution(today: self.displayedSummary, history: self.historicalSummaries)
         } catch {
-            self.errorMessage = "Unable to read HealthKit data. Please check health permissions in Settings."
+            if syncViewModel.syncState.role == .parent {
+                self.errorMessage = "Unable to read HealthKit data. Please check health permissions in Settings."
+            }
         }
         
         isLoading = false
@@ -90,11 +137,12 @@ final class DashboardViewModel {
         if !cautionsFound.isEmpty {
             self.wellnessStatus = cautionsFound.count >= 2 ? .needsAttention : .fair
             
+            let name = displayedParentName
             let messageDetails = cautionsFound.joined(separator: ", and ")
             self.cautionInsight = CautionInsight(
-                title: "\(parentName)'s Routine Shifted",
-                message: "\(parentName)'s \(messageDetails). Why not check in with a quick phone call to see how her day is going?",
-                suggestedAction: "Call \(parentName)",
+                title: "\(name)'s Routine Shifted",
+                message: "\(name)'s \(messageDetails). Why not check in with a quick phone call to see how their day is going?",
+                suggestedAction: "Call \(name)",
                 dateDetected: Date()
             )
         } else {

@@ -1,0 +1,71 @@
+{
+  "container": "iCloud.com.helloworld.arterious",
+  "database": "public",
+  "recordTypes": [
+    {
+      "name": "SharingInvite",
+      "fields": [
+        { "name": "inviteCode",    "type": "STRING" },
+        { "name": "status",        "type": "STRING" },
+        { "name": "childDeviceID", "type": "STRING" }
+      ],
+      "indexes": [
+        { "name": "inviteCode",        "type": "QUERYABLE" },
+        { "name": "status",            "type": "QUERYABLE" },
+        { "name": "recordName",        "type": "QUERYABLE" },
+        { "name": "modificationDate",  "type": "SORTABLE"  }
+      ]
+    },
+    {
+      "name": "ParentHealthSnapshot",
+      "fields": [
+        { "name": "inviteCode",   "type": "STRING"    },
+        { "name": "snapshotJSON", "type": "STRING"    },
+        { "name": "parentName",   "type": "STRING"    },
+        { "name": "updatedAt",    "type": "TIMESTAMP" }
+      ],
+      "indexes": [
+        { "name": "inviteCode",       "type": "QUERYABLE" },
+        { "name": "updatedAt",        "type": "SORTABLE"  },
+        { "name": "recordName",       "type": "QUERYABLE" },
+        { "name": "modificationDate", "type": "SORTABLE"  }
+      ]
+    },
+    {
+      "name": "HealthRecord",
+      "fields": [
+        { "name": "inviteCode",            "type": "STRING"    },
+        { "name": "recordDate",            "type": "TIMESTAMP" },
+        { "name": "parentName",            "type": "STRING"    },
+        { "name": "restingHeartRate",      "type": "DOUBLE"    },
+        { "name": "heartRateStatus",       "type": "STRING"    },
+        { "name": "recentHeartRatePoints", "type": "STRING"    },
+        { "name": "sleepHours",            "type": "DOUBLE"    },
+        { "name": "sleepFormatted",        "type": "STRING"    },
+        { "name": "sleepStatus",           "type": "STRING"    },
+        { "name": "recentSleepPoints",     "type": "STRING"    },
+        { "name": "stepCount",             "type": "INT64"     },
+        { "name": "stepFormatted",         "type": "STRING"    },
+        { "name": "activityStatus",        "type": "STRING"    },
+        { "name": "recentStepPoints",      "type": "STRING"    },
+        { "name": "summaryTitle",          "type": "STRING"    },
+        { "name": "summaryBody",           "type": "STRING"    },
+        { "name": "updatedAt",             "type": "TIMESTAMP" }
+      ],
+      "indexes": [
+        { "name": "inviteCode",       "type": "QUERYABLE" },
+        { "name": "recordDate",       "type": "SORTABLE"  },
+        { "name": "updatedAt",        "type": "SORTABLE"  },
+        { "name": "recordName",       "type": "QUERYABLE" },
+        { "name": "modificationDate", "type": "SORTABLE"  }
+      ]
+    }
+  ],
+  "notes": {
+    "SharingInvite.inviteCode": "Must be QUERYABLE — used in NSPredicate 'inviteCode == %@'",
+    "ParentHealthSnapshot.inviteCode": "Must be QUERYABLE — used in NSPredicate AND CKQuerySubscription predicate",
+    "HealthRecord.inviteCode": "Must be QUERYABLE — used in NSPredicate 'inviteCode == %@'",
+    "HealthRecord.recordDate": "Must be SORTABLE — used for history chart ordering",
+    "HealthRecord.updatedAt": "Must be SORTABLE — used for latest record query"
+  }
+}

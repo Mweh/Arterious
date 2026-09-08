@@ -67,7 +67,7 @@ struct OnboardingView: View {
                         hasCompletedOnboarding = true
                     }
                 } else {
-                    // Parent moves to Health Access step
+                    // Parent moves to Health Access step to trigger native iOS sheet
                     currentStep = 2
                 }
             } label: {
@@ -131,34 +131,73 @@ struct OnboardingView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Step 2: Health Access Step (Screenshot 2)
+    // MARK: - Step 2: Health Access Step
 
     private var healthAccessStep: some View {
         VStack(alignment: .leading, spacing: 20) {
-            // Header Text
+            Button {
+                currentStep = 1
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "chevron.left")
+                    Text("Kembali")
+                }
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(.blue)
+            }
+            .padding(.top, 16)
+
             VStack(alignment: .leading, spacing: 8) {
-                Text("Hubungkan ke Health")
+                Text("Hubungkan ke Apple Health")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(.primary)
 
-                Text("Arterious membutuhkan izin akses data kesehatan agar dapat berfungsi dengan optimal. Tenang saja, data kesehatanmu hanya disimpan secara lokal di perangkat dan tidak akan pernah diunggah.")
-                    .font(.system(size: 13.5))
+                Text("Sebagai orang tua, Arterious membutuhkan izin resmi Apple Health untuk membaca data detak jantung, tidur, dan aktivitas agar dapat dibagikan ke anak kamu.")
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
             }
-            .padding(.top, 24)
-
-            // Mockup Graphic (Replicating Screenshot 2 illustration)
-            healthPermissionMockupView
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
+            .padding(.top, 8)
 
             Spacer()
 
-            // "Hubungkan" Action Button
+            // Visual Card
+            VStack(spacing: 20) {
+                ZStack {
+                    Circle()
+                        .fill(Color.red.opacity(0.12))
+                        .frame(width: 90, height: 90)
+
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 46))
+                        .foregroundStyle(.red)
+                }
+
+                VStack(spacing: 6) {
+                    Text("Izin Resmi Apple Health")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.primary)
+
+                    Text("Ketuk tombol di bawah untuk menampilkan dialog izin sistem Apple Health.")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 36)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .shadow(color: Color.black.opacity(0.04), radius: 12, y: 4)
+
+            Spacer()
+
+            // Trigger Real Native Apple Health Permission Sheet
             Button {
                 Task {
                     isRequestingHealth = true
+                    // Switch role to parent and trigger real native HealthKit authorization dialog
                     await syncViewModel.switchRole(to: .parent)
                     isRequestingHealth = false
                     hasCompletedOnboarding = true
@@ -168,11 +207,11 @@ struct OnboardingView: View {
                     if isRequestingHealth {
                         ProgressView().tint(.white)
                     }
-                    Text("Hubungkan")
+                    Text("Hubungkan ke Apple Health")
                         .font(.system(size: 16, weight: .semibold))
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
+                .padding(.vertical, 15)
                 .background(Color.blue)
                 .foregroundStyle(.white)
                 .clipShape(Capsule())
@@ -180,8 +219,8 @@ struct OnboardingView: View {
             }
             .disabled(isRequestingHealth)
 
-            // Medical Disclaimer
-            Text("Data kamu tidak pernah meninggalkan perangkat ini. Arterious bukan pengganti saran medis profesional. Selalu konsultasikan dengan dokter.")
+            // Disclaimer
+            Text("Arterious mencerminkan tren kesehatan umum dan bukan pengganti diagnosis medis.")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary.opacity(0.8))
                 .multilineTextAlignment(.center)
@@ -189,79 +228,6 @@ struct OnboardingView: View {
                 .padding(.bottom, 16)
         }
         .padding(.horizontal, 24)
-    }
-
-    // MARK: - Health Mockup Graphic
-
-    private var healthPermissionMockupView: some View {
-        VStack(spacing: 12) {
-            // Heart Icon with Shadow
-            ZStack {
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white)
-                    .frame(width: 60, height: 60)
-                    .shadow(color: Color.black.opacity(0.08), radius: 8, y: 3)
-
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 30))
-                    .foregroundStyle(.red)
-            }
-            .padding(.top, 16)
-
-            Text("Health")
-                .font(.system(size: 14, weight: .semibold))
-                .foregroundStyle(.primary)
-
-            // Simulated "Turn On All" pill
-            RoundedRectangle(cornerRadius: 10)
-                .fill(Color(white: 0.92))
-                .frame(height: 32)
-                .overlay(
-                    HStack {
-                        Text("Turn On All")
-                            .font(.system(size: 11, weight: .medium))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 12)
-                )
-                .padding(.horizontal, 20)
-
-            // Simulated permission rows
-            VStack(spacing: 10) {
-                mockPermissionRow(title: "Heart Rate")
-                Divider()
-                mockPermissionRow(title: "HRV")
-                Divider()
-                mockPermissionRow(title: "Sleep")
-                Divider()
-                mockPermissionRow(title: "Activity")
-            }
-            .padding(.horizontal, 20)
-            .padding(.bottom, 16)
-        }
-        .background(Color(white: 0.98))
-        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                .stroke(Color.black.opacity(0.08), lineWidth: 1)
-        )
-        .shadow(color: Color.black.opacity(0.03), radius: 12, y: 4)
-    }
-
-    private func mockPermissionRow(title: String) -> some View {
-        HStack {
-            Text(title)
-                .font(.system(size: 12, weight: .regular))
-                .foregroundStyle(.secondary)
-            Spacer()
-            Text("Detail")
-                .font(.system(size: 11))
-                .foregroundStyle(.tertiary)
-            Image(systemName: "chevron.right")
-                .font(.system(size: 10))
-                .foregroundStyle(.tertiary)
-        }
     }
 }
 

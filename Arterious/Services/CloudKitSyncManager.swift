@@ -15,6 +15,8 @@ private enum CKField {
     static let inviteCode = "inviteCode"
     static let status = "status"
     static let childDeviceID = "childDeviceID"
+    static let senderRole = "senderRole"
+    static let senderName = "senderName"
     // ParentHealthSnapshot
     static let snapshotJSON = "snapshotJSON"
     static let parentName = "parentName"
@@ -38,6 +40,15 @@ private enum CKField {
 
 private let subscriptionID = "parent-health-updates"
 
+// MARK: - Invite Details Model
+
+struct InviteDetails {
+    let code: String
+    let status: String
+    let senderRole: String
+    let senderName: String
+}
+
 // MARK: - CloudKitSyncManager
 
 final class CloudKitSyncManager {
@@ -55,15 +66,17 @@ final class CloudKitSyncManager {
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    // MARK: - Child: Generate Invite Link
+    // MARK: - Generate Invite Link (Bidirectional)
 
     /// Creates a SharingInvite record in CloudKit and returns a deep link URL.
-    func generateInviteLink() async throws -> URL {
+    func generateInviteLink(senderRole: SyncRole = .child, senderName: String = "Keluarga") async throws -> URL {
         let code = generateCode()
         let record = CKRecord(recordType: CKRecordType.sharingInvite)
         record[CKField.inviteCode] = code
         record[CKField.status] = "pending"
         record[CKField.childDeviceID] = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
+        record[CKField.senderRole] = senderRole == .parent ? "parent" : "child"
+        record[CKField.senderName] = senderName
 
         _ = try await publicDB.save(record)
 
@@ -73,7 +86,18 @@ final class CloudKitSyncManager {
         return url
     }
 
-    // MARK: - Parent: Accept Invite
+    /// Fetches invite metadata to determine who invited whom
+    func fetchInviteDetails(code: String) async throws -> InviteDetails {
+        let record = try await fetchInviteRecord(code: code)
+        return InviteDetails(
+            code: code,
+            status: record[CKField.status] as? String ?? "pending",
+            senderRole: record[CKField.senderRole] as? String ?? "child",
+            senderName: record[CKField.senderName] as? String ?? "Keluarga"
+        )
+    }
+
+    // MARK: - Accept Invite
 
     /// Looks up a SharingInvite by code and marks it accepted.
     func acceptInvite(code: String) async throws {
@@ -159,18 +183,18 @@ final class CloudKitSyncManager {
             recordDate: record[CKField.recordDate] as? Date ?? Date(),
             parentName: record[CKField.parentName] as? String ?? "Parent",
             restingHeartRate: record[CKField.restingHeartRate] as? Double,
-            heartRateStatus: record[CKField.heartRateStatus] as? String ?? "Dalam rentang normal",
-            recentHeartRatePoints: hrPoints.isEmpty ? [70, 71, 72, 70, 72] : hrPoints,
+            heartRateStatus: record[CKField.heartRateStatus] as? String ?? "Belum ada data",
+            recentHeartRatePoints: hrPoints,
             sleepHours: record[CKField.sleepHours] as? Double,
-            sleepFormatted: record[CKField.sleepFormatted] as? String ?? "7j 0m",
-            sleepStatus: record[CKField.sleepStatus] as? String ?? "Kualitas tidur baik",
-            recentSleepPoints: sleepPoints.isEmpty ? [7.0, 7.2, 7.5, 7.6] : sleepPoints,
+            sleepFormatted: record[CKField.sleepFormatted] as? String ?? "-",
+            sleepStatus: record[CKField.sleepStatus] as? String ?? "Belum ada data",
+            recentSleepPoints: sleepPoints,
             stepCount: (record[CKField.stepCount] as? Int64).map(Int.init),
-            stepFormatted: record[CKField.stepFormatted] as? String ?? "0",
-            activityStatus: record[CKField.activityStatus] as? String ?? "Normal",
-            recentStepPoints: stepPoints.isEmpty ? [3500, 4000, 4200, 4280] : stepPoints,
-            summaryTitle: record[CKField.summaryTitle] as? String ?? "Kondisi stabil",
-            summaryBody: record[CKField.summaryBody] as? String ?? "Aktivitas dan pola istirahat berjalan normal.",
+            stepFormatted: record[CKField.stepFormatted] as? String ?? "-",
+            activityStatus: record[CKField.activityStatus] as? String ?? "Belum ada data",
+            recentStepPoints: stepPoints,
+            summaryTitle: record[CKField.summaryTitle] as? String ?? "Belum ada data hari ini",
+            summaryBody: record[CKField.summaryBody] as? String ?? "Data kesehatan belum tercatat di Apple Health hari ini.",
             updatedAt: record[CKField.updatedAt] as? Date ?? Date()
         )
     }

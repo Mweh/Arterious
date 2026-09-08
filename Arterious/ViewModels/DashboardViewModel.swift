@@ -5,7 +5,8 @@ import Observation
 @Observable
 @MainActor
 final class DashboardViewModel {
-    var parentName: String = "Mom"
+    var availableParents: [String] = ["Nama Ortu 1", "Nama Ortu 2"]
+    var selectedParentIndex: Int = 0
     var todaySummary: DailyHealthSummary = DailyHealthSummary.placeholder
     var historicalSummaries: [DailyHealthSummary] = []
     var cautionInsight: CautionInsight?
@@ -28,11 +29,16 @@ final class DashboardViewModel {
     }
 
     var displayedParentName: String {
-        if syncViewModel.syncState.role == .child,
-           syncViewModel.syncState.status == .accepted {
-            return syncViewModel.parentName
+        if syncViewModel.syncState.role == .child {
+            if let partner = syncViewModel.syncState.partnerName, !partner.isEmpty {
+                return partner
+            }
+            if selectedParentIndex < availableParents.count {
+                return availableParents[selectedParentIndex]
+            }
+            return "Nama Ortu 1"
         }
-        return parentName
+        return ""
     }
 
     var currentHealthRecord: HealthRecord? {

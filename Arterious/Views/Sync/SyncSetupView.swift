@@ -339,8 +339,8 @@ struct SyncSetupView: View {
 
 @MainActor
 enum ShareSheetHelper {
-    static func share(url: URL) {
-        let message = "Hubungkan data kesehatan kita di Arterious:\n\(url.absoluteString)"
+    static func share(url: URL, customMessage: String? = nil) {
+        let message = customMessage ?? "Hubungkan data kesehatan kita di Arterious:\n\(url.absoluteString)"
         let activityVC = UIActivityViewController(activityItems: [url, message], applicationActivities: nil)
 
         guard let windowScene = UIApplication.shared.connectedScenes.first(where: { $0.activationState == .foregroundActive }) as? UIWindowScene ?? UIApplication.shared.connectedScenes.first as? UIWindowScene,

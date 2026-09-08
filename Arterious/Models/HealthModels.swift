@@ -135,6 +135,10 @@ struct DailyHealthSummary: Identifiable {
     var activeEnergyKcalToday: Double?
     var standHoursToday: Int?
     
+    static var empty: DailyHealthSummary {
+        DailyHealthSummary(date: Date())
+    }
+
     static var placeholder: DailyHealthSummary {
         DailyHealthSummary(
             date: Date(),
@@ -256,43 +260,65 @@ struct HealthRecord: Codable, Identifiable {
         parentName: String,
         history: [DailyHealthSummary] = []
     ) -> HealthRecord {
-        let rhr = summary.restingHeartRate ?? 70
-        let rhrStatus = rhr < 60 ? "Sedikit rendah" : (rhr > 85 ? "Sedikit tinggi" : "Dalam rentang normal")
+        let rhr = summary.restingHeartRate
+        let rhrStatus: String
+        if let r = rhr {
+            rhrStatus = r < 60 ? "Sedikit rendah" : (r > 85 ? "Sedikit tinggi" : "Dalam rentang normal")
+        } else {
+            rhrStatus = "Belum ada data"
+        }
 
-        let sleep = summary.sleepHours ?? 7.0
-        let hours = Int(sleep)
-        let mins = Int((sleep - Double(hours)) * 60)
-        let sleepFormatted = "\(hours)j \(mins)m"
-        let sleepStatus = sleep >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih"
+        let sleep = summary.sleepHours
+        let sleepFormatted: String
+        let sleepStatus: String
+        if let s = sleep {
+            let hours = Int(s)
+            let mins = Int((s - Double(hours)) * 60)
+            sleepFormatted = "\(hours)j \(mins)m"
+            sleepStatus = s >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih"
+        } else {
+            sleepFormatted = "-"
+            sleepStatus = "Belum ada data"
+        }
 
-        let steps = Int(summary.stepCount ?? 4000)
-        let formatter = NumberFormatter()
-        formatter.numberStyle = .decimal
-        formatter.groupingSeparator = "."
-        let stepFormatted = formatter.string(from: NSNumber(value: steps)) ?? "\(steps)"
-        let actStatus = steps >= 4000 ? "Lebih baik dari biasanya" : "Cenderung santai hari ini"
+        let steps = summary.stepCount.map { Int($0) }
+        let stepFormatted: String
+        let actStatus: String
+        if let st = steps {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.groupingSeparator = "."
+            stepFormatted = formatter.string(from: NSNumber(value: st)) ?? "\(st)"
+            actStatus = st >= 4000 ? "Lebih baik dari biasanya" : "Cenderung santai hari ini"
+        } else {
+            stepFormatted = "-"
+            actStatus = "Belum ada data"
+        }
 
-        // Sparklines
-        var hrPoints: [Double] = history.compactMap(\.restingHeartRate).suffix(6)
+        // Sparklines: Real points only!
+        var hrPoints: [Double] = history.compactMap(\.restingHeartRate)
         if let r = summary.restingHeartRate { hrPoints.append(r) }
-        if hrPoints.count < 3 { hrPoints = [68, 70, 72, 71, 72] }
 
-        var sleepPoints: [Double] = history.compactMap(\.sleepHours).suffix(6)
+        var sleepPoints: [Double] = history.compactMap(\.sleepHours)
         if let s = summary.sleepHours { sleepPoints.append(s) }
-        if sleepPoints.count < 3 { sleepPoints = [7.0, 7.2, 7.5, 7.6] }
 
-        var stepPoints: [Double] = history.compactMap(\.stepCount).suffix(6)
+        var stepPoints: [Double] = history.compactMap(\.stepCount)
         if let st = summary.stepCount { stepPoints.append(st) }
-        if stepPoints.count < 3 { stepPoints = [3500, 4000, 4200, 4280] }
+
+        let hasAnyData = (rhr != nil) || (sleep != nil) || (steps != nil)
+        let sumTitle = hasAnyData ? "Kondisi cukup stabil" : "Belum ada data hari ini"
+        let sumBody = hasAnyData
+            ? "Pola aktivitas dan istirahat tercatat dari Apple Health."
+            : "Data kesehatan belum tercatat di Apple Health hari ini."
 
         return HealthRecord(
             inviteCode: inviteCode,
             recordDate: summary.date,
             parentName: parentName,
-            restingHeartRate: summary.restingHeartRate,
+            restingHeartRate: rhr,
             heartRateStatus: rhrStatus,
             recentHeartRatePoints: hrPoints,
-            sleepHours: summary.sleepHours,
+            sleepHours: sleep,
             sleepFormatted: sleepFormatted,
             sleepStatus: sleepStatus,
             recentSleepPoints: sleepPoints,
@@ -300,8 +326,8 @@ struct HealthRecord: Codable, Identifiable {
             stepFormatted: stepFormatted,
             activityStatus: actStatus,
             recentStepPoints: stepPoints,
-            summaryTitle: "Kondisi cukup stabil",
-            summaryBody: "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.",
+            summaryTitle: sumTitle,
+            summaryBody: sumBody,
             updatedAt: Date()
         )
     }

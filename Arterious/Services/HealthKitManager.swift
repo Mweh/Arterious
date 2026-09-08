@@ -34,7 +34,6 @@ final class HealthKitManager {
             }
         }
         
-        types.insert(HKSeriesType.heartbeat())
         return types
     }()
     
@@ -49,7 +48,7 @@ final class HealthKitManager {
     
     func fetchTodaySummary() async -> DailyHealthSummary {
         guard isHealthKitAvailable else {
-            return DailyHealthSummary.placeholder
+            return DailyHealthSummary.empty
         }
         
         async let heartAndHRV = fetchHeartAndHRVMetrics()
@@ -83,7 +82,7 @@ final class HealthKitManager {
     
     func fetchHistoricalSummaries(days: Int = 14) async -> [DailyHealthSummary] {
         guard isHealthKitAvailable else {
-            return generateMockHistory(days: days)
+            return []
         }
         
         let calendar = Calendar.current
@@ -96,8 +95,7 @@ final class HealthKitManager {
             summaries.append(summary)
         }
         
-        let hasAnyData = summaries.contains { $0.stepCount != nil || $0.restingHeartRate != nil }
-        return hasAnyData ? summaries : generateMockHistory(days: days)
+        return summaries
     }
     
     // MARK: - Private HealthKit Queries
@@ -455,21 +453,6 @@ final class HealthKitManager {
                 }
             }
             healthStore.execute(query)
-        }
-    }
-    
-    private func generateMockHistory(days: Int) -> [DailyHealthSummary] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        return (1...days).reversed().map { offset in
-            let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
-            return DailyHealthSummary(
-                date: date,
-                latestHeartRate: Double.random(in: 68...75),
-                restingHeartRate: Double.random(in: 60...66),
-                sleepHours: Double.random(in: 6.5...8.0),
-                stepCount: Double.random(in: 3500...6000)
-            )
         }
     }
 }

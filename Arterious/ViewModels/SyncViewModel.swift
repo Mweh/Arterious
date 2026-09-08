@@ -58,9 +58,9 @@ final class SyncViewModel {
         }
     }
 
-    // MARK: - Child: Request Share Link
+    // MARK: - Generate Share Link (Bidirectional)
 
-    /// Child taps "Share ke Ortu" → generates CloudKit invite → returns URL for immediate share sheet presentation.
+    /// Generates CloudKit invite link for the current role (Child or Parent) and returns URL for Share Sheet.
     @discardableResult
     func requestShareLink() async -> URL? {
         if let existing = inviteURL, syncState.status == .pending {
@@ -71,20 +71,25 @@ final class SyncViewModel {
         defer { isLoading = false }
 
         do {
-            let url = try await cloudKit.generateInviteLink()
+            let url = try await cloudKit.generateInviteLink(senderRole: syncState.role, senderName: UIDevice.current.name)
             inviteURL = url
 
             // Extract code from URL to save in state
             if let code = URLComponents(url: url, resolvingAgainstBaseURL: false)?
                 .queryItems?.first(where: { $0.name == "code" })?.value {
                 syncState = SyncState(
-                    role: .child,
+                    role: syncState.role,
                     inviteCode: code,
                     status: .pending,
                     partnerName: nil,
                     lastSyncDate: nil
                 )
                 persistState()
+
+                if syncState.role == .parent {
+                    // Parent pre-pushes snapshot so child gets data immediately upon tapping
+                    await pushParentHealthData(code: code)
+                }
                 startPollingForAcceptance(code: code)
             }
             return url
@@ -94,7 +99,7 @@ final class SyncViewModel {
         }
     }
 
-    // MARK: - Parent: Handle Deep Link
+    // MARK: - Handle Deep Link (Bidirectional)
 
     /// Called when the app is opened via arterious://invite?code=XXXX.
     func handleIncomingInvite(url: URL) async {
@@ -105,41 +110,46 @@ final class SyncViewModel {
             return
         }
 
-        // Set role to parent and start accept flow
-        syncState = SyncState(
-            role: .parent,
-            inviteCode: code,
-            status: .pending,
-            partnerName: nil,
-            lastSyncDate: nil
-        )
-        persistState()
-        await acceptAndStartPushing(code: code)
-    }
-
-    // MARK: - Parent: Accept & Start Pushing
-
-    private func acceptAndStartPushing(code: String) async {
         isLoading = true
         errorMessage = nil
+        defer { isLoading = false }
+
         do {
-            // 1. Prompt HealthKit authorization so parent device can read & share data
-            try? await healthKit.requestAuthorization()
+            let details = try await cloudKit.fetchInviteDetails(code: code)
+            if details.senderRole == "parent" {
+                // Sender is Parent -> Receiver is Child (Pemantau)
+                syncState = SyncState(
+                    role: .child,
+                    inviteCode: code,
+                    status: .accepted,
+                    partnerName: details.senderName,
+                    lastSyncDate: nil
+                )
+                self.parentName = details.senderName
+                persistState()
 
-            // 2. Accept invite in CloudKit
-            try await cloudKit.acceptInvite(code: code)
-            syncState.status = .accepted
-            persistState()
+                try await cloudKit.acceptInvite(code: code)
+                await subscribeAndFetch(code: code)
+            } else {
+                // Sender is Child -> Receiver is Parent (Pemberi Data)
+                syncState = SyncState(
+                    role: .parent,
+                    inviteCode: code,
+                    status: .accepted,
+                    partnerName: details.senderName,
+                    lastSyncDate: nil
+                )
+                persistState()
 
-            // 3. Immediately push the parent's health snapshot so child gets it right away!
-            await pushParentHealthData(code: code)
-
-            // 4. Start periodic background push loop (every 60s)
-            startParentPushLoop(code: code)
+                // Prompt Apple Health access for parent
+                try? await healthKit.requestAuthorization()
+                try await cloudKit.acceptInvite(code: code)
+                await pushParentHealthData(code: code)
+                startParentPushLoop(code: code)
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
-        isLoading = false
     }
 
     // MARK: - Parent: Periodic Push Loop (every 60 seconds)
@@ -176,7 +186,19 @@ final class SyncViewModel {
         }
     }
 
-    // MARK: - Child: Poll Until Parent Accepts
+    // MARK: - Poll Until Partner Accepts
+
+    @MainActor
+    private func handleInviteAccepted(code: String) async {
+        syncState.status = .accepted
+        persistState()
+        if syncState.role == .child {
+            await subscribeAndFetch(code: code)
+        } else {
+            await pushParentHealthData(code: code)
+            startParentPushLoop(code: code)
+        }
+    }
 
     private func startPollingForAcceptance(code: String) {
         pollTask?.cancel()
@@ -184,9 +206,7 @@ final class SyncViewModel {
             // 1. Check immediately
             if let status = try? await cloudKit.checkInviteStatus(code: code),
                status == "accepted" {
-                syncState.status = .accepted
-                persistState()
-                await subscribeAndFetch(code: code)
+                await handleInviteAccepted(code: code)
                 return
             }
 
@@ -196,9 +216,7 @@ final class SyncViewModel {
                 guard !Task.isCancelled else { return }
                 if let status = try? await cloudKit.checkInviteStatus(code: code),
                    status == "accepted" {
-                    syncState.status = .accepted
-                    persistState()
-                    await subscribeAndFetch(code: code)
+                    await handleInviteAccepted(code: code)
                     return
                 }
             }
@@ -209,9 +227,7 @@ final class SyncViewModel {
                 guard !Task.isCancelled else { return }
                 if let status = try? await cloudKit.checkInviteStatus(code: code),
                    status == "accepted" {
-                    syncState.status = .accepted
-                    persistState()
-                    await subscribeAndFetch(code: code)
+                    await handleInviteAccepted(code: code)
                     return
                 }
             }

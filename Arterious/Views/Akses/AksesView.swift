@@ -6,6 +6,21 @@ struct AksesView: View {
     @State private var showDetailSheet: Bool = false
     @State private var isEditing: Bool = false
 
+    private var isParent: Bool {
+        syncViewModel.syncState.role == .parent
+    }
+
+    private var partnerDisplayName: String {
+        if let partner = syncViewModel.syncState.partnerName, !partner.isEmpty {
+            return partner
+        }
+        return isParent ? "Anak" : syncViewModel.parentName
+    }
+
+    private var partnerRoleSubtitle: String {
+        isParent ? "Anak (Pemantau)" : "Orang Tua"
+    }
+
     var body: some View {
         NavigationStack {
             ZStack {
@@ -14,19 +29,10 @@ struct AksesView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        // White card containing list of parents
+                        // White card containing list of connected access
                         VStack(spacing: 0) {
                             if syncViewModel.syncState.status == .accepted {
-                                // Paired Parent 1
-                                parentRow(name: syncViewModel.parentName) {
-                                    showDetailSheet = true
-                                }
-
-                                Divider()
-                                    .padding(.leading, 56)
-
-                                // Example Parent 2 (Secondary profile or addable)
-                                parentRow(name: "Nama Ortu 2") {
+                                partnerRow(name: partnerDisplayName, roleSubtitle: partnerRoleSubtitle) {
                                     showDetailSheet = true
                                 }
                             } else {
@@ -42,9 +48,12 @@ struct AksesView: View {
                                                 .font(.system(size: 15, weight: .semibold))
                                                 .foregroundStyle(.primary)
 
-                                            Text("Tap tombol + di atas atau di bawah untuk mengundang orang tua.")
+                                            Text(isParent
+                                                 ? "Hubungkan ke anak kamu untuk mulai membagikan data kesehatan secara aman."
+                                                 : "Hubungkan ke orang tua kamu untuk memantau tren kesehatan dari jauh.")
                                                 .font(.system(size: 12))
                                                 .foregroundStyle(.secondary)
+                                                .fixedSize(horizontal: false, vertical: true)
                                         }
                                         Spacer()
                                     }
@@ -59,7 +68,7 @@ struct AksesView: View {
                                                 Image(systemName: "plus")
                                                     .font(.system(size: 13, weight: .bold))
                                             }
-                                            Text("Undang Orang Tua")
+                                            Text(isParent ? "Hubungkan ke Anak" : "Hubungkan ke Orang Tua")
                                                 .font(.system(size: 14, weight: .semibold))
                                         }
                                         .frame(maxWidth: .infinity)
@@ -88,60 +97,68 @@ struct AksesView: View {
             .navigationTitle("Akses")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    // Circular '+' Button
-                    Button {
-                        triggerShare()
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 38, height: 38)
-                                .shadow(color: Color.black.opacity(0.06), radius: 6, y: 2)
+                if syncViewModel.syncState.status == .accepted {
+                    ToolbarItemGroup(placement: .topBarTrailing) {
+                        // Circular '+' Button to Invite
+                        Button {
+                            triggerShare()
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 38, height: 38)
+                                    .shadow(color: Color.black.opacity(0.06), radius: 6, y: 2)
 
-                            Image(systemName: "plus")
-                                .font(.system(size: 16, weight: .semibold))
-                                .foregroundStyle(.primary)
+                                Image(systemName: "plus")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundStyle(.primary)
+                            }
                         }
-                    }
 
-                    // Circular 'Edit' (Pencil) Button
-                    Button {
-                        withAnimation {
-                            isEditing.toggle()
-                        }
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.white)
-                                .frame(width: 38, height: 38)
-                                .shadow(color: Color.black.opacity(0.06), radius: 6, y: 2)
+                        // Circular 'Edit' (Pencil) Button
+                        Button {
+                            withAnimation {
+                                isEditing.toggle()
+                            }
+                        } label: {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.white)
+                                    .frame(width: 38, height: 38)
+                                    .shadow(color: Color.black.opacity(0.06), radius: 6, y: 2)
 
-                            Image(systemName: "pencil")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundStyle(isEditing ? Color.blue : Color.primary)
+                                Image(systemName: "pencil")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundStyle(isEditing ? Color.blue : Color.primary)
+                            }
                         }
                     }
                 }
             }
             .sheet(isPresented: $showDetailSheet) {
-                parentDetailSheet
+                partnerDetailSheet
             }
         }
     }
 
-    // MARK: - Parent Row Component (Screenshot 1)
+    // MARK: - Partner Row Component
 
-    private func parentRow(name: String, action: @escaping () -> Void) -> some View {
+    private func partnerRow(name: String, roleSubtitle: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             HStack(spacing: 14) {
                 Image(systemName: "person.crop.circle")
-                    .font(.system(size: 26))
+                    .font(.system(size: 28))
                     .foregroundStyle(.primary)
 
-                Text(name)
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(.primary)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(name)
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(.primary)
+
+                    Text(roleSubtitle)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
 
                 Spacer()
 
@@ -167,7 +184,7 @@ struct AksesView: View {
 
     // MARK: - Detail / Manage Sheet
 
-    private var parentDetailSheet: some View {
+    private var partnerDetailSheet: some View {
         NavigationStack {
             VStack(spacing: 24) {
                 VStack(spacing: 12) {
@@ -175,7 +192,7 @@ struct AksesView: View {
                         .font(.system(size: 64))
                         .foregroundStyle(.blue.gradient)
 
-                    Text(syncViewModel.parentName)
+                    Text(partnerDisplayName)
                         .font(.title2.bold())
 
                     HStack(spacing: 6) {
@@ -200,10 +217,10 @@ struct AksesView: View {
                     .clipShape(RoundedRectangle(cornerRadius: 14))
 
                     HStack {
-                        Text("Peran")
+                        Text("Peran Kamu")
                             .foregroundStyle(.secondary)
                         Spacer()
-                        Text(syncViewModel.syncState.role == .child ? "Anak (Pemantau)" : "Orang Tua")
+                        Text(isParent ? "Orang Tua (Pemberi Data)" : "Anak (Pemantau)")
                             .font(.subheadline.bold())
                     }
                     .padding()
@@ -246,7 +263,10 @@ struct AksesView: View {
         Task {
             isSharing = true
             if let url = await syncViewModel.requestShareLink() {
-                ShareSheetHelper.share(url: url)
+                let msg = isParent
+                    ? "Halo! Ini link untuk memantau data kesehatanku di Arterious:\n\(url.absoluteString)"
+                    : "Halo! Ayo hubungkan data kesehatan kamu di Arterious agar aku bisa memantau kondisimu:\n\(url.absoluteString)"
+                ShareSheetHelper.share(url: url, customMessage: msg)
             }
             isSharing = false
         }

@@ -36,7 +36,7 @@ struct MetricRowCardView: View {
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(.primary)
 
-                    if let unit {
+                    if let unit, value != "-" {
                         Text(unit)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(.secondary)
@@ -63,14 +63,21 @@ struct MetricRowCardView: View {
                 }
 
                 // Mini Bar Chart / Sparkline
-                HStack(alignment: .bottom, spacing: 3) {
-                    ForEach(Array(barHeights.enumerated()), id: \.offset) { index, heightRatio in
-                        Capsule()
-                            .fill(barColor.opacity(index == barHeights.count - 1 ? 0.9 : 0.45 + Double(index) * 0.1))
-                            .frame(width: 4, height: max(6, heightRatio * 22))
+                if barHeights.isEmpty {
+                    Text("-")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.tertiary)
+                        .frame(height: 24, alignment: .bottom)
+                } else {
+                    HStack(alignment: .bottom, spacing: 3) {
+                        ForEach(Array(barHeights.enumerated()), id: \.offset) { index, heightRatio in
+                            Capsule()
+                                .fill(barColor.opacity(index == barHeights.count - 1 ? 0.9 : 0.45 + Double(index) * 0.1))
+                                .frame(width: 4, height: max(6, heightRatio * 22))
+                        }
                     }
+                    .frame(height: 24, alignment: .bottom)
                 }
-                .frame(height: 24, alignment: .bottom)
             }
         }
         .padding(18)

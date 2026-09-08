@@ -3,6 +3,7 @@ import SwiftUI
 struct DashboardView: View {
 
     @Bindable var viewModel: DashboardViewModel
+    @State private var showParentSelectSheet: Bool = false
 
     @MainActor
     init(viewModel: DashboardViewModel) {
@@ -59,6 +60,9 @@ struct DashboardView: View {
             .task {
                 await viewModel.loadDashboardData()
             }
+            .sheet(isPresented: $showParentSelectSheet) {
+                parentSelectSheet
+            }
         }
     }
 
@@ -67,17 +71,24 @@ struct DashboardView: View {
     @ViewBuilder
     private var pairedContentView: some View {
         VStack(alignment: .leading, spacing: 18) {
-            // Parent Name Dropdown Header
-            HStack(spacing: 6) {
-                Text(viewModel.displayedParentName)
-                    .font(.system(size: 18, weight: .bold))
-                    .foregroundStyle(.primary)
+            // ONLY show Parent Name Dropdown Header in Child's POV! (Never in Parent's POV)
+            if viewModel.syncViewModel.syncState.role == .child {
+                Button {
+                    showParentSelectSheet = true
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(viewModel.displayedParentName)
+                            .font(.system(size: 18, weight: .bold))
+                            .foregroundStyle(.primary)
 
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.secondary)
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .buttonStyle(.plain)
+                .padding(.top, 4)
             }
-            .padding(.top, 4)
 
             // Today Summary Card (Light blue gradient/tint card)
             VStack(alignment: .leading, spacing: 8) {
@@ -162,12 +173,29 @@ struct DashboardView: View {
 
     // MARK: - Formatters & Dynamic Data
 
+    private var hasAnyRealData: Bool {
+        viewModel.displayedSummary.restingHeartRate != nil ||
+        viewModel.displayedSummary.sleepHours != nil ||
+        viewModel.displayedSummary.stepCount != nil ||
+        viewModel.currentHealthRecord?.restingHeartRate != nil ||
+        viewModel.currentHealthRecord?.sleepHours != nil ||
+        viewModel.currentHealthRecord?.stepCount != nil
+    }
+
     private var summaryTitle: String {
-        viewModel.currentHealthRecord?.summaryTitle ?? "Kondisi cukup stabil"
+        if let title = viewModel.currentHealthRecord?.summaryTitle {
+            return title
+        }
+        return hasAnyRealData ? "Kondisi cukup stabil" : "Belum ada data hari ini"
     }
 
     private var summaryBody: String {
-        viewModel.currentHealthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
+        if let body = viewModel.currentHealthRecord?.summaryBody {
+            return body
+        }
+        return hasAnyRealData
+            ? "Pola tidur dan aktivitas tercatat dari Apple Health."
+            : "Data kesehatan belum tercatat di Apple Health hari ini."
     }
 
     private var currentDateText: String {
@@ -184,11 +212,17 @@ struct DashboardView: View {
         if let rhr = viewModel.displayedSummary.restingHeartRate {
             return "\(Int(rhr))"
         }
-        return "72"
+        return "-"
     }
 
     private var heartRateStatusText: String {
-        viewModel.currentHealthRecord?.heartRateStatus ?? "Dalam rentang normal"
+        if let status = viewModel.currentHealthRecord?.heartRateStatus {
+            return status
+        }
+        if let rhr = viewModel.displayedSummary.restingHeartRate {
+            return rhr < 60 ? "Sedikit rendah" : (rhr > 85 ? "Sedikit tinggi" : "Dalam rentang normal")
+        }
+        return "Belum ada data"
     }
 
     private var heartRateBarHeights: [CGFloat] {
@@ -196,11 +230,16 @@ struct DashboardView: View {
             let maxVal = points.max() ?? 100
             return points.suffix(6).map { CGFloat($0 / maxVal) }
         }
-        return [0.4, 0.6, 0.5, 0.8, 0.7, 0.9]
+        let historyPoints = viewModel.historicalSummaries.compactMap(\.restingHeartRate)
+        if !historyPoints.isEmpty {
+            let maxVal = historyPoints.max() ?? 100
+            return historyPoints.suffix(6).map { CGFloat($0 / maxVal) }
+        }
+        return []
     }
 
     private var sleepValue: String {
-        if let f = viewModel.currentHealthRecord?.sleepFormatted {
+        if let f = viewModel.currentHealthRecord?.sleepFormatted, f != "-" {
             return f
         }
         if let hours = viewModel.displayedSummary.sleepHours {
@@ -208,11 +247,17 @@ struct DashboardView: View {
             let m = Int((hours - Double(h)) * 60)
             return "\(h)j \(m)m"
         }
-        return "7j 40m"
+        return "-"
     }
 
     private var sleepStatusText: String {
-        viewModel.currentHealthRecord?.sleepStatus ?? "Kualitas tidur baik"
+        if let status = viewModel.currentHealthRecord?.sleepStatus {
+            return status
+        }
+        if let hours = viewModel.displayedSummary.sleepHours {
+            return hours >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih"
+        }
+        return "Belum ada data"
     }
 
     private var sleepBarHeights: [CGFloat] {
@@ -220,11 +265,16 @@ struct DashboardView: View {
             let maxVal = points.max() ?? 10
             return points.suffix(6).map { CGFloat($0 / maxVal) }
         }
-        return [0.5, 0.7, 0.6, 0.85, 0.9]
+        let historyPoints = viewModel.historicalSummaries.compactMap(\.sleepHours)
+        if !historyPoints.isEmpty {
+            let maxVal = historyPoints.max() ?? 10
+            return historyPoints.suffix(6).map { CGFloat($0 / maxVal) }
+        }
+        return []
     }
 
     private var stepsValue: String {
-        if let s = viewModel.currentHealthRecord?.stepFormatted {
+        if let s = viewModel.currentHealthRecord?.stepFormatted, s != "-" {
             return s
         }
         if let st = viewModel.displayedSummary.stepCount {
@@ -233,11 +283,17 @@ struct DashboardView: View {
             formatter.groupingSeparator = "."
             return formatter.string(from: NSNumber(value: Int(st))) ?? "\(Int(st))"
         }
-        return "4.280"
+        return "-"
     }
 
     private var activityStatusText: String {
-        viewModel.currentHealthRecord?.activityStatus ?? "Lebih baik dari biasanya"
+        if let status = viewModel.currentHealthRecord?.activityStatus {
+            return status
+        }
+        if let st = viewModel.displayedSummary.stepCount {
+            return st >= 4000 ? "Lebih baik dari biasanya" : "Cenderung santai hari ini"
+        }
+        return "Belum ada data"
     }
 
     private var stepsBarHeights: [CGFloat] {
@@ -245,7 +301,56 @@ struct DashboardView: View {
             let maxVal = points.max() ?? 10000
             return points.suffix(6).map { CGFloat($0 / maxVal) }
         }
-        return [0.3, 0.5, 0.7, 0.85, 0.95]
+        let historyPoints = viewModel.historicalSummaries.compactMap(\.stepCount)
+        if !historyPoints.isEmpty {
+            let maxVal = historyPoints.max() ?? 10000
+            return historyPoints.suffix(6).map { CGFloat($0 / maxVal) }
+        }
+        return []
+    }
+
+    // MARK: - Parent Account Selection Sheet (Screenshot)
+
+    private var parentSelectSheet: some View {
+        VStack(spacing: 20) {
+            Text("Orang Tua")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(.primary)
+                .padding(.top, 16)
+
+            VStack(spacing: 0) {
+                ForEach(0..<viewModel.availableParents.count, id: \.self) { index in
+                    let name = viewModel.availableParents[index]
+                    let isSelected = viewModel.selectedParentIndex == index
+
+                    Button {
+                        viewModel.selectedParentIndex = index
+                        showParentSelectSheet = false
+                    } label: {
+                        HStack(spacing: 16) {
+                            Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+                                .font(.system(size: 22))
+                                .foregroundStyle(isSelected ? Color.blue : Color.secondary.opacity(0.35))
+
+                            Text(name)
+                                .font(.system(size: 16, weight: .regular))
+                                .foregroundStyle(.primary)
+
+                            Spacer()
+                        }
+                        .padding(.vertical, 14)
+                    }
+                    .buttonStyle(.plain)
+
+                    Divider()
+                }
+            }
+            .padding(.horizontal, 24)
+
+            Spacer()
+        }
+        .presentationDetents([.fraction(0.32), .medium])
+        .presentationDragIndicator(.visible)
     }
 }
 

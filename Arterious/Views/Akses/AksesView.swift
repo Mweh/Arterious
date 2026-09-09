@@ -1,13 +1,15 @@
 import SwiftUI
+import CloudKit
 
+/// View tab Akses yang mengelola perizinan dan koneksi data kesehatan (Native Apple CKShare: One-Way Read-Only).
+/// Bawaan resmi Apple seperti Health Sharing & Notes: tanpa kode, menggunakan UICloudSharingController.
 struct AksesView: View {
     @Bindable var syncViewModel: SyncViewModel
     @State private var isSharing: Bool = false
     @State private var showDetailSheet: Bool = false
+    @State private var showCloudShareSheet: Bool = false
     @State private var isEditing: Bool = false
-    @State private var showEnterCodeAlert: Bool = false
-    @State private var inputCode: String = ""
-    @State private var copiedToClipboard: Bool = false
+    @State private var shareText: String? = nil
     @State private var showErrorAlert: Bool = false
 
     private var isParent: Bool {
@@ -33,26 +35,7 @@ struct AksesView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
-                        // White card containing list of connected access
-                        VStack(spacing: 0) {
-                            switch syncViewModel.syncState.status {
-                            case .accepted:
-                                partnerRow(name: partnerDisplayName, roleSubtitle: partnerRoleSubtitle) {
-                                    showDetailSheet = true
-                                }
-                            case .pending:
-                                pendingStateCard
-                            case .none:
-                                notPairedStateCard
-                            }
-                        }
-                        .background(Color.white)
-                        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-                        .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: 3)
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 24, style: .continuous)
-                                .stroke(Color.black.opacity(0.03), lineWidth: 1)
-                        )
+                        accessContentCard
                     }
                     .padding(.horizontal, 20)
                     .padding(.top, 16)
@@ -63,19 +46,21 @@ struct AksesView: View {
             .toolbar {
                 if syncViewModel.syncState.status == .accepted {
                     ToolbarItemGroup(placement: .topBarTrailing) {
-                        // Circular '+' Button to Invite
-                        Button {
-                            triggerShare()
-                        } label: {
-                            ZStack {
-                                Circle()
-                                    .fill(Color.white)
-                                    .frame(width: 38, height: 38)
-                                    .shadow(color: Color.black.opacity(0.06), radius: 6, y: 2)
+                        // Native Share Button for Parent
+                        if isParent {
+                            Button {
+                                triggerNativeShare()
+                            } label: {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.white)
+                                        .frame(width: 38, height: 38)
+                                        .shadow(color: Color.black.opacity(0.06), radius: 6, y: 2)
 
-                                Image(systemName: "plus")
-                                    .font(.system(size: 16, weight: .semibold))
-                                    .foregroundStyle(.primary)
+                                    Image(systemName: "square.and.arrow.up")
+                                        .font(.system(size: 15, weight: .semibold))
+                                        .foregroundStyle(.primary)
+                                }
                             }
                         }
 
@@ -99,35 +84,40 @@ struct AksesView: View {
                     }
                 }
             }
+            // Detail Sheet
             .sheet(isPresented: $showDetailSheet) {
                 partnerDetailSheet
             }
-            .alert("Masukkan Kode Undangan", isPresented: $showEnterCodeAlert) {
-                TextField("Contoh: AJ7YZ5B5", text: $inputCode)
-                    .textInputAutocapitalization(.characters)
-                Button("Hubungkan") {
-                    let clean = inputCode.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-                    guard !clean.isEmpty, let url = URL(string: "arterious://invite?code=\(clean)") else { return }
-                    Task {
-                        await syncViewModel.handleIncomingInvite(url: url)
-                        inputCode = ""
-                        if syncViewModel.errorMessage != nil {
-                            showErrorAlert = true
+            // Native Apple UICloudSharingController Sheet
+            .sheet(isPresented: $showCloudShareSheet) {
+                if let share = syncViewModel.nativeShare {
+                    CloudSharingView(
+                        share: share,
+                        container: syncViewModel.cloudKitContainer,
+                        onDismiss: { showCloudShareSheet = false },
+                        onStoppedSharing: {
+                            Task { await syncViewModel.disconnect() }
                         }
-                    }
+                    )
+                    .ignoresSafeArea()
                 }
-                Button("Batal", role: .cancel) {
-                    inputCode = ""
-                }
-            } message: {
-                Text("Masukkan 8 digit kode undangan dari HP keluarga kamu.")
             }
-            .alert("Peringatan Gagal", isPresented: $showErrorAlert) {
+            // Text Share Sheet (for child reminder message)
+            .sheet(isPresented: Binding(
+                get: { shareText != nil },
+                set: { if !$0 { shareText = nil } }
+            )) {
+                if let shareText {
+                    ActivityViewController(items: [shareText])
+                        .presentationDetents([.medium, .large])
+                }
+            }
+            .alert("Peringatan Sinkronisasi", isPresented: $showErrorAlert) {
                 Button("OK", role: .cancel) {
                     syncViewModel.errorMessage = nil
                 }
             } message: {
-                Text(syncViewModel.errorMessage ?? "Terjadi kesalahan saat menghubungkan.")
+                Text(syncViewModel.errorMessage ?? "Gagal terhubung ke iCloud. Pastikan kamu sudah login ke iCloud di Settings iPhone.")
             }
             .onChange(of: syncViewModel.errorMessage) { _, newMsg in
                 if newMsg != nil {
@@ -137,59 +127,98 @@ struct AksesView: View {
         }
     }
 
+    // MARK: - Access Content Card
+
+    @ViewBuilder
+    private var accessContentCard: some View {
+        VStack(spacing: 0) {
+            switch syncViewModel.syncState.status {
+            case .accepted:
+                partnerRow(name: partnerDisplayName, roleSubtitle: partnerRoleSubtitle) {
+                    showDetailSheet = true
+                }
+            case .pending:
+                pendingStateCard
+            case .none:
+                notPairedStateCard
+            }
+        }
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+        .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: 3)
+        .overlay(
+            RoundedRectangle(cornerRadius: 24, style: .continuous)
+                .stroke(Color.black.opacity(0.03), lineWidth: 1)
+        )
+    }
+
     // MARK: - Not Paired State Card (.none)
 
     private var notPairedStateCard: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 18) {
             HStack(spacing: 14) {
-                Image(systemName: "person.crop.circle.badge.plus")
-                    .font(.system(size: 28))
-                    .foregroundStyle(.blue)
+                Image(systemName: isParent ? "heart.text.square.fill" : "person.crop.circle.badge.plus")
+                    .font(.system(size: 32))
+                    .foregroundStyle(isParent ? .red : .blue)
 
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("Belum ada akses terhubung")
-                        .font(.system(size: 15, weight: .semibold))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(isParent ? "Bagikan Data ke Anak" : "Menunggu Akses Orang Tua")
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundStyle(.primary)
 
                     Text(isParent
-                         ? "Hubungkan ke anak kamu untuk mulai membagikan data kesehatan secara aman."
-                         : "Hubungkan ke orang tua kamu untuk memantau tren kesehatan dari jauh.")
+                         ? "Bagikan data detak jantung, tidur, dan aktivitas harian kamu agar anak dapat memantau kesehatan kamu secara aman."
+                         : "Seperti Apple Health, orang tua kamu perlu membagikan data kesehatannya terlebih dahulu dari aplikasi Arterious di iPhone mereka.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                        .lineSpacing(2)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer()
             }
 
-            Button {
-                triggerShare()
-            } label: {
-                HStack(spacing: 6) {
-                    if isSharing || syncViewModel.isLoading {
-                        ProgressView().tint(.white)
-                    } else {
-                        Image(systemName: "plus")
-                            .font(.system(size: 13, weight: .bold))
+            if isParent {
+                // Orang Tua: Tombol utama memicu Apple native CloudKit Sharing
+                Button {
+                    triggerNativeShare()
+                } label: {
+                    HStack(spacing: 8) {
+                        if isSharing || syncViewModel.isLoading {
+                            ProgressView().tint(.white)
+                        } else {
+                            Image(systemName: "square.and.arrow.up")
+                                .font(.system(size: 14, weight: .bold))
+                        }
+                        Text("Bagikan Data ke Anak")
+                            .font(.system(size: 15, weight: .semibold))
                     }
-                    Text(isParent ? "Hubungkan ke Anak" : "Hubungkan ke Orang Tua")
-                        .font(.system(size: 14, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Color.blue)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.blue.opacity(0.25), radius: 8, y: 4)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 11)
-                .background(Color.blue)
-                .foregroundStyle(.white)
-                .clipShape(Capsule())
+                .disabled(isSharing || syncViewModel.isLoading)
+            } else {
+                // Anak: Tombol mengirim pengingat ke Orang Tua
+                Button {
+                    triggerChildReminder()
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "paperplane.fill")
+                            .font(.system(size: 13, weight: .bold))
+                        Text("Kirim Pesan ke Orang Tua")
+                            .font(.system(size: 15, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 13)
+                    .background(Color.blue)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
+                    .shadow(color: Color.blue.opacity(0.25), radius: 8, y: 4)
+                }
             }
-            .disabled(isSharing || syncViewModel.isLoading)
-
-            Button {
-                showEnterCodeAlert = true
-            } label: {
-                Text("Punya kode undangan? Masukkan Kode")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(.blue)
-            }
-            .padding(.top, 2)
         }
         .padding(20)
     }
@@ -201,94 +230,47 @@ struct AksesView: View {
             HStack(spacing: 12) {
                 ProgressView()
                     .scaleEffect(0.9)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Menunggu Koneksi…")
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(isParent ? "Undangan Aktif" : "Menunggu Konfirmasi")
                         .font(.system(size: 15, weight: .semibold))
                         .foregroundStyle(.primary)
-                    
-                    Text("Minta lawan memasukkan kode ini atau klik link undangan.")
+
+                    Text(isParent
+                         ? "Menunggu anak membuka tautan iCloud di iPhone mereka untuk mulai memantau."
+                         : "Menunggu orang tua menyetujui pemantauan data kesehatan.")
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
+                        .lineSpacing(2)
                 }
                 Spacer()
             }
 
-            if let code = syncViewModel.syncState.inviteCode {
-                VStack(spacing: 8) {
-                    Text("KODE UNDANGAN KAMU")
-                        .font(.system(size: 10, weight: .bold))
-                        .foregroundStyle(.secondary)
-                    
-                    Text(code)
-                        .font(.system(size: 26, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.blue)
-                        .tracking(3)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(Color.blue.opacity(0.06))
-                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 14, style: .continuous)
-                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
-                )
-
-                HStack(spacing: 10) {
-                    // Copy Code Button
-                    Button {
-                        UIPasteboard.general.string = code
-                        copiedToClipboard = true
-                        Task {
-                            try? await Task.sleep(for: .seconds(2))
-                            copiedToClipboard = false
-                        }
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: copiedToClipboard ? "checkmark" : "doc.on.doc")
-                            Text(copiedToClipboard ? "Tersalin!" : "Salin Kode")
-                        }
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(copiedToClipboard ? Color.green.opacity(0.12) : Color.black.opacity(0.05))
-                        .foregroundStyle(copiedToClipboard ? Color.green : Color.primary)
-                        .clipShape(Capsule())
+            if isParent {
+                Button {
+                    triggerNativeShare()
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "square.and.arrow.up")
+                        Text("Kelola / Bagikan Ulang Undangan")
                     }
-
-                    // Share Link Button
-                    Button {
-                        triggerShare()
-                    } label: {
-                        HStack(spacing: 6) {
-                            Image(systemName: "square.and.arrow.up")
-                            Text("Bagikan Link")
-                        }
-                        .font(.system(size: 13, weight: .semibold))
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .background(Color.blue)
-                        .foregroundStyle(.white)
-                        .clipShape(Capsule())
-                    }
+                    .font(.system(size: 13, weight: .semibold))
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 11)
+                    .background(Color.blue)
+                    .foregroundStyle(.white)
+                    .clipShape(Capsule())
                 }
             }
 
             Divider().padding(.vertical, 2)
 
             HStack {
-                Button {
-                    showEnterCodeAlert = true
-                } label: {
-                    Text("Lawan sudah punya kode? Masukkan Kode")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(.blue)
-                }
                 Spacer()
                 Button {
                     Task { await syncViewModel.disconnect() }
                 } label: {
-                    Text("Batal")
+                    Text("Batalkan Undangan")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.red)
                 }
@@ -353,7 +335,7 @@ struct AksesView: View {
 
                     HStack(spacing: 6) {
                         Circle().fill(Color.green).frame(width: 8, height: 8)
-                        Text("Terhubung via iCloud")
+                        Text("Terhubung via iCloud Sharing")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -382,10 +364,41 @@ struct AksesView: View {
                     .padding()
                     .background(Color(white: 0.96))
                     .clipShape(RoundedRectangle(cornerRadius: 14))
+
+                    HStack {
+                        Text("Izin Akses")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("Hanya Lihat (Read-Only)")
+                            .font(.subheadline.bold())
+                            .foregroundStyle(.blue)
+                    }
+                    .padding()
+                    .background(Color(white: 0.96))
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
                 }
                 .padding(.horizontal, 24)
 
                 Spacer()
+
+                if isParent && syncViewModel.nativeShare != nil {
+                    Button {
+                        showDetailSheet = false
+                        showCloudShareSheet = true
+                    } label: {
+                        HStack(spacing: 8) {
+                            Image(systemName: "person.crop.circle.badge.plus")
+                            Text("Kelola Peserta Berbagi")
+                        }
+                        .font(.headline)
+                        .frame(maxWidth: .infinity)
+                        .padding()
+                        .background(Color.blue)
+                        .foregroundStyle(.white)
+                        .clipShape(RoundedRectangle(cornerRadius: 14))
+                    }
+                    .padding(.horizontal, 24)
+                }
 
                 Button(role: .destructive) {
                     Task {
@@ -415,23 +428,25 @@ struct AksesView: View {
         .presentationDetents([.medium])
     }
 
-    private func triggerShare() {
+    // MARK: - Actions
+
+    private func triggerNativeShare() {
         Task {
             isSharing = true
-            if let url = await syncViewModel.requestShareLink() {
-                let msg = isParent
-                    ? "Halo! Ini link untuk memantau data kesehatanku di Arterious:\n\(url.absoluteString)"
-                    : "Halo! Ayo hubungkan data kesehatan kamu di Arterious agar aku bisa memantau kondisimu:\n\(url.absoluteString)"
-                ShareSheetHelper.share(url: url, customMessage: msg)
+            defer { isSharing = false }
+            if let _ = await syncViewModel.requestNativeShare() {
+                showCloudShareSheet = true
             } else if syncViewModel.errorMessage != nil {
                 showErrorAlert = true
             }
-            isSharing = false
         }
+    }
+
+    private func triggerChildReminder() {
+        shareText = "Halo Pa/Ma, tolong buka aplikasi Arterious di iPhone dan ketuk 'Bagikan Data ke Anak' di tab Akses agar aku bisa memantau kesehatan Papa/Mama ya!"
     }
 }
 
 #Preview {
     AksesView(syncViewModel: SyncViewModel())
 }
-

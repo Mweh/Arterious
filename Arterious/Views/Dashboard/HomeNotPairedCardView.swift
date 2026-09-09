@@ -77,7 +77,7 @@ struct HomeNotPairedCardView: View {
                     .padding(.horizontal, 16)
             }
 
-            if syncViewModel.syncState.status == .pending, let code = syncViewModel.syncState.inviteCode {
+            if syncViewModel.syncState.status == .pending {
                 // Pending State: Waiting for Parent
                 VStack(spacing: 12) {
                     HStack(spacing: 8) {
@@ -91,10 +91,6 @@ struct HomeNotPairedCardView: View {
                     .padding(.vertical, 8)
                     .background(Color.orange.opacity(0.1))
                     .clipShape(Capsule())
-
-                    Text("Kode: \(code)")
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
-                        .foregroundStyle(.primary)
 
                     // Button: Cek Status Sekarang
                     Button {

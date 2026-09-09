@@ -20,13 +20,13 @@ struct ContentView: View {
             }
         }
         .onOpenURL { url in
-            // Handle arterious://invite?code=XXXX deep links
-            guard url.scheme?.lowercased() == "arterious" else { return }
+            // Handle native iCloud share links (https://www.icloud.com/share/...) and arterious:// deep links
             Task {
-                await dashboardVM.syncViewModel.handleIncomingInvite(url: url)
+                await dashboardVM.syncViewModel.handleIncomingShareURL(url: url)
                 hasCompletedOnboarding = true
-                selectedTab = 2
+                selectedTab = 0
                 showConnectedAlert = true
+                await dashboardVM.loadDashboardData()
             }
         }
         .alert("Berhasil Terhubung!", isPresented: $showConnectedAlert) {

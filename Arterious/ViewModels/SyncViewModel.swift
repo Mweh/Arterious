@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import UIKit
+import CloudKit
 
 @Observable
 @MainActor
@@ -16,6 +17,13 @@ final class SyncViewModel {
     var healthRecord: HealthRecord?
     var parentName: String = "Nama Ortu 1"
     var lastSyncDate: Date?
+
+    /// Holds the active native Apple CKShare for presentation in UICloudSharingController
+    var nativeShare: CKShare?
+
+    var cloudKitContainer: CKContainer {
+        cloudKit.container
+    }
 
     var onSnapshotUpdated: (() -> Void)?
 
@@ -52,58 +60,98 @@ final class SyncViewModel {
             // Child NEVER requests Apple Health access
             parentPushTask?.cancel()
             parentPushTask = nil
-            if let code = syncState.inviteCode, syncState.status == .accepted {
-                await fetchParentSnapshot(code: code)
+            if syncState.status == .accepted {
+                await fetchSharedParentSnapshot()
             }
         }
     }
 
-    // MARK: - Generate Share Link (Bidirectional)
+    // MARK: - Native Apple CKShare (One-Way: Read-Only)
 
-    /// Generates CloudKit invite link for the current role (Child or Parent) and returns URL for Share Sheet.
-    @discardableResult
-    func requestShareLink() async -> URL? {
-        if let existing = inviteURL, syncState.status == .pending {
-            return existing
-        }
-
+    /// Prepares a native `CKShare` and uploads the latest HealthKit data.
+    /// Returns the `CKShare` to be presented in `UICloudSharingController`.
+    func requestNativeShare() async -> CKShare? {
         isLoading = true
         errorMessage = nil
         defer { isLoading = false }
 
-        // Generate 8-digit code
-        let chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        let code = String((0..<8).map { _ in chars.randomElement()! })
-        guard let url = URL(string: "arterious://invite?code=\(code)") else {
-            errorMessage = "Gagal membuat link undangan."
+        do {
+            let name = UIDevice.current.name.isEmpty ? "Orang Tua" : UIDevice.current.name
+            let share = try await cloudKit.getOrCreateNativeShare(parentName: name)
+            self.nativeShare = share
+
+            // Pre-push current health data to private zone
+            let summary = await healthKit.fetchTodaySummary()
+            let history = await healthKit.fetchHistoricalSummaries(days: 7)
+            let record = HealthRecord.create(from: summary, inviteCode: "SHARED", parentName: name, history: history)
+
+            try await cloudKit.pushHealthRecord(record)
+            try await cloudKit.pushHealthSnapshot(summary, inviteCode: "SHARED", parentName: name)
+
+            self.syncState.status = .pending
+            self.syncState.inviteCode = "SHARED"
+            self.lastSyncDate = Date()
+            persistState()
+
+            self.inviteURL = share.url
+            print("✅ Native CKShare ready: \(share.url?.absoluteString ?? "no url")")
+            return share
+        } catch {
+            print("❌ requestNativeShare error: \(error)")
+            self.errorMessage = error.localizedDescription
             return nil
         }
-
-        inviteURL = url
-        syncState = SyncState(
-            role: syncState.role,
-            inviteCode: code,
-            status: .pending,
-            partnerName: nil,
-            lastSyncDate: nil
-        )
-        persistState()
-
-        // Attempt background CloudKit registration
-        Task {
-            _ = try? await cloudKit.generateInviteLink(senderRole: syncState.role, senderName: UIDevice.current.name)
-            if syncState.role == .parent {
-                await pushParentHealthData(code: code)
-            }
-        }
-
-        startPollingForAcceptance(code: code)
-        return url
     }
 
-    // MARK: - Handle Deep Link (Bidirectional)
+    /// Convenience wrapper for views requesting a share link directly
+    func requestShareLink() async -> URL? {
+        if let share = await requestNativeShare() {
+            self.inviteURL = share.url
+            return share.url
+        }
+        return nil
+    }
 
-    /// Called when the app is opened via arterious://invite?code=XXXX or code entered manually.
+    // MARK: - Handle Deep Link & Native iCloud Share URLs
+
+    /// Handles incoming links: either native iCloud share URL (https://www.icloud.com/share/...)
+    /// or custom deep links (arterious://invite?code=...).
+    func handleIncomingShareURL(url: URL) async {
+        isLoading = true
+        errorMessage = nil
+        defer { isLoading = false }
+
+        let urlString = url.absoluteString
+
+        // Check if it's an Apple iCloud Share URL
+        if urlString.contains("icloud.com/share") || url.host?.contains("icloud.com") == true {
+            do {
+                let (pName, share) = try await cloudKit.acceptNativeShare(url: url)
+                self.syncState = SyncState(
+                    role: .child,
+                    inviteCode: "SHARED",
+                    status: .accepted,
+                    partnerName: pName,
+                    lastSyncDate: Date()
+                )
+                self.parentName = pName
+                self.nativeShare = share
+                persistState()
+
+                // Fetch parent's health record from shared database
+                await fetchSharedParentSnapshot()
+            } catch {
+                print("❌ acceptNativeShare error: \(error)")
+                self.errorMessage = "Gagal menerima undangan sharing: \(error.localizedDescription)"
+            }
+            return
+        }
+
+        // Custom deep link fallback
+        await handleIncomingInvite(url: url)
+    }
+
+    /// Legacy / deep link fallback
     func handleIncomingInvite(url: URL) async {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
@@ -116,7 +164,6 @@ final class SyncViewModel {
         errorMessage = nil
         defer { isLoading = false }
 
-        // Attempt to fetch CloudKit invite details, fallback to direct acceptance if unauthenticated
         let details = (try? await cloudKit.fetchInviteDetails(code: code)) ?? InviteDetails(
             code: code,
             status: "accepted",
@@ -125,7 +172,6 @@ final class SyncViewModel {
         )
 
         if details.senderRole == "parent" || syncState.role == .child {
-            // Sender is Parent -> Receiver is Child
             syncState = SyncState(
                 role: .child,
                 inviteCode: code,
@@ -141,7 +187,6 @@ final class SyncViewModel {
                 await subscribeAndFetch(code: code)
             }
         } else {
-            // Sender is Child -> Receiver is Parent
             syncState = SyncState(
                 role: .parent,
                 inviteCode: code,
@@ -157,15 +202,6 @@ final class SyncViewModel {
                 await pushParentHealthData(code: code)
                 startParentPushLoop(code: code)
             }
-        }
-
-        // Ensure child immediately has valid health data to render on dashboard
-        if syncState.role == .child && parentSnapshot == nil {
-            let summary = DailyHealthSummary.placeholder
-            self.parentSnapshot = summary
-            self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
-            self.lastSyncDate = Date()
-            onSnapshotUpdated?()
         }
     }
 
@@ -198,76 +234,50 @@ final class SyncViewModel {
             healthRecord = record
             errorMessage = nil
             persistState()
+            print("✅ Successfully pushed HealthRecord for code: \(code) on date: \(record.formattedDate)")
         } catch {
-            // Background push retry
+            print("❌ Push parent health data error: \(error)")
+            errorMessage = error.localizedDescription
         }
     }
 
-    // MARK: - Poll Until Partner Accepts
+    // MARK: - Child: Fetch Shared Parent Snapshot
 
-    @MainActor
-    private func handleInviteAccepted(code: String) async {
-        syncState.status = .accepted
-        persistState()
-        if syncState.role == .child {
-            await subscribeAndFetch(code: code)
-        } else {
-            await pushParentHealthData(code: code)
-            startParentPushLoop(code: code)
-        }
-    }
-
-    private func startPollingForAcceptance(code: String) {
-        pollTask?.cancel()
-        pollTask = Task {
-            // 1. Check immediately
-            if let status = try? await cloudKit.checkInviteStatus(code: code),
-               status == "accepted" {
-                await handleInviteAccepted(code: code)
+    func fetchSharedParentSnapshot() async {
+        do {
+            // 1. Try native CKShare shared database first
+            if let result = try await cloudKit.fetchSharedHealthData() {
+                parentSnapshot = result.summary
+                parentName = result.parentName
+                lastSyncDate = result.updatedAt
+                healthRecord = HealthRecord.create(from: result.summary, inviteCode: syncState.inviteCode ?? "SHARED", parentName: result.parentName)
+                syncState.partnerName = result.parentName
+                syncState.lastSyncDate = result.updatedAt
+                syncState.status = .accepted
+                persistState()
+                onSnapshotUpdated?()
                 return
             }
 
-            // 2. Rapid polling for first 60 seconds (every 3 seconds) for instant connection
-            for _ in 0..<20 {
-                try? await Task.sleep(for: .seconds(3))
-                guard !Task.isCancelled else { return }
-                if let status = try? await cloudKit.checkInviteStatus(code: code),
-                   status == "accepted" {
-                    await handleInviteAccepted(code: code)
-                    return
-                }
+            // 2. Fallback to public database if inviteCode is present
+            if let code = syncState.inviteCode {
+                await fetchParentSnapshot(code: code)
             }
-
-            // 3. Normal polling afterwards (every 10 seconds for up to 10 minutes)
-            for _ in 0..<60 {
-                try? await Task.sleep(for: .seconds(10))
-                guard !Task.isCancelled else { return }
-                if let status = try? await cloudKit.checkInviteStatus(code: code),
-                   status == "accepted" {
-                    await handleInviteAccepted(code: code)
-                    return
-                }
+        } catch {
+            print("⚠️ fetchSharedParentSnapshot error: \(error)")
+            if let code = syncState.inviteCode {
+                await fetchParentSnapshot(code: code)
             }
         }
     }
-
-    // MARK: - Child: Subscribe + Fetch
 
     func subscribeAndFetch(code: String) async {
         try? await cloudKit.subscribeToParentUpdates(inviteCode: code)
         await fetchParentSnapshot(code: code)
     }
 
-    /// Called when a silent push notification arrives (via AppDelegate/scene).
-    func handleRemoteNotification() async {
-        guard syncState.role == .child,
-              let code = syncState.inviteCode else { return }
-        await fetchParentSnapshot(code: code)
-    }
-
     func fetchParentSnapshot(code: String) async {
         do {
-            // 1. Try fetching structured HealthRecord first
             if let hr = try await cloudKit.fetchLatestHealthRecord(inviteCode: code) {
                 self.healthRecord = hr
                 self.parentName = hr.parentName
@@ -277,7 +287,6 @@ final class SyncViewModel {
                 self.syncState.status = .accepted
             }
 
-            // 2. Also fetch DailyHealthSummary snapshot
             if let result = try await cloudKit.fetchParentSnapshot(inviteCode: code) {
                 parentSnapshot = result.summary
                 parentName = result.parentName
@@ -286,51 +295,30 @@ final class SyncViewModel {
                 syncState.lastSyncDate = result.updatedAt
                 syncState.status = .accepted
 
-                // If HealthRecord wasn't in CloudKit, generate from summary
                 if self.healthRecord == nil {
                     self.healthRecord = HealthRecord.create(from: result.summary, inviteCode: code, parentName: result.parentName)
                 }
-            }
-
-            // Fallback for immediate view if CloudKit is currently returning empty/unauthenticated
-            if parentSnapshot == nil {
-                let summary = DailyHealthSummary.placeholder
-                self.parentSnapshot = summary
-                self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
-                self.lastSyncDate = Date()
-                self.syncState.status = .accepted
             }
 
             errorMessage = nil
             persistState()
             onSnapshotUpdated?()
         } catch {
-            if parentSnapshot == nil {
-                let summary = DailyHealthSummary.placeholder
-                self.parentSnapshot = summary
-                self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
-                self.lastSyncDate = Date()
-                self.syncState.status = .accepted
-            }
             persistState()
             onSnapshotUpdated?()
         }
     }
 
-    // MARK: - Refresh on Foreground (called by child on app open)
+    // MARK: - Refresh on Foreground
 
     func refreshIfNeeded() async {
         switch syncState.role {
         case .child:
-            guard let code = syncState.inviteCode else { return }
             if syncState.status == .accepted {
-                await fetchParentSnapshot(code: code)
-            } else {
-                startPollingForAcceptance(code: code)
+                await fetchSharedParentSnapshot()
             }
         case .parent:
-            guard let code = syncState.inviteCode else { return }
-            if syncState.status == .accepted {
+            if let code = syncState.inviteCode, syncState.status == .accepted {
                 startParentPushLoop(code: code)
             }
         case .unset:
@@ -349,6 +337,7 @@ final class SyncViewModel {
         syncState = SyncState(role: .child, inviteCode: nil, status: .none, partnerName: nil, lastSyncDate: nil)
         parentSnapshot = nil
         healthRecord = nil
+        nativeShare = nil
         inviteURL = nil
         lastSyncDate = nil
         persistState()

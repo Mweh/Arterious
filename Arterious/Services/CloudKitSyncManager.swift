@@ -2,7 +2,7 @@ import Foundation
 import CloudKit
 import UIKit
 
-// MARK: - CloudKit Record Type Constants
+// MARK: - CloudKit Record Constants
 
 private enum CKRecordType {
     static let sharingInvite = "SharingInvite"
@@ -17,11 +17,10 @@ private enum CKField {
     static let childDeviceID = "childDeviceID"
     static let senderRole = "senderRole"
     static let senderName = "senderName"
-    // ParentHealthSnapshot
+    // ParentHealthSnapshot & HealthRecord
     static let snapshotJSON = "snapshotJSON"
     static let parentName = "parentName"
     static let updatedAt = "updatedAt"
-    // HealthRecord
     static let recordDate = "recordDate"
     static let restingHeartRate = "restingHeartRate"
     static let heartRateStatus = "heartRateStatus"
@@ -54,13 +53,20 @@ struct InviteDetails {
 final class CloudKitSyncManager {
     static let shared = CloudKitSyncManager()
 
-    private let container: CKContainer
+    let container: CKContainer
     private let publicDB: CKDatabase
+    private let privateDB: CKDatabase
+    private let sharedDB: CKDatabase
+
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
+    /// Custom record zone in Private Database required by Apple for CKShare
+    private let healthZone = CKRecordZone(zoneName: "ArteriousHealthZone")
+
     private lazy var dateFormatter: DateFormatter = {
         let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd"
         f.timeZone = TimeZone.current
         return f
@@ -69,6 +75,9 @@ final class CloudKitSyncManager {
     private init() {
         container = CKContainer.default()
         publicDB = container.publicCloudDatabase
+        privateDB = container.privateCloudDatabase
+        sharedDB = container.sharedCloudDatabase
+
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
     }
@@ -83,53 +92,113 @@ final class CloudKitSyncManager {
         }
     }
 
-    // MARK: - Generate Invite Link (Bidirectional)
+    // MARK: - Native Apple CKShare (One-Way: Read-Only)
 
-    /// Creates a SharingInvite record in CloudKit and returns a deep link URL.
-    func generateInviteLink(senderRole: SyncRole = .child, senderName: String = "Keluarga") async throws -> URL {
+    /// Ensures the custom record zone exists in the Parent's Private Database.
+    func ensureHealthZoneCreated() async throws {
         try await ensureCloudKitAvailable()
-        let code = generateCode()
-        let record = CKRecord(recordType: CKRecordType.sharingInvite)
-        record[CKField.inviteCode] = code
-        record[CKField.status] = "pending"
-        record[CKField.childDeviceID] = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
-        record[CKField.senderRole] = senderRole == .parent ? "parent" : "child"
-        record[CKField.senderName] = senderName
-
-        _ = try await publicDB.save(record)
-
-        guard let url = URL(string: "arterious://invite?code=\(code)") else {
-            throw SyncError.invalidURL
+        do {
+            _ = try await privateDB.save(healthZone)
+        } catch let error as CKError where error.code == .serverRecordChanged || error.code == .zoneNotFound {
+            // Zone already exists
+        } catch {
+            // If already created or exists, continue
         }
-        return url
     }
 
-    /// Fetches invite metadata to determine who invited whom
-    func fetchInviteDetails(code: String) async throws -> InviteDetails {
+    /// Prepares or retrieves the native `CKShare` for the parent's health record.
+    /// Default permission is strictly `.allowReadOnly` (One-Way: child can only view).
+    func getOrCreateNativeShare(parentName: String) async throws -> CKShare {
+        try await ensureHealthZoneCreated()
+
+        let rootID = CKRecord.ID(recordName: "CurrentHealthRecord", zoneID: healthZone.zoneID)
+
+        // 1. Fetch or create root record in privateDB
+        let rootRecord: CKRecord
+        if let existing = try? await privateDB.record(for: rootID) {
+            rootRecord = existing
+        } else {
+            rootRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: rootID)
+            rootRecord[CKField.parentName] = parentName
+            rootRecord[CKField.updatedAt] = Date()
+            _ = try await privateDB.save(rootRecord)
+        }
+
+        // 2. Return existing share if already attached
+        if let shareRef = rootRecord.share,
+           let existingShare = try? await privateDB.record(for: shareRef.recordID) as? CKShare {
+            return existingShare
+        }
+
+        // 3. Create new native CKShare attached to the root record
+        let share = CKShare(rootRecord: rootRecord)
+        share[CKShare.SystemFieldKey.title] = "Data Kesehatan \(parentName)"
+        share.publicPermission = .readOnly // Strictly One-Way Read-Only!
+
+        let modifyOp = CKModifyRecordsOperation(recordsToSave: [rootRecord, share], recordIDsToDelete: nil)
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            modifyOp.modifyRecordsResultBlock = { result in
+                switch result {
+                case .success:
+                    continuation.resume()
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+            privateDB.add(modifyOp)
+        }
+
+        return share
+    }
+
+    /// Child accepts the native iCloud share link (https://www.icloud.com/share/...)
+    func acceptNativeShare(url: URL) async throws -> (parentName: String, share: CKShare) {
         try await ensureCloudKitAvailable()
-        let record = try await fetchInviteRecord(code: code)
-        return InviteDetails(
-            code: code,
-            status: record[CKField.status] as? String ?? "pending",
-            senderRole: record[CKField.senderRole] as? String ?? "child",
-            senderName: record[CKField.senderName] as? String ?? "Keluarga"
-        )
+
+        let metadata = try await container.shareMetadata(for: url)
+
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            let op = CKAcceptSharesOperation(shareMetadatas: [metadata])
+            op.acceptSharesResultBlock = { result in
+                switch result {
+                case .success:
+                    continuation.resume()
+                case .failure(let error):
+                    continuation.resume(throwing: error)
+                }
+            }
+            container.add(op)
+        }
+
+        let name = metadata.ownerIdentity.nameComponents?.formatted() ?? "Orang Tua"
+        return (name, metadata.share)
     }
 
-    // MARK: - Accept Invite
-
-    /// Looks up a SharingInvite by code and marks it accepted.
-    func acceptInvite(code: String) async throws {
+    /// Child fetches the parent's health record from the Shared Database (`sharedCloudDatabase`).
+    func fetchSharedHealthData() async throws -> (summary: DailyHealthSummary, parentName: String, updatedAt: Date)? {
         try await ensureCloudKitAvailable()
-        let record = try await fetchInviteRecord(code: code)
-        record[CKField.status] = "accepted"
-        _ = try await publicDB.save(record)
+
+        let sharedZones = try await sharedDB.allRecordZones()
+        for zone in sharedZones {
+            let rootID = CKRecord.ID(recordName: "CurrentHealthRecord", zoneID: zone.zoneID)
+            if let record = try? await sharedDB.record(for: rootID) {
+                if let jsonString = record[CKField.snapshotJSON] as? String,
+                   let jsonData = jsonString.data(using: .utf8),
+                   let summary = try? decoder.decode(DailyHealthSummary.self, from: jsonData) {
+                    let name = record[CKField.parentName] as? String ?? "Orang Tua"
+                    let date = record[CKField.updatedAt] as? Date ?? Date()
+                    return (summary, name, date)
+                }
+            }
+        }
+        return nil
     }
 
-    // MARK: - Parent: Push Health Snapshot
+    // MARK: - Parent: Push Health Data to Private Database & Public fallback
 
-    /// Encodes a DailyHealthSummary as JSON and saves/updates a ParentHealthSnapshot record.
-    func pushHealthSnapshot(_ summary: DailyHealthSummary, inviteCode: String, parentName: String) async throws {
+    /// Saves the parent's latest health summary to the private custom zone (for CKShare)
+    /// and updates the shared snapshot.
+    func pushHealthSnapshot(_ summary: DailyHealthSummary, inviteCode: String = "SHARED", parentName: String) async throws {
         try await ensureCloudKitAvailable()
 
         let jsonData = try encoder.encode(summary)
@@ -137,33 +206,74 @@ final class CloudKitSyncManager {
             throw SyncError.encodingFailed
         }
 
-        let record: CKRecord
-        if let existing = try? await fetchSnapshotRecord(inviteCode: inviteCode) {
-            record = existing
-        } else {
-            record = CKRecord(recordType: CKRecordType.parentHealthSnapshot)
-            record[CKField.inviteCode] = inviteCode
+        // 1. Save to Private Zone (for CKShare participants)
+        do {
+            try await ensureHealthZoneCreated()
+            let rootID = CKRecord.ID(recordName: "CurrentHealthRecord", zoneID: healthZone.zoneID)
+            let privRecord: CKRecord
+            if let existing = try? await privateDB.record(for: rootID) {
+                privRecord = existing
+            } else {
+                privRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: rootID)
+            }
+            privRecord[CKField.snapshotJSON] = jsonString
+            privRecord[CKField.parentName] = parentName
+            privRecord[CKField.updatedAt] = Date()
+            _ = try await privateDB.save(privRecord)
+        } catch {
+            print("⚠️ Private zone snapshot save error: \(error.localizedDescription)")
         }
 
-        record[CKField.snapshotJSON] = jsonString
-        record[CKField.parentName] = parentName
-        record[CKField.updatedAt] = Date()
-        _ = try await publicDB.save(record)
-    }
+        // 2. Also save to PublicDB for seamless compatibility
+        let publicRecordID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(inviteCode)")
+        let publicRecord: CKRecord
+        if let existing = try? await publicDB.record(for: publicRecordID) {
+            publicRecord = existing
+        } else {
+            publicRecord = CKRecord(recordType: CKRecordType.parentHealthSnapshot, recordID: publicRecordID)
+        }
 
-    // MARK: - Parent: Push Structured HealthRecord (Per-Day Upsert)
+        publicRecord[CKField.snapshotJSON] = jsonString
+        publicRecord[CKField.parentName] = parentName
+        publicRecord[CKField.updatedAt] = Date()
+        _ = try await publicDB.save(publicRecord)
+    }
 
     /// Saves or updates a HealthRecord for the current day.
     func pushHealthRecord(_ record: HealthRecord) async throws {
         try await ensureCloudKitAvailable()
 
-        let ckRecord: CKRecord
-        if let existing = try? await fetchExistingHealthRecord(inviteCode: record.inviteCode, date: record.recordDate) {
-            ckRecord = existing
-        } else {
-            ckRecord = CKRecord(recordType: CKRecordType.healthRecord)
+        let dateString = dateFormatter.string(from: record.recordDate)
+
+        // 1. Save to Private Zone (CKShare)
+        do {
+            try await ensureHealthZoneCreated()
+            let privRecordID = CKRecord.ID(recordName: "HealthRecord_\(dateString)", zoneID: healthZone.zoneID)
+            let privRecord: CKRecord
+            if let existing = try? await privateDB.record(for: privRecordID) {
+                privRecord = existing
+            } else {
+                privRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: privRecordID)
+            }
+            populateRecord(privRecord, with: record)
+            _ = try await privateDB.save(privRecord)
+        } catch {
+            print("⚠️ Private zone record save error: \(error.localizedDescription)")
         }
 
+        // 2. Save to PublicDB (fallback)
+        let recordID = CKRecord.ID(recordName: "HealthRecord_\(record.inviteCode)_\(dateString)")
+        let ckRecord: CKRecord
+        if let existing = try? await publicDB.record(for: recordID) {
+            ckRecord = existing
+        } else {
+            ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
+        }
+        populateRecord(ckRecord, with: record)
+        _ = try await publicDB.save(ckRecord)
+    }
+
+    private func populateRecord(_ ckRecord: CKRecord, with record: HealthRecord) {
         ckRecord[CKField.inviteCode] = record.inviteCode
         ckRecord[CKField.recordDate] = record.recordDate
         ckRecord[CKField.parentName] = record.parentName
@@ -181,16 +291,19 @@ final class CloudKitSyncManager {
         ckRecord[CKField.summaryTitle] = record.summaryTitle
         ckRecord[CKField.summaryBody] = record.summaryBody
         ckRecord[CKField.updatedAt] = record.updatedAt
-
-        _ = try await publicDB.save(ckRecord)
     }
 
     // MARK: - Child: Fetch Latest HealthRecord
 
-    /// Fetches the most recent HealthRecord for the given inviteCode via query (sorted by updatedAt DESC).
     func fetchLatestHealthRecord(inviteCode: String) async throws -> HealthRecord? {
         try await ensureCloudKitAvailable()
 
+        // 1. Try fetching from Shared Database first (native CKShare)
+        if let sharedData = try? await fetchSharedHealthData() {
+            return HealthRecord.create(from: sharedData.summary, inviteCode: inviteCode, parentName: sharedData.parentName)
+        }
+
+        // 2. Fallback to publicDB query
         let predicate = NSPredicate(format: "inviteCode == %@", inviteCode)
         let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
         query.sortDescriptors = [NSSortDescriptor(key: CKField.updatedAt, ascending: false)]
@@ -206,7 +319,6 @@ final class CloudKitSyncManager {
 
     // MARK: - Child: Fetch HealthRecord History
 
-    /// Fetches HealthRecord history for the past N days, sorted by recordDate ascending.
     func fetchHealthRecordHistory(inviteCode: String, days: Int = 7) async throws -> [HealthRecord] {
         try await ensureCloudKitAvailable()
 
@@ -259,8 +371,13 @@ final class CloudKitSyncManager {
 
     // MARK: - Child: Fetch Parent Snapshot
 
-    /// Fetches the latest ParentHealthSnapshot for a given invite code.
     func fetchParentSnapshot(inviteCode: String) async throws -> (summary: DailyHealthSummary, parentName: String, updatedAt: Date)? {
+        // 1. Try shared DB first
+        if let shared = try? await fetchSharedHealthData() {
+            return shared
+        }
+
+        // 2. Fallback to publicDB
         guard let record = try? await fetchSnapshotRecord(inviteCode: inviteCode) else { return nil }
         guard let jsonString = record[CKField.snapshotJSON] as? String,
               let jsonData = jsonString.data(using: .utf8) else { return nil }
@@ -270,9 +387,8 @@ final class CloudKitSyncManager {
         return (summary, parentName, updatedAt)
     }
 
-    // MARK: - Child: Subscribe to Real-Time Updates
+    // MARK: - Real-Time Subscriptions
 
-    /// Creates a CKQuerySubscription so child gets a silent push whenever parent updates.
     func subscribeToParentUpdates(inviteCode: String) async throws {
         try? await publicDB.deleteSubscription(withID: subscriptionID)
 
@@ -292,24 +408,26 @@ final class CloudKitSyncManager {
         _ = try await publicDB.save(subscription)
     }
 
-    // MARK: - Child: Remove Subscription
-
     func removeParentSubscription() async {
         try? await publicDB.deleteSubscription(withID: subscriptionID)
     }
 
-    // MARK: - Invite Status Poll
+    // MARK: - Legacy Deep Link Support
 
-    func checkInviteStatus(code: String) async throws -> String {
+    func fetchInviteDetails(code: String) async throws -> InviteDetails {
         let record = try await fetchInviteRecord(code: code)
-        return record[CKField.status] as? String ?? "pending"
+        return InviteDetails(
+            code: code,
+            status: record[CKField.status] as? String ?? "pending",
+            senderRole: record[CKField.senderRole] as? String ?? "child",
+            senderName: record[CKField.senderName] as? String ?? "Keluarga"
+        )
     }
 
-    // MARK: - Private Helpers
-
-    private func generateCode() -> String {
-        let chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
-        return String((0..<8).map { _ in chars.randomElement()! })
+    func acceptInvite(code: String) async throws {
+        let record = try await fetchInviteRecord(code: code)
+        record[CKField.status] = "accepted"
+        _ = try await publicDB.save(record)
     }
 
     private func fetchInviteRecord(code: String) async throws -> CKRecord {
@@ -317,7 +435,6 @@ final class CloudKitSyncManager {
         if let record = try? await publicDB.record(for: recordID) {
             return record
         }
-        // Fallback for query
         let predicate = NSPredicate(format: "inviteCode == %@", code)
         let query = CKQuery(recordType: CKRecordType.sharingInvite, predicate: predicate)
         if let result = try? await publicDB.records(matching: query, resultsLimit: 1),
@@ -326,20 +443,6 @@ final class CloudKitSyncManager {
             return record
         }
         throw SyncError.inviteNotFound
-    }
-
-    private func fetchExistingHealthRecord(inviteCode: String, date: Date) async throws -> CKRecord? {
-        let calendar = Calendar.current
-        let startOfDay = calendar.startOfDay(for: date)
-        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return nil }
-        let predicate = NSPredicate(format: "inviteCode == %@ AND recordDate >= %@ AND recordDate < %@", inviteCode, startOfDay as NSDate, endOfDay as NSDate)
-        let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
-        if let result = try? await publicDB.records(matching: query, resultsLimit: 1),
-           let (_, recordResult) = result.matchResults.first,
-           let record = try? recordResult.get() {
-            return record
-        }
-        return nil
     }
 
     private func fetchSnapshotRecord(inviteCode: String) async throws -> CKRecord {
@@ -365,10 +468,10 @@ enum SyncError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .inviteNotFound: return "Invite link tidak ditemukan atau sudah kadaluarsa."
+        case .inviteNotFound: return "Link sharing tidak ditemukan atau sudah kadaluarsa."
         case .snapshotNotFound: return "Data orang tua belum tersedia."
         case .encodingFailed: return "Gagal memproses data kesehatan."
-        case .invalidURL: return "Gagal membuat link undangan."
+        case .invalidURL: return "Gagal membuat tautan sharing."
         case .cloudKitUnavailable: return "iCloud tidak tersedia. Pastikan kamu sudah login di Settings."
         }
     }

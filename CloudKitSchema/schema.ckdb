@@ -1,0 +1,63 @@
+DEFINE RECORD TYPE SharingInvite (
+    "childDeviceID" STRING,
+    "inviteCode" STRING,
+    "senderName" STRING,
+    "senderRole" STRING,
+    "status" STRING,
+    GRANT WRITE TO "_creator",
+    GRANT CREATE TO "_creator",
+    GRANT WRITE TO "_icloud",
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_world"
+);
+
+DEFINE INDEX "inviteCode_query" ON SharingInvite (inviteCode QUERYABLE);
+DEFINE INDEX "status_query" ON SharingInvite (status QUERYABLE);
+DEFINE INDEX "recordName_query" ON SharingInvite (recordName QUERYABLE);
+
+DEFINE RECORD TYPE ParentHealthSnapshot (
+    "inviteCode" STRING,
+    "parentName" STRING,
+    "snapshotJSON" STRING,
+    "updatedAt" TIMESTAMP,
+    GRANT WRITE TO "_creator",
+    GRANT CREATE TO "_creator",
+    GRANT WRITE TO "_icloud",
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_world"
+);
+
+DEFINE INDEX "inviteCode_query" ON ParentHealthSnapshot (inviteCode QUERYABLE);
+DEFINE INDEX "updatedAt_sort" ON ParentHealthSnapshot (updatedAt SORTABLE);
+DEFINE INDEX "recordName_query" ON ParentHealthSnapshot (recordName QUERYABLE);
+
+DEFINE RECORD TYPE HealthRecord (
+    "activityStatus" STRING,
+    "heartRateStatus" STRING,
+    "inviteCode" STRING,
+    "parentName" STRING,
+    "recentHeartRatePoints" STRING,
+    "recentSleepPoints" STRING,
+    "recentStepPoints" STRING,
+    "recordDate" TIMESTAMP,
+    "restingHeartRate" DOUBLE,
+    "sleepFormatted" STRING,
+    "sleepHours" DOUBLE,
+    "sleepStatus" STRING,
+    "stepCount" INT64,
+    "stepFormatted" STRING,
+    "summaryBody" STRING,
+    "summaryTitle" STRING,
+    "updatedAt" TIMESTAMP,
+    GRANT WRITE TO "_creator",
+    GRANT CREATE TO "_creator",
+    GRANT WRITE TO "_icloud",
+    GRANT CREATE TO "_icloud",
+    GRANT READ TO "_world"
+);
+
+DEFINE INDEX "inviteCode_query" ON HealthRecord (inviteCode QUERYABLE);
+DEFINE INDEX "recordDate_query" ON HealthRecord (recordDate QUERYABLE);
+DEFINE INDEX "recordDate_sort" ON HealthRecord (recordDate SORTABLE);
+DEFINE INDEX "updatedAt_sort" ON HealthRecord (updatedAt SORTABLE);
+DEFINE INDEX "recordName_query" ON HealthRecord (recordName QUERYABLE);

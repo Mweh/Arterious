@@ -7,6 +7,8 @@ struct AksesView: View {
     @State private var isEditing: Bool = false
     @State private var showEnterCodeAlert: Bool = false
     @State private var inputCode: String = ""
+    @State private var copiedToClipboard: Bool = false
+    @State private var showErrorAlert: Bool = false
 
     private var isParent: Bool {
         syncViewModel.syncState.role == .parent
@@ -33,64 +35,15 @@ struct AksesView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         // White card containing list of connected access
                         VStack(spacing: 0) {
-                            if syncViewModel.syncState.status == .accepted {
+                            switch syncViewModel.syncState.status {
+                            case .accepted:
                                 partnerRow(name: partnerDisplayName, roleSubtitle: partnerRoleSubtitle) {
                                     showDetailSheet = true
                                 }
-                            } else {
-                                // Not Paired State in Akses
-                                VStack(spacing: 16) {
-                                    HStack(spacing: 14) {
-                                        Image(systemName: "person.crop.circle.badge.plus")
-                                            .font(.system(size: 28))
-                                            .foregroundStyle(.blue)
-
-                                        VStack(alignment: .leading, spacing: 3) {
-                                            Text("Belum ada akses terhubung")
-                                                .font(.system(size: 15, weight: .semibold))
-                                                .foregroundStyle(.primary)
-
-                                            Text(isParent
-                                                 ? "Hubungkan ke anak kamu untuk mulai membagikan data kesehatan secara aman."
-                                                 : "Hubungkan ke orang tua kamu untuk memantau tren kesehatan dari jauh.")
-                                                .font(.system(size: 12))
-                                                .foregroundStyle(.secondary)
-                                                .fixedSize(horizontal: false, vertical: true)
-                                        }
-                                        Spacer()
-                                    }
-
-                                    Button {
-                                        triggerShare()
-                                    } label: {
-                                        HStack(spacing: 6) {
-                                            if isSharing || syncViewModel.isLoading {
-                                                ProgressView().tint(.white)
-                                            } else {
-                                                Image(systemName: "plus")
-                                                    .font(.system(size: 13, weight: .bold))
-                                            }
-                                            Text(isParent ? "Hubungkan ke Anak" : "Hubungkan ke Orang Tua")
-                                                .font(.system(size: 14, weight: .semibold))
-                                        }
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 11)
-                                        .background(Color.blue)
-                                        .foregroundStyle(.white)
-                                        .clipShape(Capsule())
-                                    }
-                                    .disabled(isSharing || syncViewModel.isLoading)
-
-                                    Button {
-                                        showEnterCodeAlert = true
-                                    } label: {
-                                        Text("Punya kode undangan? Masukkan Kode")
-                                            .font(.system(size: 13, weight: .medium))
-                                            .foregroundStyle(.blue)
-                                    }
-                                    .padding(.top, 2)
-                                }
-                                .padding(20)
+                            case .pending:
+                                pendingStateCard
+                            case .none:
+                                notPairedStateCard
                             }
                         }
                         .background(Color.white)
@@ -158,15 +111,190 @@ struct AksesView: View {
                     Task {
                         await syncViewModel.handleIncomingInvite(url: url)
                         inputCode = ""
+                        if syncViewModel.errorMessage != nil {
+                            showErrorAlert = true
+                        }
                     }
                 }
                 Button("Batal", role: .cancel) {
                     inputCode = ""
                 }
             } message: {
-                Text("Masukkan 8 digit kode undangan yang dikirimkan oleh keluarga kamu.")
+                Text("Masukkan 8 digit kode undangan dari HP keluarga kamu.")
+            }
+            .alert("Peringatan Gagal", isPresented: $showErrorAlert) {
+                Button("OK", role: .cancel) {
+                    syncViewModel.errorMessage = nil
+                }
+            } message: {
+                Text(syncViewModel.errorMessage ?? "Terjadi kesalahan saat menghubungkan.")
+            }
+            .onChange(of: syncViewModel.errorMessage) { _, newMsg in
+                if newMsg != nil {
+                    showErrorAlert = true
+                }
             }
         }
+    }
+
+    // MARK: - Not Paired State Card (.none)
+
+    private var notPairedStateCard: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 14) {
+                Image(systemName: "person.crop.circle.badge.plus")
+                    .font(.system(size: 28))
+                    .foregroundStyle(.blue)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Belum ada akses terhubung")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+
+                    Text(isParent
+                         ? "Hubungkan ke anak kamu untuk mulai membagikan data kesehatan secara aman."
+                         : "Hubungkan ke orang tua kamu untuk memantau tren kesehatan dari jauh.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer()
+            }
+
+            Button {
+                triggerShare()
+            } label: {
+                HStack(spacing: 6) {
+                    if isSharing || syncViewModel.isLoading {
+                        ProgressView().tint(.white)
+                    } else {
+                        Image(systemName: "plus")
+                            .font(.system(size: 13, weight: .bold))
+                    }
+                    Text(isParent ? "Hubungkan ke Anak" : "Hubungkan ke Orang Tua")
+                        .font(.system(size: 14, weight: .semibold))
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 11)
+                .background(Color.blue)
+                .foregroundStyle(.white)
+                .clipShape(Capsule())
+            }
+            .disabled(isSharing || syncViewModel.isLoading)
+
+            Button {
+                showEnterCodeAlert = true
+            } label: {
+                Text("Punya kode undangan? Masukkan Kode")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(.blue)
+            }
+            .padding(.top, 2)
+        }
+        .padding(20)
+    }
+
+    // MARK: - Pending State Card (.pending)
+
+    private var pendingStateCard: some View {
+        VStack(spacing: 16) {
+            HStack(spacing: 12) {
+                ProgressView()
+                    .scaleEffect(0.9)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Menunggu Koneksi…")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(.primary)
+                    
+                    Text("Minta lawan memasukkan kode ini atau klik link undangan.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+            }
+
+            if let code = syncViewModel.syncState.inviteCode {
+                VStack(spacing: 8) {
+                    Text("KODE UNDANGAN KAMU")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundStyle(.secondary)
+                    
+                    Text(code)
+                        .font(.system(size: 26, weight: .bold, design: .monospaced))
+                        .foregroundStyle(.blue)
+                        .tracking(3)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 14)
+                .background(Color.blue.opacity(0.06))
+                .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14, style: .continuous)
+                        .stroke(Color.blue.opacity(0.2), lineWidth: 1)
+                )
+
+                HStack(spacing: 10) {
+                    // Copy Code Button
+                    Button {
+                        UIPasteboard.general.string = code
+                        copiedToClipboard = true
+                        Task {
+                            try? await Task.sleep(for: .seconds(2))
+                            copiedToClipboard = false
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: copiedToClipboard ? "checkmark" : "doc.on.doc")
+                            Text(copiedToClipboard ? "Tersalin!" : "Salin Kode")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(copiedToClipboard ? Color.green.opacity(0.12) : Color.black.opacity(0.05))
+                        .foregroundStyle(copiedToClipboard ? Color.green : Color.primary)
+                        .clipShape(Capsule())
+                    }
+
+                    // Share Link Button
+                    Button {
+                        triggerShare()
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "square.and.arrow.up")
+                            Text("Bagikan Link")
+                        }
+                        .font(.system(size: 13, weight: .semibold))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .background(Color.blue)
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                    }
+                }
+            }
+
+            Divider().padding(.vertical, 2)
+
+            HStack {
+                Button {
+                    showEnterCodeAlert = true
+                } label: {
+                    Text("Lawan sudah punya kode? Masukkan Kode")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.blue)
+                }
+                Spacer()
+                Button {
+                    Task { await syncViewModel.disconnect() }
+                } label: {
+                    Text("Batal")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(.red)
+                }
+            }
+        }
+        .padding(20)
     }
 
     // MARK: - Partner Row Component
@@ -295,6 +423,8 @@ struct AksesView: View {
                     ? "Halo! Ini link untuk memantau data kesehatanku di Arterious:\n\(url.absoluteString)"
                     : "Halo! Ayo hubungkan data kesehatan kamu di Arterious agar aku bisa memantau kondisimu:\n\(url.absoluteString)"
                 ShareSheetHelper.share(url: url, customMessage: msg)
+            } else if syncViewModel.errorMessage != nil {
+                showErrorAlert = true
             }
             isSharing = false
         }
@@ -304,3 +434,4 @@ struct AksesView: View {
 #Preview {
     AksesView(syncViewModel: SyncViewModel())
 }
+

@@ -89,8 +89,7 @@ final class CloudKitSyncManager {
     func generateInviteLink(senderRole: SyncRole = .child, senderName: String = "Keluarga") async throws -> URL {
         try await ensureCloudKitAvailable()
         let code = generateCode()
-        let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
-        let record = CKRecord(recordType: CKRecordType.sharingInvite, recordID: recordID)
+        let record = CKRecord(recordType: CKRecordType.sharingInvite)
         record[CKField.inviteCode] = code
         record[CKField.status] = "pending"
         record[CKField.childDeviceID] = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"
@@ -138,12 +137,11 @@ final class CloudKitSyncManager {
             throw SyncError.encodingFailed
         }
 
-        let recordID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(inviteCode)")
         let record: CKRecord
-        if let existing = try? await publicDB.record(for: recordID) {
+        if let existing = try? await fetchSnapshotRecord(inviteCode: inviteCode) {
             record = existing
         } else {
-            record = CKRecord(recordType: CKRecordType.parentHealthSnapshot, recordID: recordID)
+            record = CKRecord(recordType: CKRecordType.parentHealthSnapshot)
             record[CKField.inviteCode] = inviteCode
         }
 
@@ -156,20 +154,14 @@ final class CloudKitSyncManager {
     // MARK: - Parent: Push Structured HealthRecord (Per-Day Upsert)
 
     /// Saves or updates a HealthRecord for the current day.
-    /// RecordName format: `HealthRecord_<inviteCode>_<yyyy-MM-dd>` ensures one record per day per parent.
     func pushHealthRecord(_ record: HealthRecord) async throws {
         try await ensureCloudKitAvailable()
 
-        let dateString = dateFormatter.string(from: record.recordDate)
-        let recordIDString = "HealthRecord_\(record.inviteCode)_\(dateString)"
-        let recordID = CKRecord.ID(recordName: recordIDString)
-
-        // Upsert: fetch existing record for today, or create new
         let ckRecord: CKRecord
-        if let existing = try? await publicDB.record(for: recordID) {
+        if let existing = try? await fetchExistingHealthRecord(inviteCode: record.inviteCode, date: record.recordDate) {
             ckRecord = existing
         } else {
-            ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
+            ckRecord = CKRecord(recordType: CKRecordType.healthRecord)
         }
 
         ckRecord[CKField.inviteCode] = record.inviteCode
@@ -336,12 +328,21 @@ final class CloudKitSyncManager {
         throw SyncError.inviteNotFound
     }
 
-    private func fetchSnapshotRecord(inviteCode: String) async throws -> CKRecord {
-        let recordID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(inviteCode)")
-        if let record = try? await publicDB.record(for: recordID) {
+    private func fetchExistingHealthRecord(inviteCode: String, date: Date) async throws -> CKRecord? {
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: date)
+        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else { return nil }
+        let predicate = NSPredicate(format: "inviteCode == %@ AND recordDate >= %@ AND recordDate < %@", inviteCode, startOfDay as NSDate, endOfDay as NSDate)
+        let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
+        if let result = try? await publicDB.records(matching: query, resultsLimit: 1),
+           let (_, recordResult) = result.matchResults.first,
+           let record = try? recordResult.get() {
             return record
         }
-        // Fallback for query
+        return nil
+    }
+
+    private func fetchSnapshotRecord(inviteCode: String) async throws -> CKRecord {
         let predicate = NSPredicate(format: "inviteCode == %@", inviteCode)
         let query = CKQuery(recordType: CKRecordType.parentHealthSnapshot, predicate: predicate)
         if let result = try? await publicDB.records(matching: query, resultsLimit: 1),

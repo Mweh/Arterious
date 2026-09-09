@@ -22,6 +22,7 @@ struct AppButton: View {
     var icon: String?
     var style: Style = .primary
     var isLoading: Bool = false
+    var isFullWidth: Bool = false
     let action: () -> Void
 
     var body: some View {
@@ -39,8 +40,9 @@ struct AppButton: View {
             }
             .font(AppTypography.buttonLabel)
             .foregroundStyle(foregroundColor)
+            .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, AppSpacing.lg)
-            .padding(.vertical, AppSpacing.sm + 2)
+            .padding(.vertical, isFullWidth ? AppSpacing.md : AppSpacing.sm + 2)
             .background(background)
             .clipShape(Capsule())
         }

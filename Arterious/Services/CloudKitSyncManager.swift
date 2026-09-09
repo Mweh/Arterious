@@ -67,8 +67,7 @@ final class CloudKitSyncManager {
     }()
 
     private init() {
-        let containerID = "iCloud.com.helloworld222.arterious"
-        container = CKContainer(identifier: containerID)
+        container = CKContainer.default()
         publicDB = container.publicCloudDatabase
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601

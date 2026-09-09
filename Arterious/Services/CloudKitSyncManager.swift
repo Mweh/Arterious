@@ -59,11 +59,28 @@ final class CloudKitSyncManager {
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
 
+    private lazy var dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone.current
+        return f
+    }()
+
     private init() {
-        container = CKContainer(identifier: "iCloud.com.helloworld.arterious")
+        container = CKContainer.default()
         publicDB = container.publicCloudDatabase
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
+    }
+
+    // MARK: - iCloud Availability Check
+
+    /// Verifies that the user is signed into iCloud before performing any CloudKit operation.
+    func ensureCloudKitAvailable() async throws {
+        let status = try await container.accountStatus()
+        guard status == .available else {
+            throw SyncError.cloudKitUnavailable
+        }
     }
 
     // MARK: - Generate Invite Link (Bidirectional)
@@ -111,6 +128,8 @@ final class CloudKitSyncManager {
 
     /// Encodes a DailyHealthSummary as JSON and saves/updates a ParentHealthSnapshot record.
     func pushHealthSnapshot(_ summary: DailyHealthSummary, inviteCode: String, parentName: String) async throws {
+        try await ensureCloudKitAvailable()
+
         let jsonData = try encoder.encode(summary)
         guard let jsonString = String(data: jsonData, encoding: .utf8) else {
             throw SyncError.encodingFailed
@@ -131,13 +150,25 @@ final class CloudKitSyncManager {
         _ = try await publicDB.save(record)
     }
 
-    // MARK: - Parent: Push Structured HealthRecord
+    // MARK: - Parent: Push Structured HealthRecord (Per-Day Upsert)
 
+    /// Saves or updates a HealthRecord for the current day.
+    /// RecordName format: `HealthRecord_<inviteCode>_<yyyy-MM-dd>` ensures one record per day per parent.
     func pushHealthRecord(_ record: HealthRecord) async throws {
-        let recordIDString = "HealthRecord_\(record.inviteCode)"
+        try await ensureCloudKitAvailable()
+
+        let dateString = dateFormatter.string(from: record.recordDate)
+        let recordIDString = "HealthRecord_\(record.inviteCode)_\(dateString)"
         let recordID = CKRecord.ID(recordName: recordIDString)
 
-        let ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
+        // Upsert: fetch existing record for today, or create new
+        let ckRecord: CKRecord
+        if let existing = try? await publicDB.record(for: recordID) {
+            ckRecord = existing
+        } else {
+            ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
+        }
+
         ckRecord[CKField.inviteCode] = record.inviteCode
         ckRecord[CKField.recordDate] = record.recordDate
         ckRecord[CKField.parentName] = record.parentName
@@ -161,24 +192,48 @@ final class CloudKitSyncManager {
 
     // MARK: - Child: Fetch Latest HealthRecord
 
+    /// Fetches the most recent HealthRecord for the given inviteCode via query (sorted by updatedAt DESC).
     func fetchLatestHealthRecord(inviteCode: String) async throws -> HealthRecord? {
-        let recordID = CKRecord.ID(recordName: "HealthRecord_\(inviteCode)")
-        let record: CKRecord
-        if let direct = try? await publicDB.record(for: recordID) {
-            record = direct
-        } else {
-            let predicate = NSPredicate(format: "inviteCode == %@", inviteCode)
-            let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
-            query.sortDescriptors = [NSSortDescriptor(key: CKField.updatedAt, ascending: false)]
+        try await ensureCloudKitAvailable()
 
-            guard let result = try? await publicDB.records(matching: query, resultsLimit: 1),
-                  let (_, recordResult) = result.matchResults.first,
-                  let r = try? recordResult.get() else {
-                return nil
-            }
-            record = r
+        let predicate = NSPredicate(format: "inviteCode == %@", inviteCode)
+        let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
+        query.sortDescriptors = [NSSortDescriptor(key: CKField.updatedAt, ascending: false)]
+
+        guard let result = try? await publicDB.records(matching: query, resultsLimit: 1),
+              let (_, recordResult) = result.matchResults.first,
+              let record = try? recordResult.get() else {
+            return nil
         }
 
+        return parseHealthRecord(from: record, fallbackInviteCode: inviteCode)
+    }
+
+    // MARK: - Child: Fetch HealthRecord History
+
+    /// Fetches HealthRecord history for the past N days, sorted by recordDate ascending.
+    func fetchHealthRecordHistory(inviteCode: String, days: Int = 7) async throws -> [HealthRecord] {
+        try await ensureCloudKitAvailable()
+
+        let calendar = Calendar.current
+        let startDate = calendar.date(byAdding: .day, value: -days, to: calendar.startOfDay(for: Date()))!
+        let predicate = NSPredicate(format: "inviteCode == %@ AND recordDate >= %@", inviteCode, startDate as NSDate)
+        let query = CKQuery(recordType: CKRecordType.healthRecord, predicate: predicate)
+        query.sortDescriptors = [NSSortDescriptor(key: CKField.recordDate, ascending: true)]
+
+        guard let result = try? await publicDB.records(matching: query, resultsLimit: days + 1) else {
+            return []
+        }
+
+        return result.matchResults.compactMap { (_, recordResult) in
+            guard let record = try? recordResult.get() else { return nil }
+            return parseHealthRecord(from: record, fallbackInviteCode: inviteCode)
+        }
+    }
+
+    // MARK: - Parse CKRecord → HealthRecord
+
+    private func parseHealthRecord(from record: CKRecord, fallbackInviteCode: String) -> HealthRecord {
         let hrPoints = (record[CKField.recentHeartRatePoints] as? String ?? "")
             .split(separator: ",").compactMap { Double($0) }
         let sleepPoints = (record[CKField.recentSleepPoints] as? String ?? "")
@@ -187,7 +242,7 @@ final class CloudKitSyncManager {
             .split(separator: ",").compactMap { Double($0) }
 
         return HealthRecord(
-            inviteCode: record[CKField.inviteCode] as? String ?? inviteCode,
+            inviteCode: record[CKField.inviteCode] as? String ?? fallbackInviteCode,
             recordDate: record[CKField.recordDate] as? Date ?? Date(),
             parentName: record[CKField.parentName] as? String ?? "Parent",
             restingHeartRate: record[CKField.restingHeartRate] as? Double,
@@ -297,7 +352,7 @@ final class CloudKitSyncManager {
 
 // MARK: - Sync Errors
 
-enum SyncError: LocalizedError {
+enum SyncError: LocalizedError, Equatable {
     case inviteNotFound
     case snapshotNotFound
     case encodingFailed

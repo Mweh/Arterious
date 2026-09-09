@@ -256,6 +256,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Arterious reads your activity, heart rate, and sleep data to help family members stay aware of general wellness patterns.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Arterious uses HealthKit to monitor general wellness patterns.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -296,6 +298,8 @@
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_LSApplicationCategoryType = "";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Arterious reads your activity, heart rate, and sleep data to help family members stay aware of general wellness patterns.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Arterious uses HealthKit to monitor general wellness patterns.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;

@@ -7,7 +7,9 @@
       "fields": [
         { "name": "inviteCode",    "type": "STRING" },
         { "name": "status",        "type": "STRING" },
-        { "name": "childDeviceID", "type": "STRING" }
+        { "name": "childDeviceID", "type": "STRING" },
+        { "name": "senderRole",    "type": "STRING" },
+        { "name": "senderName",    "type": "STRING" }
       ],
       "indexes": [
         { "name": "inviteCode",        "type": "QUERYABLE" },
@@ -33,6 +35,7 @@
     },
     {
       "name": "HealthRecord",
+      "recordNameFormat": "HealthRecord_<inviteCode>_<yyyy-MM-dd>",
       "fields": [
         { "name": "inviteCode",            "type": "STRING"    },
         { "name": "recordDate",            "type": "TIMESTAMP" },
@@ -54,6 +57,7 @@
       ],
       "indexes": [
         { "name": "inviteCode",       "type": "QUERYABLE" },
+        { "name": "recordDate",       "type": "QUERYABLE" },
         { "name": "recordDate",       "type": "SORTABLE"  },
         { "name": "updatedAt",        "type": "SORTABLE"  },
         { "name": "recordName",       "type": "QUERYABLE" },
@@ -65,7 +69,8 @@
     "SharingInvite.inviteCode": "Must be QUERYABLE — used in NSPredicate 'inviteCode == %@'",
     "ParentHealthSnapshot.inviteCode": "Must be QUERYABLE — used in NSPredicate AND CKQuerySubscription predicate",
     "HealthRecord.inviteCode": "Must be QUERYABLE — used in NSPredicate 'inviteCode == %@'",
-    "HealthRecord.recordDate": "Must be SORTABLE — used for history chart ordering",
-    "HealthRecord.updatedAt": "Must be SORTABLE — used for latest record query"
+    "HealthRecord.recordDate": "Must be QUERYABLE (for compound predicate with inviteCode) AND SORTABLE (for history ordering)",
+    "HealthRecord.updatedAt": "Must be SORTABLE — used for fetching latest record",
+    "HealthRecord.recordName": "Format: HealthRecord_<inviteCode>_<yyyy-MM-dd> — ensures one record per day per parent, enabling daily history"
   }
 }

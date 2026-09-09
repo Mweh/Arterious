@@ -166,23 +166,30 @@ final class SyncViewModel {
     }
 
     func pushParentHealthData(code: String) async {
+        do {
+            try await cloudKit.ensureCloudKitAvailable()
+        } catch {
+            errorMessage = "iCloud tidak tersedia. Pastikan kamu sudah login di Settings > Apple ID > iCloud."
+            return
+        }
+
         let summary = await healthKit.fetchTodaySummary()
         let history = await healthKit.fetchHistoricalSummaries(days: 7)
         let name = UIDevice.current.name
 
-        // 1. Create structured HealthRecord
         let record = HealthRecord.create(from: summary, inviteCode: code, parentName: name, history: history)
 
         do {
             try await cloudKit.pushHealthSnapshot(summary, inviteCode: code, parentName: name)
-            try? await cloudKit.pushHealthRecord(record)
+            try await cloudKit.pushHealthRecord(record)
 
             lastSyncDate = Date()
             syncState.lastSyncDate = lastSyncDate
             healthRecord = record
+            errorMessage = nil
             persistState()
         } catch {
-            // Will retry on next loop
+            errorMessage = "Gagal mengirim data: \(error.localizedDescription)"
         }
     }
 
@@ -250,6 +257,8 @@ final class SyncViewModel {
 
     func fetchParentSnapshot(code: String) async {
         do {
+            try await cloudKit.ensureCloudKitAvailable()
+
             // 1. Try fetching structured HealthRecord first
             if let hr = try await cloudKit.fetchLatestHealthRecord(inviteCode: code) {
                 self.healthRecord = hr
@@ -275,10 +284,13 @@ final class SyncViewModel {
                 }
             }
 
+            errorMessage = nil
             persistState()
             onSnapshotUpdated?()
+        } catch let error as SyncError where error == .cloudKitUnavailable {
+            errorMessage = error.localizedDescription
         } catch {
-            // Silent — snapshot may not exist yet
+            // Data may not exist yet — not an error for child waiting
         }
     }
 

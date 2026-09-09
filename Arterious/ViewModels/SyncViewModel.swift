@@ -89,16 +89,16 @@ final class SyncViewModel {
         )
         persistState()
 
-        // Attempt background CloudKit registration
-        Task {
-            do {
-                _ = try await cloudKit.generateInviteLink(code: code, senderRole: syncState.role, senderName: UIDevice.current.name)
-                if syncState.role == .parent {
-                    await pushParentHealthData(code: code)
-                }
-            } catch {
-                self.errorMessage = "Gagal mendaftarkan undangan di CloudKit: \(error.localizedDescription)"
+        // Register in CloudKit FIRST, then start polling
+        do {
+            _ = try await cloudKit.generateInviteLink(code: code, senderRole: syncState.role, senderName: UIDevice.current.name)
+            if syncState.role == .parent {
+                await pushParentHealthData(code: code)
             }
+        } catch {
+            self.errorMessage = "Gagal mendaftarkan undangan di CloudKit: \(error.localizedDescription)"
+            // Don't start polling if CloudKit registration failed
+            return url
         }
 
         startPollingForAcceptance(code: code)

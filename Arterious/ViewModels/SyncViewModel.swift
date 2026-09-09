@@ -138,7 +138,7 @@ final class SyncViewModel {
                     do {
                         try await cloudKit.acceptInvite(code: code)
                     } catch {
-                        self.errorMessage = "Gagal menerima undangan: \(error.localizedDescription)"
+                        print("[SyncViewModel] Non-fatal acceptInvite notice: \(error.localizedDescription)")
                     }
                     await subscribeAndFetch(code: code)
                 }
@@ -159,7 +159,7 @@ final class SyncViewModel {
                     do {
                         try await cloudKit.acceptInvite(code: code)
                     } catch {
-                        self.errorMessage = "Gagal konfirmasi ke CloudKit: \(error.localizedDescription)"
+                        print("[SyncViewModel] Non-fatal acceptInvite notice: \(error.localizedDescription)")
                     }
                     await pushParentHealthData(code: code)
                     startParentPushLoop(code: code)

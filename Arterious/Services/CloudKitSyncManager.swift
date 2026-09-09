@@ -6,6 +6,7 @@ import UIKit
 
 private enum CKRecordType {
     static let sharingInvite = "SharingInvite"
+    static let sharingAcceptance = "SharingAcceptance"
     static let parentHealthSnapshot = "ParentHealthSnapshot"
     static let healthRecord = "HealthRecord"
 }
@@ -118,11 +119,16 @@ final class CloudKitSyncManager {
 
     // MARK: - Accept Invite
 
-    /// Looks up a SharingInvite by code and marks it accepted.
+    /// Creates a SharingAcceptance record in CloudKit owned by the acceptor.
     func acceptInvite(code: String) async throws {
         try await ensureCloudKitAvailable()
-        let record = try await fetchInviteRecord(code: code)
+        let recordID = CKRecord.ID(recordName: "SharingAcceptance_\(code)")
+        let record = CKRecord(recordType: CKRecordType.sharingAcceptance, recordID: recordID)
+        record[CKField.inviteCode] = code
         record[CKField.status] = "accepted"
+        record[CKField.senderName] = UIDevice.current.name
+        record[CKField.updatedAt] = Date()
+
         _ = try await publicDB.save(record)
     }
 
@@ -301,8 +307,26 @@ final class CloudKitSyncManager {
     // MARK: - Invite Status Poll
 
     func checkInviteStatus(code: String) async throws -> String {
-        let record = try await fetchInviteRecord(code: code)
-        return record[CKField.status] as? String ?? "pending"
+        try await ensureCloudKitAvailable()
+
+        // 1. Check if a SharingAcceptance record exists for this code (created by acceptor)
+        let acceptanceID = CKRecord.ID(recordName: "SharingAcceptance_\(code)")
+        if let record = try? await publicDB.record(for: acceptanceID),
+           let status = record[CKField.status] as? String, status == "accepted" {
+            return "accepted"
+        }
+
+        // 2. Check if a ParentHealthSnapshot exists for this inviteCode (pushed by parent)
+        if (try? await fetchSnapshotRecord(inviteCode: code)) != nil {
+            return "accepted"
+        }
+
+        // 3. Fallback: check original SharingInvite
+        if let record = try? await fetchInviteRecord(code: code) {
+            return record[CKField.status] as? String ?? "pending"
+        }
+
+        return "pending"
     }
 
     // MARK: - Private Helpers

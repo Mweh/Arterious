@@ -1,6 +1,6 @@
 DEFINE SCHEMA
 
-DEFINE RECORD TYPE SharingInvite (
+CREATE RECORD TYPE SharingInvite (
     "childDeviceID" STRING,
     "inviteCode" STRING,
     "senderName" STRING,
@@ -13,11 +13,11 @@ DEFINE RECORD TYPE SharingInvite (
     GRANT READ TO "_world"
 );
 
-DEFINE INDEX "inviteCode_query" ON SharingInvite (inviteCode QUERYABLE);
-DEFINE INDEX "status_query" ON SharingInvite (status QUERYABLE);
-DEFINE INDEX "recordName_query" ON SharingInvite (recordName QUERYABLE);
+CREATE INDEX "inviteCode_query" ON SharingInvite (inviteCode QUERYABLE);
+CREATE INDEX "status_query" ON SharingInvite (status QUERYABLE);
+CREATE INDEX "recordName_query" ON SharingInvite (recordName QUERYABLE);
 
-DEFINE RECORD TYPE ParentHealthSnapshot (
+CREATE RECORD TYPE ParentHealthSnapshot (
     "inviteCode" STRING,
     "parentName" STRING,
     "snapshotJSON" STRING,
@@ -29,11 +29,11 @@ DEFINE RECORD TYPE ParentHealthSnapshot (
     GRANT READ TO "_world"
 );
 
-DEFINE INDEX "inviteCode_query" ON ParentHealthSnapshot (inviteCode QUERYABLE);
-DEFINE INDEX "updatedAt_sort" ON ParentHealthSnapshot (updatedAt SORTABLE);
-DEFINE INDEX "recordName_query" ON ParentHealthSnapshot (recordName QUERYABLE);
+CREATE INDEX "inviteCode_query" ON ParentHealthSnapshot (inviteCode QUERYABLE);
+CREATE INDEX "updatedAt_sort" ON ParentHealthSnapshot (updatedAt SORTABLE);
+CREATE INDEX "recordName_query" ON ParentHealthSnapshot (recordName QUERYABLE);
 
-DEFINE RECORD TYPE HealthRecord (
+CREATE RECORD TYPE HealthRecord (
     "activityStatus" STRING,
     "heartRateStatus" STRING,
     "inviteCode" STRING,
@@ -58,8 +58,8 @@ DEFINE RECORD TYPE HealthRecord (
     GRANT READ TO "_world"
 );
 
-DEFINE INDEX "inviteCode_query" ON HealthRecord (inviteCode QUERYABLE);
-DEFINE INDEX "recordDate_query" ON HealthRecord (recordDate QUERYABLE);
-DEFINE INDEX "recordDate_sort" ON HealthRecord (recordDate SORTABLE);
-DEFINE INDEX "updatedAt_sort" ON HealthRecord (updatedAt SORTABLE);
-DEFINE INDEX "recordName_query" ON HealthRecord (recordName QUERYABLE);
+CREATE INDEX "inviteCode_query" ON HealthRecord (inviteCode QUERYABLE);
+CREATE INDEX "recordDate_query" ON HealthRecord (recordDate QUERYABLE);
+CREATE INDEX "recordDate_sort" ON HealthRecord (recordDate SORTABLE);
+CREATE INDEX "updatedAt_sort" ON HealthRecord (updatedAt SORTABLE);
+CREATE INDEX "recordName_query" ON HealthRecord (recordName QUERYABLE);

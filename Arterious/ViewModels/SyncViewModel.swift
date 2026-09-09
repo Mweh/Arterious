@@ -122,7 +122,7 @@ final class SyncViewModel {
 
         do {
             let details = try await cloudKit.fetchInviteDetails(code: code)
-            if details.senderRole == "parent" || syncState.role == .child {
+            if details.senderRole == "parent" {
                 // Sender is Parent -> Receiver is Child
                 syncState = SyncState(
                     role: .child,

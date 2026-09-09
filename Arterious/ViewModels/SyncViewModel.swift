@@ -135,7 +135,11 @@ final class SyncViewModel {
                 persistState()
 
                 Task {
-                    try? await cloudKit.acceptInvite(code: code)
+                    do {
+                        try await cloudKit.acceptInvite(code: code)
+                    } catch {
+                        self.errorMessage = "Gagal menerima undangan: \(error.localizedDescription)"
+                    }
                     await subscribeAndFetch(code: code)
                 }
             } else {
@@ -149,9 +153,14 @@ final class SyncViewModel {
                 )
                 persistState()
 
+                // CRITICAL: Request HealthKit auth and push data inline (not in background)
                 Task {
                     try? await healthKit.requestAuthorization()
-                    try? await cloudKit.acceptInvite(code: code)
+                    do {
+                        try await cloudKit.acceptInvite(code: code)
+                    } catch {
+                        self.errorMessage = "Gagal konfirmasi ke CloudKit: \(error.localizedDescription)"
+                    }
                     await pushParentHealthData(code: code)
                     startParentPushLoop(code: code)
                 }
@@ -312,11 +321,18 @@ final class SyncViewModel {
             if syncState.status == .accepted {
                 await fetchParentSnapshot(code: code)
             } else {
-                startPollingForAcceptance(code: code)
+                // Direct immediate check first
+                if let status = try? await cloudKit.checkInviteStatus(code: code), status == "accepted" {
+                    await handleInviteAccepted(code: code)
+                } else {
+                    // Re-start polling loop
+                    startPollingForAcceptance(code: code)
+                }
             }
         case .parent:
             guard let code = syncState.inviteCode else { return }
             if syncState.status == .accepted {
+                await pushParentHealthData(code: code)
                 startParentPushLoop(code: code)
             }
         case .unset:

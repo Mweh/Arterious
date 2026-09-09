@@ -140,27 +140,7 @@ struct DailyHealthSummary: Identifiable {
     }
 
     static var placeholder: DailyHealthSummary {
-        DailyHealthSummary(
-            date: Date(),
-            latestHeartRate: 72,
-            restingHeartRate: 64,
-            meanHeartRate24h: 70,
-            heartRateSD24h: 8.5,
-            maxHeartRate24h: 112,
-            hrvSDNN14DayMean: 48,
-            hrvRMSSD: 42,
-            hrvDropFromBaseline: -2.5,
-            sleepHours: 7.2,
-            sleepEfficiency: 88,
-            deepSleepPercentage: 22,
-            remSleepPercentage: 24,
-            sleepBedtimeSDMinutes: 18,
-            stepCount: 4200,
-            activeMinutesToday: 35,
-            exerciseMinutesWeek: 140,
-            activeEnergyKcalToday: 320,
-            standHoursToday: 10
-        )
+        DailyHealthSummary.empty
     }
 }
 

@@ -7,7 +7,7 @@ import Observation
 final class DashboardViewModel {
     var availableParents: [String] = ["Nama Ortu 1", "Nama Ortu 2"]
     var selectedParentIndex: Int = 0
-    var todaySummary: DailyHealthSummary = DailyHealthSummary.placeholder
+    var todaySummary: DailyHealthSummary = DailyHealthSummary.empty
     var historicalSummaries: [DailyHealthSummary] = []
     var cautionInsight: CautionInsight?
     var wellnessStatus: WellnessStatus = .good

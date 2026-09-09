@@ -161,7 +161,7 @@ final class SyncViewModel {
 
         // Ensure child immediately has valid health data to render on dashboard
         if syncState.role == .child && parentSnapshot == nil {
-            let summary = DailyHealthSummary.placeholder
+            let summary = DailyHealthSummary.empty
             self.parentSnapshot = summary
             self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
             self.lastSyncDate = Date()
@@ -294,7 +294,7 @@ final class SyncViewModel {
 
             // Fallback for immediate view if CloudKit is currently returning empty/unauthenticated
             if parentSnapshot == nil {
-                let summary = DailyHealthSummary.placeholder
+                let summary = DailyHealthSummary.empty
                 self.parentSnapshot = summary
                 self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
                 self.lastSyncDate = Date()
@@ -306,7 +306,7 @@ final class SyncViewModel {
             onSnapshotUpdated?()
         } catch {
             if parentSnapshot == nil {
-                let summary = DailyHealthSummary.placeholder
+                let summary = DailyHealthSummary.empty
                 self.parentSnapshot = summary
                 self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
                 self.lastSyncDate = Date()

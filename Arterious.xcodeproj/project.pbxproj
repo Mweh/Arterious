@@ -255,6 +255,9 @@
 				DEVELOPMENT_TEAM = 2R9V3YHPK7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSContactsUsageDescription = "Izin ini diperlukan agar kamu dapat memilih kontak dan membagikan pembaruan data kesehatanmu kepada mereka.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Arterious reads your activity, heart rate, and sleep data to help family members stay aware of general wellness patterns.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Arterious uses HealthKit to monitor general wellness patterns.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -262,12 +265,13 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UIUserInterfaceStyle = Light;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.bagus1.Arterious;
+				PRODUCT_BUNDLE_IDENTIFIER = com.helloworld.Arterious;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
@@ -289,11 +293,14 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = Arterious/Arterious.entitlements;
-				CODE_SIGN_STYLE = Manual;
+				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = "";
+				DEVELOPMENT_TEAM = 2R9V3YHPK7;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
+				INFOPLIST_KEY_NSContactsUsageDescription = "Izin ini diperlukan agar kamu dapat memilih kontak dan membagikan pembaruan data kesehatanmu kepada mereka.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Arterious reads your activity, heart rate, and sleep data to help family members stay aware of general wellness patterns.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "Arterious uses HealthKit to monitor general wellness patterns.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -301,12 +308,13 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = UIInterfaceOrientationPortrait;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_UIUserInterfaceStyle = Light;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.fahmi.Arterious;
+				PRODUCT_BUNDLE_IDENTIFIER = com.helloworld.Arterious;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;

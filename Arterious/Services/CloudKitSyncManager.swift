@@ -87,6 +87,7 @@ final class CloudKitSyncManager {
 
     /// Creates a SharingInvite record in CloudKit and returns a deep link URL.
     func generateInviteLink(senderRole: SyncRole = .child, senderName: String = "Keluarga") async throws -> URL {
+        try await ensureCloudKitAvailable()
         let code = generateCode()
         let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
         let record = CKRecord(recordType: CKRecordType.sharingInvite, recordID: recordID)
@@ -106,6 +107,7 @@ final class CloudKitSyncManager {
 
     /// Fetches invite metadata to determine who invited whom
     func fetchInviteDetails(code: String) async throws -> InviteDetails {
+        try await ensureCloudKitAvailable()
         let record = try await fetchInviteRecord(code: code)
         return InviteDetails(
             code: code,
@@ -119,6 +121,7 @@ final class CloudKitSyncManager {
 
     /// Looks up a SharingInvite by code and marks it accepted.
     func acceptInvite(code: String) async throws {
+        try await ensureCloudKitAvailable()
         let record = try await fetchInviteRecord(code: code)
         record[CKField.status] = "accepted"
         _ = try await publicDB.save(record)

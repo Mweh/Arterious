@@ -23,6 +23,21 @@ struct DashboardView: View {
 
                 ScrollView {
                     VStack(alignment: .leading, spacing: 20) {
+                        if let err = viewModel.errorMessage ?? viewModel.syncViewModel.errorMessage {
+                            HStack(alignment: .top, spacing: 10) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                                Text(err)
+                                    .font(.system(size: 13, weight: .medium))
+                                    .foregroundStyle(.red)
+                                Spacer()
+                            }
+                            .padding(12)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 10))
+                            .padding(.top, 4)
+                        }
+
                         if viewModel.syncViewModel.syncState.role == .child && !viewModel.isPaired {
                             // NOT PAIRED STATE (Screenshot 1)
                             HomeNotPairedCardView(syncViewModel: viewModel.syncViewModel)

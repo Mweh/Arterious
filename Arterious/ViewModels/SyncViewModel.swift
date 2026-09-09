@@ -116,56 +116,44 @@ final class SyncViewModel {
         errorMessage = nil
         defer { isLoading = false }
 
-        // Attempt to fetch CloudKit invite details, fallback to direct acceptance if unauthenticated
-        let details = (try? await cloudKit.fetchInviteDetails(code: code)) ?? InviteDetails(
-            code: code,
-            status: "accepted",
-            senderRole: syncState.role == .parent ? "child" : "parent",
-            senderName: "Keluarga"
-        )
+        do {
+            let details = try await cloudKit.fetchInviteDetails(code: code)
+            if details.senderRole == "parent" || syncState.role == .child {
+                // Sender is Parent -> Receiver is Child
+                syncState = SyncState(
+                    role: .child,
+                    inviteCode: code,
+                    status: .accepted,
+                    partnerName: details.senderName,
+                    lastSyncDate: Date()
+                )
+                self.parentName = details.senderName
+                persistState()
 
-        if details.senderRole == "parent" || syncState.role == .child {
-            // Sender is Parent -> Receiver is Child
-            syncState = SyncState(
-                role: .child,
-                inviteCode: code,
-                status: .accepted,
-                partnerName: details.senderName,
-                lastSyncDate: Date()
-            )
-            self.parentName = details.senderName
-            persistState()
+                Task {
+                    try? await cloudKit.acceptInvite(code: code)
+                    await subscribeAndFetch(code: code)
+                }
+            } else {
+                // Sender is Child -> Receiver is Parent
+                syncState = SyncState(
+                    role: .parent,
+                    inviteCode: code,
+                    status: .accepted,
+                    partnerName: details.senderName,
+                    lastSyncDate: Date()
+                )
+                persistState()
 
-            Task {
-                try? await cloudKit.acceptInvite(code: code)
-                await subscribeAndFetch(code: code)
+                Task {
+                    try? await healthKit.requestAuthorization()
+                    try? await cloudKit.acceptInvite(code: code)
+                    await pushParentHealthData(code: code)
+                    startParentPushLoop(code: code)
+                }
             }
-        } else {
-            // Sender is Child -> Receiver is Parent
-            syncState = SyncState(
-                role: .parent,
-                inviteCode: code,
-                status: .accepted,
-                partnerName: details.senderName,
-                lastSyncDate: Date()
-            )
-            persistState()
-
-            Task {
-                try? await healthKit.requestAuthorization()
-                try? await cloudKit.acceptInvite(code: code)
-                await pushParentHealthData(code: code)
-                startParentPushLoop(code: code)
-            }
-        }
-
-        // Ensure child immediately has valid health data to render on dashboard
-        if syncState.role == .child && parentSnapshot == nil {
-            let summary = DailyHealthSummary.empty
-            self.parentSnapshot = summary
-            self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
-            self.lastSyncDate = Date()
-            onSnapshotUpdated?()
+        } catch {
+            errorMessage = "Gagal memproses kode undangan CloudKit: \(error.localizedDescription)"
         }
     }
 
@@ -199,7 +187,7 @@ final class SyncViewModel {
             errorMessage = nil
             persistState()
         } catch {
-            // Background push retry
+            errorMessage = "Gagal mengirim data ke CloudKit: \(error.localizedDescription)"
         }
     }
 
@@ -267,6 +255,8 @@ final class SyncViewModel {
 
     func fetchParentSnapshot(code: String) async {
         do {
+            var fetchedAny = false
+
             // 1. Try fetching structured HealthRecord first
             if let hr = try await cloudKit.fetchLatestHealthRecord(inviteCode: code) {
                 self.healthRecord = hr
@@ -275,6 +265,7 @@ final class SyncViewModel {
                 self.syncState.partnerName = hr.parentName
                 self.syncState.lastSyncDate = hr.updatedAt
                 self.syncState.status = .accepted
+                fetchedAny = true
             }
 
             // 2. Also fetch DailyHealthSummary snapshot
@@ -290,28 +281,19 @@ final class SyncViewModel {
                 if self.healthRecord == nil {
                     self.healthRecord = HealthRecord.create(from: result.summary, inviteCode: code, parentName: result.parentName)
                 }
+                fetchedAny = true
             }
 
-            // Fallback for immediate view if CloudKit is currently returning empty/unauthenticated
-            if parentSnapshot == nil {
-                let summary = DailyHealthSummary.empty
-                self.parentSnapshot = summary
-                self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
-                self.lastSyncDate = Date()
-                self.syncState.status = .accepted
+            if fetchedAny {
+                errorMessage = nil
+            } else {
+                errorMessage = "Belum ada data kesehatan terkirim dari HP Orang Tua."
             }
 
-            errorMessage = nil
             persistState()
             onSnapshotUpdated?()
         } catch {
-            if parentSnapshot == nil {
-                let summary = DailyHealthSummary.empty
-                self.parentSnapshot = summary
-                self.healthRecord = HealthRecord.create(from: summary, inviteCode: code, parentName: self.parentName)
-                self.lastSyncDate = Date()
-                self.syncState.status = .accepted
-            }
+            errorMessage = "Gagal mengambil data dari CloudKit: \(error.localizedDescription)"
             persistState()
             onSnapshotUpdated?()
         }

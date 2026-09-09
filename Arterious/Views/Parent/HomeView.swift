@@ -267,28 +267,47 @@ struct HomeView: View {
                 Spacer()
             }
 
-            // "Today's Summary" Blue Tinted Card
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text("Today's Summary")
-                    .font(AppTypography.subheadlineRegular)
-                    .foregroundStyle(AppColor.textSecondary)
+            // "Today's Summary" Blue Tinted Card with direct access to Caregiver AI Insights
+            NavigationLink {
+                LLMInsightView()
+            } label: {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    HStack {
+                        Text("Today's Summary")
+                            .font(AppTypography.subheadlineRegular)
+                            .foregroundStyle(AppColor.textSecondary)
 
-                Text(syncViewModel.healthRecord?.summaryTitle ?? "Belum ada data hari ini")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .padding(.top, 1)
+                        Spacer()
 
-                Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")
-                    .font(AppTypography.bodyRegular)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("AI Insight")
+                                .font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(AppColor.actionBlue)
+                    }
+
+                    Text(syncViewModel.healthRecord?.summaryTitle ?? "Belum ada data hari ini")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .padding(.top, 1)
+
+                    Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")
+                        .font(AppTypography.bodyRegular)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                }
+                .padding(AppSpacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppColor.Accent.blue12)
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
             }
-            .padding(AppSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.Accent.blue12)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
+            .buttonStyle(.plain)
 
             // Section "Today's Data"
             VStack(alignment: .leading, spacing: AppSpacing.md) {

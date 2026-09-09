@@ -1,35 +1,97 @@
 import SwiftUI
 
-/// Centralized typography tokens for Arterious.
-/// Provides semantic Font values so screens stay typographically consistent.
+/// Centralized typography tokens for Arterious derived from the Figma Typography Naming Convention.
 enum AppTypography {
 
-    /// Large navigation / page titles.
-    static let largeTitle: Font = .largeTitle.weight(.bold)
+    // MARK: - Figma: LargeTitle
 
-    /// Card or section titles.
-    static let title: Font = .title3.weight(.bold)
+    /// LargeTitle/Bold — Size: 34, Weight: Bold, Line Height: 41
+    static let largeTitleBold: Font = .system(size: 34, weight: .bold)
 
-    /// Section headers and group labels.
-    static let headline: Font = .headline
+    /// LargeTitle/Regular — Size: 34, Weight: Regular, Line Height: 41
+    static let largeTitleRegular: Font = .system(size: 34, weight: .regular)
 
-    /// Primary body content.
-    static let body: Font = .body
+    // MARK: - Figma: Title 1
 
-    /// Card subheadings and labels.
-    static let subheadline: Font = .subheadline
+    /// Title1/Regular — Size: 28, Weight: Regular, Line Height: 34
+    static let title1Regular: Font = .system(size: 28, weight: .regular)
 
-    /// Tags, badges, timestamps.
-    static let caption: Font = .caption
+    // MARK: - Figma: Title 2
 
-    /// Smallest labels — e.g., comparison deltas.
-    static let caption2: Font = .caption2
+    /// Title2/Bold — Size: 22, Weight: Bold, Line Height: 26
+    static let title2Bold: Font = .system(size: 22, weight: .bold)
 
-    // MARK: - Styled variants
+    /// Title2/Regular — Size: 22, Weight: Regular, Line Height: 26
+    static let title2Regular: Font = .system(size: 22, weight: .regular)
 
-    /// Rounded, bold metric value display (e.g., "72 BPM").
-    static let metricValue: Font = .system(.title2, design: .rounded, weight: .bold)
+    // MARK: - Figma: Title 3
 
-    /// Semibold button label.
-    static let buttonLabel: Font = .subheadline.weight(.semibold)
+    /// Title3/Bold — Size: 20, Weight: Bold, Line Height: 25
+    static let title3Bold: Font = .system(size: 20, weight: .bold)
+
+    /// Title3/Regular — Size: 20, Weight: Regular, Line Height: 25
+    static let title3Regular: Font = .system(size: 20, weight: .regular)
+
+    // MARK: - Figma: Body
+
+    /// Body/Semibold — Size: 17, Weight: Semibold, Line Height: 22
+    static let bodySemibold: Font = .system(size: 17, weight: .semibold)
+
+    /// Body/Medium — Size: 17, Weight: Medium, Line Height: 22
+    static let bodyMedium: Font = .system(size: 17, weight: .medium)
+
+    /// Body/Regular — Size: 17, Weight: Regular, Line Height: 22
+    static let bodyRegular: Font = .system(size: 17, weight: .regular)
+
+    // MARK: - Figma: Callout
+
+    /// Callout/Bold — Size: 16, Weight: Bold, Line Height: 21
+    static let calloutBold: Font = .system(size: 16, weight: .bold)
+
+    // MARK: - Figma: Subheadline
+
+    /// Subheadline/Bold — Size: 15, Weight: Bold, Line Height: 20
+    static let subheadlineBold: Font = .system(size: 15, weight: .bold)
+
+    /// Subheadline/Regular — Size: 15, Weight: Regular, Line Height: 20
+    static let subheadlineRegular: Font = .system(size: 15, weight: .regular)
+
+    // MARK: - Figma: Footnote
+
+    /// Footnote/Regular — Size: 13, Weight: Regular, Line Height: 18
+    static let footnoteRegular: Font = .system(size: 13, weight: .regular)
+
+    // MARK: - Figma: Caption
+
+    /// Caption/Regular — Size: 12, Weight: Regular, Line Height: 16
+    static let captionRegular: Font = .system(size: 12, weight: .regular)
+
+    // MARK: - Semantic Aliases (For Codebase Usability & Backwards Compatibility)
+
+    /// Large navigation / screen hero titles (LargeTitle/Bold)
+    static let largeTitle: Font = largeTitleBold
+
+    /// Card or section titles (Title3/Bold)
+    static let title: Font = title3Bold
+
+    /// Section headers and group labels (Body/Semibold)
+    static let headline: Font = bodySemibold
+
+    /// Primary body content (Body/Regular)
+    static let body: Font = bodyRegular
+
+    /// Card subheadings and labels (Subheadline/Regular)
+    static let subheadline: Font = subheadlineRegular
+
+    /// Tags, badges, timestamps (Caption/Regular)
+    static let caption: Font = captionRegular
+
+    /// Smallest labels / comparison deltas (Caption/Regular)
+    static let caption2: Font = captionRegular
+
+    /// Rounded metric value display (e.g., "72 BPM")
+    static let metricValue: Font = .system(size: 22, weight: .bold, design: .rounded)
+
+    /// Standard button label (Body/Semibold)
+    static let buttonLabel: Font = bodySemibold
 }

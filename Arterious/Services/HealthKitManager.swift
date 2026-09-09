@@ -71,14 +71,18 @@ final class HealthKitManager: @unchecked Sendable {
             let timeInBedMins = max(totalMins, totalMins + awakeMins)
             let eff = sleepData.efficiency ?? (timeInBedMins > 0 ? (totalMins / timeInBedMins) * 100.0 : 88.4)
             
+            let episodes = sleepData.awakeEpisodes.isEmpty
+                ? (awakeMins >= 5 ? [AwakeEpisode(startTimeFormatted: "02:30", durationMinutes: Int(awakeMins))] : [])
+                : sleepData.awakeEpisodes
+            
             sleepDetails = SleepDetails(
-                bedtime: Date().addingTimeInterval(-totalMins * 60),
-                wakeTime: Date(),
+                bedtime: sleepData.bedtime,
+                wakeTime: sleepData.wakeTime,
                 totalSleepMinutes: totalMins,
                 timeInBedMinutes: timeInBedMins,
-                sleepEfficiency: eff,
+                sleepEfficiency: min(100.0, eff),
                 awakeMinutes: awakeMins,
-                awakeEpisodes: awakeMins >= 5 ? [AwakeEpisode(startTimeFormatted: "03:15", durationMinutes: Int(awakeMins))] : [],
+                awakeEpisodes: episodes,
                 remMinutes: sleepData.remMinutes,
                 coreMinutes: sleepData.coreMinutes,
                 deepMinutes: sleepData.deepMinutes
@@ -362,6 +366,9 @@ final class HealthKitManager: @unchecked Sendable {
         var remMinutes: Double?
         var coreMinutes: Double?
         var awakeMinutes: Double?
+        var bedtime: Date?
+        var wakeTime: Date?
+        var awakeEpisodes: [AwakeEpisode] = []
     }
     
     private func fetchRecentSleepSamples(limit: Int = 300) async -> [HKCategorySample] {
@@ -400,13 +407,28 @@ final class HealthKitManager: @unchecked Sendable {
         }
         if !currentSession.isEmpty { sleepSessions.append(currentSession) }
         
-        if let latestSession = sleepSessions.last {
+        if let latestSession = sleepSessions.last,
+           let sessionEnd = latestSession.last?.endDate {
+            // Cutoff: sleep session must have ended within the last 28 hours to be considered today's / last night's sleep
+            let cutoff = calendar.date(byAdding: .hour, value: -28, to: Date()) ?? Date().addingTimeInterval(-28 * 3600)
+            guard sessionEnd >= cutoff else {
+                // Sleep is older than last night -> no sleep data recorded yet for today
+                return data
+            }
+            
             var inBedDuration: TimeInterval = 0
             var totalAsleepDuration: TimeInterval = 0
             var deepDuration: TimeInterval = 0
             var remDuration: TimeInterval = 0
             var coreDuration: TimeInterval = 0
             var awakeDuration: TimeInterval = 0
+            
+            data.bedtime = latestSession.first?.startDate
+            data.wakeTime = latestSession.last?.endDate
+            
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "HH:mm"
+            var episodes: [AwakeEpisode] = []
             
             for sample in latestSession {
                 let duration = sample.endDate.timeIntervalSince(sample.startDate)
@@ -415,6 +437,10 @@ final class HealthKitManager: @unchecked Sendable {
                     inBedDuration += duration
                 } else if val == .awake {
                     awakeDuration += duration
+                    let mins = Int(duration / 60)
+                    if mins >= 1 {
+                        episodes.append(AwakeEpisode(startTimeFormatted: timeFormatter.string(from: sample.startDate), durationMinutes: mins))
+                    }
                 } else {
                     if val == .asleepUnspecified || val == .asleepCore || val == .asleepDeep || val == .asleepREM {
                         totalAsleepDuration += duration
@@ -438,6 +464,7 @@ final class HealthKitManager: @unchecked Sendable {
             data.remMinutes = remDuration > 0 ? remDuration / 60.0 : nil
             data.coreMinutes = coreDuration > 0 ? coreDuration / 60.0 : nil
             data.awakeMinutes = awakeDuration > 0 ? awakeDuration / 60.0 : nil
+            data.awakeEpisodes = episodes
         }
         
         var bedtimeMinutes: [Double] = []
@@ -552,6 +579,7 @@ final class HealthKitManager: @unchecked Sendable {
         var remMins: Double?
         var coreMins: Double?
         var awakeMins: Double?
+        var sleepDetails: SleepDetails?
         if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
             let startSleep = calendar.date(byAdding: .hour, value: -6, to: startOfDay)!
             let endSleep = calendar.date(byAdding: .hour, value: 18, to: startOfDay)!
@@ -584,6 +612,38 @@ final class HealthKitManager: @unchecked Sendable {
             remMins = rem > 0 ? rem / 60.0 : nil
             coreMins = core > 0 ? core / 60.0 : nil
             awakeMins = awake > 0 ? awake / 60.0 : nil
+            
+            var histDetails: SleepDetails? = nil
+            if effective > 0 {
+                let totalMins = effective / 60.0
+                let awakeTotalMins = awake / 60.0
+                let timeInBedMins = max(totalMins, inBed > 0 ? inBed / 60.0 : totalMins + awakeTotalMins)
+                let eff = (totalMins / max(1, timeInBedMins)) * 100.0
+                let sortedSamples = samples.sorted(by: { $0.startDate < $1.startDate })
+                
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateFormat = "HH:mm"
+                let histAwakeEpisodes = sortedSamples.compactMap { s -> AwakeEpisode? in
+                    guard HKCategoryValueSleepAnalysis(rawValue: s.value) == .awake else { return nil }
+                    let d = Int(s.endDate.timeIntervalSince(s.startDate) / 60)
+                    guard d >= 1 else { return nil }
+                    return AwakeEpisode(startTimeFormatted: timeFormatter.string(from: s.startDate), durationMinutes: d)
+                }
+                
+                histDetails = SleepDetails(
+                    bedtime: sortedSamples.first?.startDate,
+                    wakeTime: sortedSamples.last?.endDate,
+                    totalSleepMinutes: totalMins,
+                    timeInBedMinutes: timeInBedMins,
+                    sleepEfficiency: min(100.0, eff),
+                    awakeMinutes: awakeTotalMins,
+                    awakeEpisodes: histAwakeEpisodes,
+                    remMinutes: remMins,
+                    coreMinutes: coreMins,
+                    deepMinutes: deepMins
+                )
+            }
+            sleepDetails = histDetails
         }
         
         return DailyHealthSummary(
@@ -597,6 +657,7 @@ final class HealthKitManager: @unchecked Sendable {
             remSleepMinutes: remMins,
             coreSleepMinutes: coreMins,
             awakeSleepMinutes: awakeMins,
+            sleepDetails: sleepDetails,
             stepCount: stepCount
         )
     }

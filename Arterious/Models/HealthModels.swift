@@ -262,15 +262,19 @@ struct HealthBaseline {
     let periodDays: Int = 14
     let steps: Double               // Rata-rata langkah 14 hari
     let sleepHours: Double          // Rata-rata tidur (jam) 14 hari
-    let restingHeartRate: Double    // Rata-rata resting heart rate 14 hari
+    let heartRate: Double           // Rata-rata detak jantung 14 hari
     var sleepEfficiency: Double = 88.4   // Median efisiensi tidur (%) dari baseline PRD
     var awakeMinutes: Double = 50.0      // Median waktu terbangun (menit) dari baseline PRD
     var bedtimeString: String = "22:45"  // Median jam tidur dari baseline PRD
     var wakeTimeString: String = "06:10" // Median jam bangun dari baseline PRD
     
+    // Backwards-compatible alias
+    var restingHeartRate: Double { heartRate }
+    
     var formattedSteps: String { "\(Int(steps)) langkah" }
     var formattedSleep: String { String(format: "%.1f jam", sleepHours) }
-    var formattedRHR: String { "\(Int(restingHeartRate)) BPM" }
+    var formattedHeartRate: String { "\(Int(heartRate)) BPM" }
+    var formattedRHR: String { "\(Int(heartRate)) BPM" }
     var formattedEfficiency: String { String(format: "%.1f%%", sleepEfficiency) }
 }
 
@@ -282,10 +286,10 @@ struct HealthRecord: Codable, Identifiable {
     let recordDate: Date
     let parentName: String
 
-    // Heart Rate (Regular Heart Rate is primary)
+    // Heart Rate (Only regular Heart Rate is tracked)
     let heartRate: Double?
-    let restingHeartRate: Double?
-    let heartRateStatus: String // e.g. "Dalam rentang normal"
+    let restingHeartRate: Double? // Kept optional for CloudKit decode compatibility
+    let heartRateStatus: String // e.g. "Stabil", "Meningkat", "Dalam rentang normal"
     let recentHeartRatePoints: [Double] // 5-7 points for mini sparkline
 
     var displayHeartRate: Double? {
@@ -304,9 +308,9 @@ struct HealthRecord: Codable, Identifiable {
     let activityStatus: String // e.g. "Lebih baik dari biasanya"
     let recentStepPoints: [Double]
 
-    // Summary Insights
-    let summaryTitle: String // e.g. "Kondisi terpantau"
-    let summaryBody: String // e.g. "Detak jantung, waktu tidur, dan jumlah langkah hari ini tercatat dari Apple Health."
+    // Summary Insights (from RuleEngine / AI Insight)
+    let summaryTitle: String // e.g. "Kondisi Stabil", "Membaik +14%"
+    let summaryBody: String // e.g. "Today's Overview summary text"
 
     let updatedAt: Date
 
@@ -330,18 +334,18 @@ struct HealthRecord: Codable, Identifiable {
             parentName: "Nama Ortu 1",
             heartRate: 72,
             restingHeartRate: 72,
-            heartRateStatus: "Dalam rentang normal",
+            heartRateStatus: "Stabil",
             recentHeartRatePoints: [70, 71, 68, 73, 75, 72, 72],
             sleepHours: 7.66,
             sleepFormatted: "7j 40m",
-            sleepStatus: "Kualitas tidur baik",
+            sleepStatus: "Stabil",
             recentSleepPoints: [6.8, 7.2, 8.0, 7.5, 7.1, 7.8, 7.66],
             stepCount: 4280,
             stepFormatted: "4.280",
-            activityStatus: "Lebih baik dari biasanya",
+            activityStatus: "Meningkat",
             recentStepPoints: [3800, 4100, 4500, 3900, 4200, 4300, 4280],
-            summaryTitle: "Kondisi terpantau",
-            summaryBody: "Detak jantung, waktu tidur, dan jumlah langkah hari ini tercatat dari Apple Health.",
+            summaryTitle: "Kondisi Stabil",
+            summaryBody: "Aktivitas dan istirahat hari ini terpantau baik dan selaras dengan pola 14 hari terakhir.",
             updatedAt: Date()
         )
     }
@@ -350,13 +354,20 @@ struct HealthRecord: Codable, Identifiable {
         from summary: DailyHealthSummary,
         inviteCode: String,
         parentName: String,
-        history: [DailyHealthSummary] = []
+        history: [DailyHealthSummary] = [],
+        overviewTitle: String? = nil,
+        overviewBody: String? = nil,
+        activityStatusBadge: String? = nil,
+        sleepStatusBadge: String? = nil,
+        heartStatusBadge: String? = nil
     ) -> HealthRecord {
-        // 1. Heart Rate (Utamakan regular Heart Rate, fallback ke resting)
+        // 1. Heart Rate (Only regular Heart Rate)
         let hr = summary.latestHeartRate ?? summary.restingHeartRate
         let hrStatus: String
-        if let h = hr {
-            hrStatus = h < 60 ? "Sedikit rendah" : (h > 100 ? "Sedikit tinggi" : "Dalam rentang normal")
+        if let customBadge = heartStatusBadge {
+            hrStatus = customBadge
+        } else if let h = hr {
+            hrStatus = h < 55 ? "Cenderung Lambat" : (h > 85 ? "Sedikit Meningkat" : "Stabil")
         } else {
             hrStatus = "Belum ada data"
         }
@@ -369,10 +380,10 @@ struct HealthRecord: Codable, Identifiable {
             let hours = Int(s)
             let mins = Int(((s - Double(hours)) * 60).rounded())
             sleepFormatted = "\(hours)j \(mins)m"
-            sleepStatus = s >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih"
+            sleepStatus = sleepStatusBadge ?? (s >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih")
         } else {
             sleepFormatted = "-"
-            sleepStatus = "Belum ada data"
+            sleepStatus = sleepStatusBadge ?? "Belum ada data"
         }
 
         // 3. Step Count
@@ -384,14 +395,14 @@ struct HealthRecord: Codable, Identifiable {
             formatter.numberStyle = .decimal
             formatter.groupingSeparator = "."
             stepFormatted = formatter.string(from: NSNumber(value: st)) ?? "\(st)"
-            actStatus = st >= 4000 ? "Lebih baik dari biasanya" : (st > 0 ? "Cenderung santai hari ini" : "Belum mulai beraktivitas")
+            actStatus = activityStatusBadge ?? (st >= 3000 ? "Meningkat" : (st > 0 ? "Sedang Berjalan" : "Belum mulai beraktivitas"))
         } else {
             stepFormatted = "-"
-            actStatus = "Belum ada data"
+            actStatus = activityStatusBadge ?? "Belum ada data"
         }
 
         // Sparklines: Real points only!
-        var hrPoints: [Double] = history.compactMap { $0.latestHeartRate ?? $0.restingHeartRate }
+        var hrPoints: [Double] = history.compactMap { $0.latestHeartRate }
         if let h = hr { hrPoints.append(h) }
 
         var sleepPoints: [Double] = history.compactMap(\.sleepHours)
@@ -401,17 +412,17 @@ struct HealthRecord: Codable, Identifiable {
         if let st = summary.stepCount { stepPoints.append(st) }
 
         let hasAnyData = (hr != nil) || (sleep != nil && sleep! > 0) || (steps != nil)
-        let sumTitle = hasAnyData ? "Kondisi terpantau" : "Belum ada data hari ini"
-        let sumBody = hasAnyData
+        let sumTitle = overviewTitle ?? (hasAnyData ? "Kondisi Stabil" : "Belum ada data hari ini")
+        let sumBody = overviewBody ?? (hasAnyData
             ? "Detak jantung, waktu tidur, dan jumlah langkah hari ini tercatat dari Apple Health."
-            : "Data detak jantung, tidur, dan langkah belum tersedia di Apple Health hari ini."
+            : "Data detak jantung, tidur, dan langkah belum tersedia di Apple Health hari ini.")
 
         return HealthRecord(
             inviteCode: inviteCode,
             recordDate: summary.date,
             parentName: parentName,
             heartRate: hr,
-            restingHeartRate: summary.restingHeartRate ?? hr,
+            restingHeartRate: hr,
             heartRateStatus: hrStatus,
             recentHeartRatePoints: hrPoints,
             sleepHours: sleep,

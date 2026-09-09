@@ -72,7 +72,7 @@ final class LLMInsightViewModel {
     // MARK: - Data Fetch & AI Insight Generation
     
     /// Mengambil data HealthKit, mengevaluasi baseline 14 hari, dan memanggil Gemini
-    func loadAndGenerateInsight() async {
+    func loadAndGenerateInsight(forceRefresh: Bool = false) async {
         isLoading = true
         errorMessage = nil
         
@@ -98,20 +98,25 @@ final class LLMInsightViewModel {
         self.evaluatedOverview = overview
         self.baseline14Days = overview.baseline
         
-        // 3. Panggil Gemini API jika API key tersedia
-        if APIConfig.isConfigured {
+        // 3. Panggil Gemini API hanya jika ada trigger berbahaya atau belum ada insight hari ini
+        let shouldCallAI = shouldCallGeminiAPI(for: overview, forceRefresh: forceRefresh)
+        if shouldCallAI && APIConfig.isConfigured {
             do {
                 let (output, _) = try await geminiService.generateInsight(input: promptInput)
                 self.insightOutput = sanitizeInsightOutput(output, overview: overview)
                 self.isUsingLocalRuleFallback = false
+                UserDefaults.standard.set(Date(), forKey: "arterious.lastGeminiCallDate")
             } catch {
                 self.errorMessage = error.localizedDescription
                 // Fallback: Buat insight dari rule engine jika API error / key palsu
                 self.isUsingLocalRuleFallback = true
                 self.insightOutput = makeLocalFallbackInsight(from: overview)
             }
+        } else if let existing = self.insightOutput, !forceRefresh {
+            // Gunakan insight yang sudah ada untuk hari ini
+            self.isUsingLocalRuleFallback = false
         } else {
-            // Jika API Key belum terpasang, gunakan insight berbasis data lokal
+            // Jika kondisi stabil dan sudah ada evaluasi harian, gunakan kalkulasi aturan lokal
             self.isUsingLocalRuleFallback = true
             self.insightOutput = makeLocalFallbackInsight(from: overview)
         }
@@ -307,5 +312,26 @@ final class LLMInsightViewModel {
             heartInsight: cleanedHeart,
             recommendedActions: output.recommendedActions
         )
+    }
+    
+    // MARK: - Smart AI Rate-Limiting & Alert Triggering
+    
+    private func shouldCallGeminiAPI(for overview: EvaluatedHealthOverview, forceRefresh: Bool = false) -> Bool {
+        guard APIConfig.isConfigured else { return false }
+        if forceRefresh { return true }
+        
+        // 1. Kondisi / trigger berbahaya (misal: penurunan pola atau detak jantung abnormal saat santai)
+        let isDangerousTrigger = overview.conditionStatus == "DECLINED" ||
+                                 overview.heart.status.localizedCaseInsensitiveContains("Perhatian") ||
+                                 overview.heart.status.localizedCaseInsensitiveContains("Meningkat")
+        if isDangerousTrigger {
+            return true
+        }
+        
+        // 2. Selebihnya batasi hanya sekali per hari
+        guard let lastDate = UserDefaults.standard.object(forKey: "arterious.lastGeminiCallDate") as? Date else {
+            return true
+        }
+        return !Calendar.current.isDateInToday(lastDate)
     }
 }

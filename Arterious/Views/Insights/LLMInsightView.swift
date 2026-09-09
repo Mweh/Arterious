@@ -13,65 +13,81 @@
 import SwiftUI
 
 struct LLMInsightView: View {
-    @State private var viewModel = LLMInsightViewModel()
+    @Environment(SyncViewModel.self) private var syncViewModel
+    @State private var localViewModel = LLMInsightViewModel()
+    
+    private var activeOutput: LLMInsightOutput? {
+        syncViewModel.insightOutput ?? localViewModel.insightOutput
+    }
+    
+    private var isFallback: Bool {
+        syncViewModel.insightOutput != nil ? syncViewModel.isUsingLocalRuleFallback : localViewModel.isUsingLocalRuleFallback
+    }
+    
+    private var parentDisplayName: String {
+        let name = syncViewModel.parentName
+        return (name.isEmpty || name == "Nama Ortu 1" || name == "Saya") ? "Ibu" : name
+    }
     
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 16) {
-                    if let output = viewModel.insightOutput {
-                        // Banner Indikator Sumber Analisis (Aturan Lokal vs AI)
-                        if viewModel.isUsingLocalRuleFallback {
-                            HStack(spacing: 8) {
-                                Image(systemName: "doc.text.magnifyingglass")
-                                    .font(.footnote.weight(.semibold))
-                                Text("Analisis Berdasarkan Aturan Klinis Lokal (Rule-Based)")
-                                    .font(.footnote.weight(.medium))
-                                Spacer()
-                            }
-                            .foregroundStyle(.teal)
-                            .padding(.horizontal, 14)
-                            .padding(.vertical, 8)
-                            .background(Color.teal.opacity(0.12))
-                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        ScrollView {
+            VStack(spacing: 16) {
+                if let output = activeOutput {
+                    // Banner Indikator Sumber Analisis (Aturan Lokal vs AI)
+                    if isFallback {
+                        HStack(spacing: 8) {
+                            Image(systemName: "doc.text.magnifyingglass")
+                                .font(.footnote.weight(.semibold))
+                            Text("Analisis Berdasarkan Aturan Klinis Lokal (Rule-Based)")
+                                .font(.footnote.weight(.medium))
+                            Spacer()
                         }
-                        
-                        todayOverviewCard(output.todayOverview)
-                        activitySection(output.activityInsight)
-                        sleepSection(output.sleepInsight)
-                        heartSection(output.heartInsight)
-                        recommendedActionsSection(output.recommendedActions)
-                    } else if viewModel.isLoading {
-                        loadingCard
+                        .foregroundStyle(.teal)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.teal.opacity(0.12))
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                     }
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 8)
-                .padding(.bottom, 24)
-            }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("Insight Kesehatan \(viewModel.parentName)")
-            .navigationBarTitleDisplayMode(.large)
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if viewModel.isLoading {
-                        ProgressView()
-                    } else {
-                        Button {
-                            Task {
-                                await viewModel.loadAndGenerateInsight()
-                            }
-                        } label: {
-                            Image(systemName: viewModel.isUsingLocalRuleFallback ? "arrow.clockwise" : "sparkles")
-                                .font(.headline)
-                                .foregroundStyle(viewModel.isUsingLocalRuleFallback ? .teal : .purple)
-                        }
-                    }
+                    
+                    todayOverviewCard(output.todayOverview)
+                    activitySection(output.activityInsight)
+                    sleepSection(output.sleepInsight)
+                    heartSection(output.heartInsight)
+                    recommendedActionsSection(output.recommendedActions)
+                } else if localViewModel.isLoading || syncViewModel.isLoading {
+                    loadingCard
                 }
             }
-            .refreshable {
-                await viewModel.loadAndGenerateInsight()
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 24)
+            .frame(maxWidth: .infinity)
+        }
+        .frame(maxWidth: .infinity)
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle("Insight Kesehatan \(parentDisplayName)")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if localViewModel.isLoading || syncViewModel.isLoading {
+                    ProgressView()
+                } else {
+                    Button {
+                        Task {
+                            await syncViewModel.loadParentLocalHealthData(forceGemini: true)
+                            await localViewModel.loadAndGenerateInsight(forceRefresh: true)
+                        }
+                    } label: {
+                        Image(systemName: isFallback ? "arrow.clockwise" : "sparkles")
+                            .font(.headline)
+                            .foregroundStyle(isFallback ? .teal : .purple)
+                    }
+                }
             }
+        }
+        .refreshable {
+            await syncViewModel.loadParentLocalHealthData(forceGemini: true)
+            await localViewModel.loadAndGenerateInsight(forceRefresh: true)
         }
     }
     
@@ -95,9 +111,9 @@ struct LLMInsightView: View {
                 .foregroundStyle(.primary)
             
             HStack(alignment: .top, spacing: 8) {
-                Image(systemName: viewModel.isUsingLocalRuleFallback ? "doc.text.magnifyingglass" : "sparkles")
+                Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
                     .font(.subheadline)
-                    .foregroundStyle(viewModel.isUsingLocalRuleFallback ? .teal : .purple)
+                    .foregroundStyle(isFallback ? .teal : .purple)
                     .padding(.top, 2)
                 
                 Text(overview.summary)
@@ -135,176 +151,16 @@ struct LLMInsightView: View {
         )
     }
     
-    // MARK: - 4. Heart Section (Dual Data: Live Heart Rate & Resting Heart Rate)
+    // MARK: - 4. Heart Section (Unified Single Heart Rate)
     
     private func heartSection(_ insight: DomainMetricInsight) -> some View {
-        VStack(alignment: .leading, spacing: 14) {
-            // Header Bar
-            HStack(spacing: 8) {
-                Image(systemName: "waveform.path.ecg")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.red)
-                    .frame(width: 28, height: 28)
-                    .background(Color.red.opacity(0.12))
-                    .clipShape(Circle())
-                
-                Text("Kesehatan Jantung")
-                    .font(.headline)
-                    .foregroundStyle(.primary)
-                
-                Spacer()
-                
-                deltaBadge(insight.deltaPercentage, status: insight.status)
-            }
-            
-            // Dua Data: 1) Heart Rate Terkini & 2) Resting Heart Rate
-            VStack(spacing: 10) {
-                // 1. Live Heart Rate Box
-                HStack(spacing: 12) {
-                    HStack(spacing: 8) {
-                        Image(systemName: "heart.fill")
-                            .font(.system(size: 16))
-                            .foregroundStyle(.red)
-                            .symbolEffect(.pulse, options: .repeating)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            HStack(spacing: 4) {
-                                Text("Heart Rate Terkini")
-                                    .font(.caption2.weight(.medium))
-                                    .foregroundStyle(.secondary)
-                                if (viewModel.liveHeartRate ?? viewModel.evaluatedOverview?.liveHeartRate) != nil {
-                                    Circle()
-                                        .fill(Color.green)
-                                        .frame(width: 5, height: 5)
-                                }
-                            }
-                            
-                            if let liveHR = viewModel.liveHeartRate ?? viewModel.evaluatedOverview?.liveHeartRate {
-                                Text("\(Int(liveHR)) BPM")
-                                    .font(.title3.weight(.bold))
-                                    .foregroundStyle(.primary)
-                            } else {
-                                Text("—")
-                                    .font(.title3.weight(.bold))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    // Workout / Activity Status Badge (Hanya muncul jika ada data denyut)
-                    VStack(alignment: .trailing, spacing: 3) {
-                        if (viewModel.liveHeartRate ?? viewModel.evaluatedOverview?.liveHeartRate) != nil {
-                            if viewModel.isWorkoutActive {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "figure.walk")
-                                    Text(viewModel.recentWorkoutName ?? "Olahraga")
-                                }
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.orange.opacity(0.15))
-                                .foregroundStyle(.orange)
-                                .clipShape(Capsule())
-                            } else {
-                                HStack(spacing: 4) {
-                                    Image(systemName: "checkmark.circle.fill")
-                                    Text("Aktivitas Santai")
-                                }
-                                .font(.caption2.weight(.semibold))
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color.teal.opacity(0.12))
-                                .foregroundStyle(.teal)
-                                .clipShape(Capsule())
-                            }
-                            
-                            Text(formattedTime(viewModel.liveHeartRateDate))
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("Belum Ada Data")
-                                .font(.caption2.weight(.medium))
-                                .foregroundStyle(.secondary)
-                                .padding(.horizontal, 8)
-                                .padding(.vertical, 4)
-                                .background(Color(.systemGray5))
-                                .clipShape(Capsule())
-                        }
-                    }
-                }
-                .padding(12)
-                .background(Color(.tertiarySystemGroupedBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                
-                // 2. Resting Heart Rate Comparison Box (Hari Ini vs Baseline 14 Hari vs Selisih)
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Resting Heart Rate (RHR)")
-                        .font(.caption2.weight(.medium))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 4)
-                    
-                    HStack(spacing: 12) {
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Hari Ini")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(insight.currentValue)
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(.primary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        Divider()
-                            .frame(height: 26)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Baseline 14 Hari")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(insight.baselineValue)
-                                .font(.subheadline.weight(.semibold))
-                                .foregroundStyle(.secondary)
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        
-                        Divider()
-                            .frame(height: 26)
-                        
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Selisih")
-                                .font(.caption2)
-                                .foregroundStyle(.secondary)
-                            Text(deltaText(insight.deltaPercentage, status: insight.status))
-                                .font(.subheadline.weight(.bold))
-                                .foregroundStyle(deltaColor(insight.deltaPercentage, status: insight.status))
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                    .background(Color(.tertiarySystemGroupedBackground))
-                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                }
-            }
-            
-            // Insight Text (AI vs Rule Engine)
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: viewModel.isUsingLocalRuleFallback ? "doc.text.magnifyingglass" : "sparkles")
-                    .font(.caption2)
-                    .foregroundStyle(viewModel.isUsingLocalRuleFallback ? .teal : .purple)
-                    .padding(.top, 2)
-                
-                Text(insight.insight)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(3)
-            }
-        }
-        .padding(16)
-        .background(Color(.secondarySystemGroupedBackground))
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+        domainCard(
+            title: "Kesehatan Jantung",
+            systemImage: "waveform.path.ecg",
+            iconColor: .red,
+            metricInsight: insight,
+            metricUnit: ""
+        )
     }
     
     // MARK: - Reusable Domain Metric Card
@@ -380,9 +236,9 @@ struct LLMInsightView: View {
             
             // Insight Text (AI vs Rule Engine)
             HStack(alignment: .top, spacing: 6) {
-                Image(systemName: viewModel.isUsingLocalRuleFallback ? "doc.text.magnifyingglass" : "sparkles")
+                Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
                     .font(.caption2)
-                    .foregroundStyle(viewModel.isUsingLocalRuleFallback ? .teal : .purple)
+                    .foregroundStyle(isFallback ? .teal : .purple)
                     .padding(.top, 2)
                 
                 Text(metricInsight.insight)
@@ -401,9 +257,9 @@ struct LLMInsightView: View {
     private func recommendedActionsSection(_ actions: [String]) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
-                Image(systemName: viewModel.isUsingLocalRuleFallback ? "list.bullet.clipboard" : "sparkles")
-                    .foregroundStyle(viewModel.isUsingLocalRuleFallback ? .teal : .purple)
-                Text(viewModel.isUsingLocalRuleFallback ? "Rekomendasi Tindakan (Rule-Based)" : "Rekomendasi Tindakan Caregiver")
+                Image(systemName: isFallback ? "list.bullet.clipboard" : "sparkles")
+                    .foregroundStyle(isFallback ? .teal : .purple)
+                Text(isFallback ? "Rekomendasi Tindakan (Rule-Based)" : "Rekomendasi Tindakan Caregiver")
                     .font(.headline)
                     .foregroundStyle(.primary)
             }
@@ -473,14 +329,7 @@ struct LLMInsightView: View {
     }
     
     private func overviewHeadline(_ status: String) -> String {
-        switch status.uppercased() {
-        case "IMPROVED":
-            return "Kondisi Menunjukkan Peningkatan"
-        case "DECLINED":
-            return "Perubahan Pola Perlu Diperhatikan"
-        default:
-            return "Kondisi Stabil Dibandingkan Baseline"
-        }
+        RuleEngine.overviewHeadline(for: status)
     }
     
     private func deltaBadge(_ delta: Double, status: String) -> some View {
@@ -553,17 +402,6 @@ struct LLMInsightView: View {
         } else {
             return .green
         }
-    }
-    
-    private func formattedTime(_ date: Date?) -> String {
-        guard let date = date else {
-            let formatter = DateFormatter()
-            formatter.dateFormat = "HH:mm"
-            return "Pukul \(formatter.string(from: Date()))"
-        }
-        let formatter = DateFormatter()
-        formatter.dateFormat = "HH:mm"
-        return "Pukul \(formatter.string(from: date))"
     }
 }
 

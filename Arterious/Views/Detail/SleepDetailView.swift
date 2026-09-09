@@ -171,7 +171,7 @@ struct SleepDetailView: View {
 
     private var conditionHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(syncViewModel.healthRecord?.sleepStatus ?? "Kondisi terpantau")
+            Text(syncViewModel.healthRecord?.summaryTitle ?? (syncViewModel.healthRecord?.sleepStatus ?? "Pola Istirahat Terpantau"))
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(AppColor.textPrimary)
 

@@ -17,7 +17,7 @@ struct HomeView: View {
         if userRole == UserRole.parent.rawValue {
             return true
         }
-        return syncViewModel.syncState.status == .accepted && hasConnectedParent
+        return (syncViewModel.syncState.status == .accepted || syncViewModel.healthRecord != nil) && hasConnectedParent
     }
 
     private var displayName: String {
@@ -290,17 +290,24 @@ struct HomeView: View {
                         .foregroundStyle(AppColor.actionBlue)
                     }
 
-                    Text(syncViewModel.healthRecord?.summaryTitle ?? "Belum ada data hari ini")
+                    Text(syncViewModel.healthRecord?.summaryTitle ?? "Perubahan Pola Perlu Diperhatikan")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(AppColor.textPrimary)
                         .padding(.top, 1)
 
-                    Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")
-                        .font(AppTypography.bodyRegular)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.purple)
+                            .padding(.top, 2)
+
+                        Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")
+                            .font(AppTypography.bodyRegular)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 2)
                 }
                 .padding(AppSpacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -419,6 +426,17 @@ struct HomeView: View {
                 .background(Color(.systemGray6))
                 .clipShape(Circle())
         }
+    }
+
+    private func badgeColor(for badge: String) -> Color {
+        let lower = badge.lowercased()
+        if lower.contains("menurun") || lower.contains("penurunan") {
+            return .red
+        }
+        if lower.contains("membaik") || lower.contains("meningkat") {
+            return .green
+        }
+        return AppColor.actionBlue
     }
 }
 

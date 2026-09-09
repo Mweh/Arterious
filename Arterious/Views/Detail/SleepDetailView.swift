@@ -1,12 +1,13 @@
 import SwiftUI
 
-/// Sleep detail screen matching Screenshot 2 in the Child monitoring flow.
+/// Sleep detail screen displaying real HealthKit metrics and weekly trends.
 struct SleepDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(SyncViewModel.self) private var syncViewModel
     @State private var selectedRange: TimeRangeOption = .week
 
-    // Sleep stages color palette matching the screenshot
+    // Sleep stages color palette matching Apple Health
     private let awakeColor = Color(hex: "FF6E52")
     private let remColor = Color(hex: "00C7B0")
     private let coreColor = Color(hex: "3267FF")
@@ -22,15 +23,97 @@ struct SleepDetailView: View {
         let deepMinutes: Double
     }
 
-    private let weekSleepData: [DaySleepColumn] = [
-        DaySleepColumn(day: "Sun", totalHours: 8.1, awakeMinutes: 20, remMinutes: 95, coreMinutes: 310, deepMinutes: 60),
-        DaySleepColumn(day: "Mon", totalHours: 6.8, awakeMinutes: 15, remMinutes: 80, coreMinutes: 270, deepMinutes: 45),
-        DaySleepColumn(day: "Tue", totalHours: 6.9, awakeMinutes: 18, remMinutes: 85, coreMinutes: 275, deepMinutes: 35),
-        DaySleepColumn(day: "Wed", totalHours: 7.0, awakeMinutes: 12, remMinutes: 90, coreMinutes: 280, deepMinutes: 40),
-        DaySleepColumn(day: "Thu", totalHours: 7.1, awakeMinutes: 16, remMinutes: 88, coreMinutes: 285, deepMinutes: 38),
-        DaySleepColumn(day: "Fri", totalHours: 6.7, awakeMinutes: 14, remMinutes: 82, coreMinutes: 265, deepMinutes: 42),
-        DaySleepColumn(day: "Sat", totalHours: 7.3, awakeMinutes: 22, remMinutes: 92, coreMinutes: 290, deepMinutes: 35)
-    ]
+    private var weeklySleepData: [DaySleepColumn] {
+        let history = syncViewModel.historicalSummaries
+        let calendar = Calendar.current
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "id_ID")
+        df.dateFormat = "EEE"
+
+        if history.isEmpty {
+            // If empty, generate past 7 days with zero values
+            let today = Date()
+            return (0..<7).reversed().map { offset in
+                let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+                return DaySleepColumn(
+                    day: df.string(from: date).capitalized,
+                    totalHours: 0,
+                    awakeMinutes: 0,
+                    remMinutes: 0,
+                    coreMinutes: 0,
+                    deepMinutes: 0
+                )
+            }
+        }
+
+        let slice = history.suffix(7)
+        return slice.map { summary in
+            let total = summary.sleepHours ?? 0
+            let awake = summary.awakeSleepMinutes ?? 0
+            let rem = summary.remSleepMinutes ?? 0
+            let deep = summary.deepSleepMinutes ?? 0
+            let core = summary.coreSleepMinutes ?? (total > 0 && rem == 0 && deep == 0 ? total * 60 : 0)
+
+            return DaySleepColumn(
+                day: df.string(from: summary.date).capitalized,
+                totalHours: total,
+                awakeMinutes: awake,
+                remMinutes: rem,
+                coreMinutes: core,
+                deepMinutes: deep
+            )
+        }
+    }
+
+    private var averageSleepHours: Double {
+        let valid = weeklySleepData.map(\.totalHours).filter { $0 > 0 }
+        guard !valid.isEmpty else { return 0 }
+        return valid.reduce(0, +) / Double(valid.count)
+    }
+
+    private var averageAwakeMinutes: Double {
+        let valid = weeklySleepData.map(\.awakeMinutes).filter { $0 > 0 }
+        guard !valid.isEmpty else { return 0 }
+        return valid.reduce(0, +) / Double(valid.count)
+    }
+
+    private var averageRemMinutes: Double {
+        let valid = weeklySleepData.map(\.remMinutes).filter { $0 > 0 }
+        guard !valid.isEmpty else { return 0 }
+        return valid.reduce(0, +) / Double(valid.count)
+    }
+
+    private var averageCoreMinutes: Double {
+        let valid = weeklySleepData.map(\.coreMinutes).filter { $0 > 0 }
+        guard !valid.isEmpty else { return 0 }
+        return valid.reduce(0, +) / Double(valid.count)
+    }
+
+    private var averageDeepMinutes: Double {
+        let valid = weeklySleepData.map(\.deepMinutes).filter { $0 > 0 }
+        guard !valid.isEmpty else { return 0 }
+        return valid.reduce(0, +) / Double(valid.count)
+    }
+
+    private var dateRangeString: String {
+        let calendar = Calendar.current
+        let today = Date()
+        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "id_ID")
+        df.dateFormat = "d"
+        let dfEnd = DateFormatter()
+        dfEnd.locale = Locale(identifier: "id_ID")
+        dfEnd.dateFormat = "d MMM yyyy"
+        return "\(df.string(from: start)) - \(dfEnd.string(from: today))"
+    }
+
+    private var todayDateHeader: String {
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "id_ID")
+        df.dateFormat = "EEE, d MMM"
+        return df.string(from: Date()).capitalized
+    }
 
     var body: some View {
         ScrollView {
@@ -38,7 +121,7 @@ struct SleepDetailView: View {
                 // Condition Summary
                 conditionHeader
 
-                // Daily Sleep Score Card (Min, 6 Sep)
+                // Daily Sleep Score Card
                 dailyScoreSection
 
                 // Time Range Segmented Control
@@ -69,12 +152,10 @@ struct SleepDetailView: View {
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(width: 36, height: 36)
-                        .background(AppColor.backgroundSecondary)
-                        .clipShape(Circle())
-                        .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppColor.actionBlue)
+                        .frame(width: 36, height: 36, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
             }
 
@@ -90,11 +171,11 @@ struct SleepDetailView: View {
 
     private var conditionHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Kondisi cukup stabil")
+            Text(syncViewModel.healthRecord?.sleepStatus ?? "Kondisi terpantau")
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(AppColor.textPrimary)
 
-            Text("Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
+            Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur dan waktu istirahat tercatat secara berkala dari Apple Health.")
                 .font(AppTypography.subheadlineRegular)
                 .foregroundStyle(AppColor.textSecondary)
                 .lineSpacing(3)
@@ -105,20 +186,29 @@ struct SleepDetailView: View {
     // MARK: - Daily Sleep Score Section
 
     private var dailyScoreSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Text("Min, 6 Sep")
+        let sleepHours = syncViewModel.healthRecord?.sleepHours ?? 0
+        let hasData = sleepHours > 0
+
+        let score = hasData ? min(100, max(45, Int((sleepHours / 8.0) * 88))) : 0
+        let statusTitle = hasData ? (sleepHours >= 7.0 ? "Baik" : (sleepHours >= 6.0 ? "Cukup" : "Kurang")) : "Belum Ada"
+
+        let durationText = hasData ? syncViewModel.healthRecord?.sleepFormatted ?? "-" : "-"
+        let awakeMins = averageAwakeMinutes > 0 ? "\(Int(averageAwakeMinutes)) mnt" : "-"
+
+        return VStack(alignment: .leading, spacing: AppSpacing.sm) {
+            Text(todayDateHeader)
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(AppColor.textPrimary)
 
             DonutProgressGaugeView(
-                score: 80,
-                statusTitle: "Tinggi",
-                durationText: "8j 5m",
-                durationScoreText: "50/50",
-                sleepTimeText: "7j 5m",
-                sleepScoreText: "28/30",
-                awakeText: "17 mnt",
-                awakeScoreText: "7/20"
+                score: score,
+                statusTitle: statusTitle,
+                durationText: durationText,
+                durationScoreText: hasData ? "\(min(50, Int(sleepHours * 6.5)))/50" : "-/50",
+                sleepTimeText: durationText,
+                sleepScoreText: hasData ? "\(min(30, Int(sleepHours * 4.0)))/30" : "-/30",
+                awakeText: awakeMins,
+                awakeScoreText: hasData ? "15/20" : "-/20"
             )
         }
     }
@@ -126,31 +216,40 @@ struct SleepDetailView: View {
     // MARK: - Average Sleep Stat Header
 
     private var averageSleepHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let avgH = Int(averageSleepHours)
+        let avgM = Int(((averageSleepHours - Double(avgH)) * 60).rounded())
+
+        return VStack(alignment: .leading, spacing: 2) {
             Text("RERATA WAKTU TIDUR")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text("7")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
+                if averageSleepHours > 0 {
+                    Text("\(avgH)")
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundStyle(AppColor.textPrimary)
 
-                Text("jam")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(AppColor.textSecondary)
-                    .padding(.trailing, 6)
+                    Text("jam")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                        .padding(.trailing, 6)
 
-                Text("54")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
+                    Text("\(avgM)")
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundStyle(AppColor.textPrimary)
 
-                Text("mnt")
-                    .font(.system(size: 16, weight: .medium))
-                    .foregroundStyle(AppColor.textSecondary)
+                    Text("mnt")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                } else {
+                    Text("-")
+                        .font(.system(size: 34, weight: .bold))
+                        .foregroundStyle(AppColor.textPrimary)
+                }
             }
 
-            Text("1 - 7 Sep 2026")
+            Text(dateRangeString)
                 .font(AppTypography.captionRegular)
                 .foregroundStyle(AppColor.textSecondary)
         }
@@ -159,13 +258,16 @@ struct SleepDetailView: View {
     // MARK: - Sleep Stages Stacked Bar Chart
 
     private var sleepStagesChart: some View {
-        VStack(spacing: 0) {
+        let data = weeklySleepData
+
+        return VStack(spacing: 0) {
             GeometryReader { geo in
                 let width = geo.size.width
                 let height = geo.size.height
                 let chartWidth = width - 44
                 let maxHours: CGFloat = 10.0
-                let columnWidth = chartWidth / CGFloat(weekSleepData.count)
+                let columnCount = max(CGFloat(data.count), 1)
+                let columnWidth = chartWidth / columnCount
 
                 ZStack(alignment: .topLeading) {
                     // Outer Border
@@ -173,7 +275,7 @@ struct SleepDetailView: View {
                         .stroke(Color.black.opacity(0.18), lineWidth: 1)
                         .frame(width: chartWidth, height: height)
 
-                    // Horizontal Grid Lines & Y Labels (08.00 down to 0)
+                    // Horizontal Grid Lines & Y Labels
                     let yMarks: [(ratio: CGFloat, label: String)] = [
                         (0.95, "12.00"),
                         (0.85, "10.00"),
@@ -202,7 +304,7 @@ struct SleepDetailView: View {
                     }
 
                     // Vertical Dashed Lines between days
-                    ForEach(1..<weekSleepData.count, id: \.self) { idx in
+                    ForEach(1..<data.count, id: \.self) { idx in
                         let x = CGFloat(idx) * columnWidth
                         Path { path in
                             path.move(to: CGPoint(x: x, y: 0))
@@ -212,35 +314,46 @@ struct SleepDetailView: View {
                     }
 
                     // Stacked Sleep Stage Bars
-                    ForEach(Array(weekSleepData.enumerated()), id: \.element.id) { idx, item in
+                    ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                         let centerX = CGFloat(idx) * columnWidth + (columnWidth / 2)
                         let barWidth: CGFloat = columnWidth * 0.72
-                        let totalBarHeight = (CGFloat(item.totalHours) / maxHours) * height
 
-                        // Render layered sleep intervals
-                        VStack(spacing: 1) {
-                            // Awake segment
-                            Rectangle()
-                                .fill(awakeColor)
-                                .frame(height: max(totalBarHeight * 0.08, 3))
+                        if item.totalHours > 0 {
+                            let totalBarHeight = min(height, (CGFloat(item.totalHours) / maxHours) * height)
 
-                            // REM segment
-                            Rectangle()
-                                .fill(remColor)
-                                .frame(height: max(totalBarHeight * 0.20, 6))
+                            // Render layered sleep intervals
+                            VStack(spacing: 1) {
+                                if item.awakeMinutes > 0 {
+                                    Rectangle()
+                                        .fill(awakeColor)
+                                        .frame(height: max(totalBarHeight * 0.08, 2))
+                                }
 
-                            // Core segment
-                            Rectangle()
-                                .fill(coreColor)
-                                .frame(height: max(totalBarHeight * 0.52, 14))
+                                if item.remMinutes > 0 {
+                                    Rectangle()
+                                        .fill(remColor)
+                                        .frame(height: max(totalBarHeight * 0.20, 3))
+                                }
 
-                            // Deep segment
-                            Rectangle()
-                                .fill(deepColor)
-                                .frame(height: max(totalBarHeight * 0.20, 6))
+                                Rectangle()
+                                    .fill(coreColor)
+                                    .frame(height: max(totalBarHeight * (item.deepMinutes > 0 ? 0.52 : 0.75), 6))
+
+                                if item.deepMinutes > 0 {
+                                    Rectangle()
+                                        .fill(deepColor)
+                                        .frame(height: max(totalBarHeight * 0.20, 3))
+                                }
+                            }
+                            .frame(width: barWidth)
+                            .position(x: centerX, y: height - totalBarHeight / 2)
+                        } else {
+                            // Subtle placeholder dot on days with no data
+                            Circle()
+                                .fill(AppColor.textSecondary.opacity(0.25))
+                                .frame(width: 4, height: 4)
+                                .position(x: centerX, y: height - 6)
                         }
-                        .frame(width: barWidth)
-                        .position(x: centerX, y: height - totalBarHeight / 2)
                     }
                 }
             }
@@ -248,7 +361,7 @@ struct SleepDetailView: View {
 
             // X-Axis Day Labels
             HStack(spacing: 0) {
-                ForEach(weekSleepData) { item in
+                ForEach(data) { item in
                     Text(item.day)
                         .font(.system(size: 11, weight: .regular))
                         .foregroundStyle(AppColor.textSecondary)
@@ -264,35 +377,50 @@ struct SleepDetailView: View {
     // MARK: - Bottom Breakdown Cards
 
     private var bottomBreakdownCards: some View {
-        VStack(spacing: AppSpacing.md) {
+        let awakeStr = averageAwakeMinutes > 0 ? "\(Int(averageAwakeMinutes))" : "-"
+        let remStr = averageRemMinutes > 0 ? formatHoursMins(mins: averageRemMinutes) : "-"
+        let coreStr = averageCoreMinutes > 0 ? formatHoursMins(mins: averageCoreMinutes) : "-"
+        let deepStr = averageDeepMinutes > 0 ? formatHoursMins(mins: averageDeepMinutes) : "-"
+
+        return VStack(spacing: AppSpacing.md) {
             stageInfoCard(
-                dotColor: coreColor,
+                dotColor: awakeColor,
                 title: "Rerata terbangun",
-                value: "15",
-                unit: "mnt"
+                value: awakeStr,
+                unit: averageAwakeMinutes > 0 ? "mnt" : ""
             )
 
             stageInfoCard(
                 dotColor: remColor,
                 title: "Rerata REM",
-                value: "1j 29m",
+                value: remStr,
                 unit: ""
             )
 
             stageInfoCard(
                 dotColor: coreColor,
                 title: "Rerata Inti",
-                value: "4j 55m",
+                value: coreStr,
                 unit: ""
             )
 
             stageInfoCard(
                 dotColor: deepColor,
-                title: "Rerata Inti",
-                value: "25",
-                unit: "m"
+                title: "Rerata Dalam",
+                value: deepStr,
+                unit: ""
             )
         }
+    }
+
+    private func formatHoursMins(mins: Double) -> String {
+        let totalMins = Int(mins.rounded())
+        let h = totalMins / 60
+        let m = totalMins % 60
+        if h > 0 {
+            return "\(h)j \(m)m"
+        }
+        return "\(m) mnt"
     }
 
     private func stageInfoCard(dotColor: Color, title: String, value: String, unit: String) -> some View {
@@ -330,5 +458,6 @@ struct SleepDetailView: View {
 #Preview {
     NavigationStack {
         SleepDetailView()
+            .environment(SyncViewModel())
     }
 }

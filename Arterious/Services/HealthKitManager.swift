@@ -34,7 +34,6 @@ final class HealthKitManager {
             }
         }
         
-        types.insert(HKSeriesType.heartbeat())
         return types
     }()
     
@@ -49,7 +48,7 @@ final class HealthKitManager {
     
     func fetchTodaySummary() async -> DailyHealthSummary {
         guard isHealthKitAvailable else {
-            return DailyHealthSummary.placeholder
+            return DailyHealthSummary.empty
         }
         
         async let heartAndHRV = fetchHeartAndHRVMetrics()
@@ -62,6 +61,7 @@ final class HealthKitManager {
             date: Date(),
             latestHeartRate: heartData.latestHR,
             restingHeartRate: heartData.restingHR,
+            minHeartRate24h: nil,
             meanHeartRate24h: heartData.meanHR24h,
             heartRateSD24h: heartData.sdHR24h,
             maxHeartRate24h: heartData.maxHR24h,
@@ -73,6 +73,10 @@ final class HealthKitManager {
             deepSleepPercentage: sleepData.deepPercent,
             remSleepPercentage: sleepData.remPercent,
             sleepBedtimeSDMinutes: sleepData.bedtimeSD,
+            deepSleepMinutes: sleepData.deepMinutes,
+            remSleepMinutes: sleepData.remMinutes,
+            coreSleepMinutes: sleepData.coreMinutes,
+            awakeSleepMinutes: sleepData.awakeMinutes,
             stepCount: activityData.steps,
             activeMinutesToday: activityData.activeMins,
             exerciseMinutesWeek: activityData.exerciseMinsWeek,
@@ -83,7 +87,7 @@ final class HealthKitManager {
     
     func fetchHistoricalSummaries(days: Int = 14) async -> [DailyHealthSummary] {
         guard isHealthKitAvailable else {
-            return generateMockHistory(days: days)
+            return []
         }
         
         let calendar = Calendar.current
@@ -96,8 +100,7 @@ final class HealthKitManager {
             summaries.append(summary)
         }
         
-        let hasAnyData = summaries.contains { $0.stepCount != nil || $0.restingHeartRate != nil }
-        return hasAnyData ? summaries : generateMockHistory(days: days)
+        return summaries
     }
     
     // MARK: - Private HealthKit Queries
@@ -134,6 +137,14 @@ final class HealthKitManager {
             if hrSamples.isEmpty {
                 hrSamples = await fetchQuantitySamples(for: hrType, start: start7d, end: now)
             }
+            if data.latestHR == nil, let last = hrSamples.last {
+                data.latestHR = last.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute()))
+            }
+            // Fallback to resting HR if regular heart rate not yet logged
+            if data.latestHR == nil {
+                data.latestHR = data.restingHR
+            }
+
             let hrValues = hrSamples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }
             if !hrValues.isEmpty {
                 let mean = hrValues.reduce(0, +) / Double(hrValues.count)
@@ -234,19 +245,30 @@ final class HealthKitManager {
         var deepPercent: Double?
         var remPercent: Double?
         var bedtimeSD: Double?
+        var deepMinutes: Double?
+        var remMinutes: Double?
+        var coreMinutes: Double?
+        var awakeMinutes: Double?
     }
     
+    private func fetchRecentSleepSamples(limit: Int = 300) async -> [HKCategorySample] {
+        guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
+        return await withCheckedContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: sleepType, predicate: nil, limit: limit, sortDescriptors: [sort]) { _, samples, _ in
+                let result = (samples as? [HKCategorySample]) ?? []
+                continuation.resume(returning: result)
+            }
+            self.healthStore.execute(query)
+        }
+    }
+
     private func fetchSleepMetrics() async -> SleepData {
         var data = SleepData()
-        guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return data }
-        
-        let now = Date()
-        let calendar = Calendar.current
-        let start14d = calendar.date(byAdding: .day, value: -14, to: now)!
-        
-        let samples = await fetchCategorySamples(for: sleepType, start: start14d, end: now)
+        let samples = await fetchRecentSleepSamples()
         guard !samples.isEmpty else { return data }
         
+        let calendar = Calendar.current
         var sleepSessions: [[HKCategorySample]] = []
         let sortedSamples = samples.sorted(by: { $0.startDate < $1.startDate })
         var currentSession: [HKCategorySample] = []
@@ -270,29 +292,39 @@ final class HealthKitManager {
             var totalAsleepDuration: TimeInterval = 0
             var deepDuration: TimeInterval = 0
             var remDuration: TimeInterval = 0
+            var coreDuration: TimeInterval = 0
+            var awakeDuration: TimeInterval = 0
             
             for sample in latestSession {
                 let duration = sample.endDate.timeIntervalSince(sample.startDate)
                 let val = HKCategoryValueSleepAnalysis(rawValue: sample.value)
                 if val == .inBed {
                     inBedDuration += duration
+                } else if val == .awake {
+                    awakeDuration += duration
                 } else {
                     if val == .asleepUnspecified || val == .asleepCore || val == .asleepDeep || val == .asleepREM {
                         totalAsleepDuration += duration
                     }
                     if val == .asleepDeep { deepDuration += duration }
                     if val == .asleepREM { remDuration += duration }
+                    if val == .asleepCore { coreDuration += duration }
                 }
             }
             if inBedDuration == 0, let first = latestSession.first, let last = latestSession.last {
                 inBedDuration = last.endDate.timeIntervalSince(first.startDate)
             }
-            data.duration = totalAsleepDuration / 3600.0
-            if inBedDuration > 0 { data.efficiency = min(100.0, (totalAsleepDuration / inBedDuration) * 100.0) }
+            let effectiveDuration = totalAsleepDuration > 0 ? totalAsleepDuration : inBedDuration
+            data.duration = effectiveDuration / 3600.0
+            if inBedDuration > 0 { data.efficiency = min(100.0, (effectiveDuration / inBedDuration) * 100.0) }
             if totalAsleepDuration > 0 {
                 data.deepPercent = (deepDuration / totalAsleepDuration) * 100.0
                 data.remPercent = (remDuration / totalAsleepDuration) * 100.0
             }
+            data.deepMinutes = deepDuration > 0 ? deepDuration / 60.0 : nil
+            data.remMinutes = remDuration > 0 ? remDuration / 60.0 : nil
+            data.coreMinutes = coreDuration > 0 ? coreDuration / 60.0 : nil
+            data.awakeMinutes = awakeDuration > 0 ? awakeDuration / 60.0 : nil
         }
         
         var bedtimeMinutes: [Double] = []
@@ -380,6 +412,25 @@ final class HealthKitManager {
             }
         }
         
+        var hrAvg: Double?
+        var hrMin: Double?
+        var hrMax: Double?
+        if let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            let hrStats = await withCheckedContinuation { continuation in
+                let query = HKStatisticsQuery(quantityType: hrType, quantitySamplePredicate: dayPredicate, options: [.discreteAverage, .discreteMin, .discreteMax]) { _, stats, _ in
+                    let unit = HKUnit.count().unitDivided(by: .minute())
+                    let avg = stats?.averageQuantity()?.doubleValue(for: unit)
+                    let min = stats?.minimumQuantity()?.doubleValue(for: unit)
+                    let max = stats?.maximumQuantity()?.doubleValue(for: unit)
+                    continuation.resume(returning: (avg, min, max))
+                }
+                self.healthStore.execute(query)
+            }
+            hrAvg = hrStats.0
+            hrMin = hrStats.1
+            hrMax = hrStats.2
+        }
+        
         var restingHR: Double?
         if let restingType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) {
             restingHR = await withCheckedContinuation { continuation in
@@ -391,9 +442,56 @@ final class HealthKitManager {
             }
         }
         
+        var sleepHours: Double?
+        var deepMins: Double?
+        var remMins: Double?
+        var coreMins: Double?
+        var awakeMins: Double?
+        if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+            let startSleep = calendar.date(byAdding: .hour, value: -6, to: startOfDay)!
+            let endSleep = calendar.date(byAdding: .hour, value: 18, to: startOfDay)!
+            let samples = await fetchCategorySamples(for: sleepType, start: startSleep, end: endSleep)
+            var totalAsleep: TimeInterval = 0
+            var inBed: TimeInterval = 0
+            var deep: TimeInterval = 0
+            var rem: TimeInterval = 0
+            var core: TimeInterval = 0
+            var awake: TimeInterval = 0
+            for sample in samples {
+                let duration = sample.endDate.timeIntervalSince(sample.startDate)
+                let val = HKCategoryValueSleepAnalysis(rawValue: sample.value)
+                if val == .inBed {
+                    inBed += duration
+                } else if val == .awake {
+                    awake += duration
+                } else if val == .asleepUnspecified || val == .asleepCore || val == .asleepDeep || val == .asleepREM {
+                    totalAsleep += duration
+                    if val == .asleepDeep { deep += duration }
+                    if val == .asleepREM { rem += duration }
+                    if val == .asleepCore { core += duration }
+                }
+            }
+            let effective = totalAsleep > 0 ? totalAsleep : inBed
+            if effective > 0 {
+                sleepHours = effective / 3600.0
+            }
+            deepMins = deep > 0 ? deep / 60.0 : nil
+            remMins = rem > 0 ? rem / 60.0 : nil
+            coreMins = core > 0 ? core / 60.0 : nil
+            awakeMins = awake > 0 ? awake / 60.0 : nil
+        }
+        
         return DailyHealthSummary(
             date: date,
+            latestHeartRate: hrAvg ?? restingHR,
             restingHeartRate: restingHR,
+            minHeartRate24h: hrMin,
+            maxHeartRate24h: hrMax,
+            sleepHours: sleepHours,
+            deepSleepMinutes: deepMins,
+            remSleepMinutes: remMins,
+            coreSleepMinutes: coreMins,
+            awakeSleepMinutes: awakeMins,
             stepCount: stepCount
         )
     }
@@ -401,7 +499,7 @@ final class HealthKitManager {
     // MARK: - Query Helpers
     private func fetchLatestQuantitySample(for type: HKQuantityType, unit: HKUnit) async -> Double? {
         return await withCheckedContinuation { continuation in
-            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
             let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
                 guard let sample = samples?.first as? HKQuantitySample else {
                     continuation.resume(returning: nil)
@@ -455,21 +553,6 @@ final class HealthKitManager {
                 }
             }
             healthStore.execute(query)
-        }
-    }
-    
-    private func generateMockHistory(days: Int) -> [DailyHealthSummary] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        return (1...days).reversed().map { offset in
-            let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
-            return DailyHealthSummary(
-                date: date,
-                latestHeartRate: Double.random(in: 68...75),
-                restingHeartRate: Double.random(in: 60...66),
-                sleepHours: Double.random(in: 6.5...8.0),
-                stepCount: Double.random(in: 3500...6000)
-            )
         }
     }
 }

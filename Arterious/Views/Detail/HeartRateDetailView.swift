@@ -32,8 +32,7 @@ struct HeartRateDetailView: View {
         let slice = history.suffix(7)
         return slice.map { summary in
             let latest = summary.latestHeartRate
-            let resting = summary.restingHeartRate
-            let minVal = summary.minHeartRate24h ?? resting ?? (latest.map { max(35, $0 - 15) } ?? 0)
+            let minVal = summary.minHeartRate24h ?? (latest.map { max(35, $0 - 15) } ?? 0)
             let maxVal = summary.maxHeartRate24h ?? (latest.map { min(180, $0 + 20) } ?? 0)
 
             return DayHRRange(
@@ -266,7 +265,6 @@ struct HeartRateDetailView: View {
 
     private var bottomDetailCards: some View {
         let lastHR = syncViewModel.healthRecord?.displayHeartRate.map { "\(Int($0))" } ?? "-"
-        let restingHR = syncViewModel.healthRecord?.restingHeartRate.map { "\(Int($0))" } ?? "-"
 
         let rangeText: String = {
             if let min = weekMinBPM, let max = weekMaxBPM, max > min {
@@ -286,12 +284,6 @@ struct HeartRateDetailView: View {
                 title: "Rentang Mingguan",
                 value: rangeText,
                 unit: rangeText != "-" ? "BPM" : ""
-            )
-
-            metricInfoCard(
-                title: "Detak Jantung Istirahat",
-                value: restingHR,
-                unit: restingHR != "-" ? "BPM" : ""
             )
         }
     }

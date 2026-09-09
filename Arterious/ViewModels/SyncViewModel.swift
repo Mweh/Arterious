@@ -2,6 +2,7 @@ import Foundation
 import Observation
 import UIKit
 import CloudKit
+import HealthKit
 import UserNotifications
 
 @Observable
@@ -19,6 +20,14 @@ final class SyncViewModel {
     var historicalSummaries: [DailyHealthSummary] = []
     var parentName: String = "Nama Ortu 1"
     var lastSyncDate: Date?
+
+    /// Evaluasi lengkap dari RuleEngine
+    var evaluatedOverview: EvaluatedHealthOverview?
+    var baseline: HealthBaseline?
+
+    /// Output AI Insight lengkap (Today's Overview + Domain metrics + Recommended actions)
+    var insightOutput: LLMInsightOutput?
+    var isUsingLocalRuleFallback: Bool = false
 
     /// Deep link trigger to open parent share flow when requested by child
     var shouldShowParentShareFlow: Bool = false
@@ -50,6 +59,8 @@ final class SyncViewModel {
     private let healthKit: HealthKitManager
     private var pollTask: Task<Void, Never>?
     private var parentPushTask: Task<Void, Never>?
+    @ObservationIgnored private var periodicRefreshTimer: Timer?
+    @ObservationIgnored private var heartRateObserverQuery: HKQuery?
 
     // MARK: - Persistence Keys
 
@@ -60,6 +71,7 @@ final class SyncViewModel {
         self.cloudKit = cloudKit ?? .shared
         self.healthKit = healthKit ?? .shared
         loadPersistedState()
+        startPeriodicAutoRefresh()
     }
 
     // MARK: - Role Management
@@ -72,6 +84,7 @@ final class SyncViewModel {
             // ONLY parent requests Apple Health access
             try? await healthKit.requestAuthorization()
             await loadParentLocalHealthData()
+            startPeriodicAutoRefresh()
             if let code = syncState.inviteCode, syncState.status == .accepted {
                 await pushParentHealthData(code: code)
                 startParentPushLoop(code: code)
@@ -80,6 +93,7 @@ final class SyncViewModel {
             // Child NEVER requests Apple Health access
             parentPushTask?.cancel()
             parentPushTask = nil
+            startPeriodicAutoRefresh()
             if syncState.status == .accepted {
                 await fetchSharedParentSnapshot()
             }
@@ -88,22 +102,119 @@ final class SyncViewModel {
 
     // MARK: - Parent: Local HealthKit Data Loading
 
-    func loadParentLocalHealthData() async {
+    func loadParentLocalHealthData(forceGemini: Bool = false) async {
         if healthKit.isHealthKitAvailable {
             try? await healthKit.requestAuthorization()
         }
         let summary = await healthKit.fetchTodaySummary()
-        let history = await healthKit.fetchHistoricalSummaries(days: 7)
+        let history = await healthKit.fetchHistoricalSummaries(days: 14)
+
+        let pName = (parentName.isEmpty || parentName == "Nama Ortu 1") ? "Saya" : parentName
+        let (overview, promptInput) = RuleEngine.shared.evaluate(
+            today: summary,
+            history: history,
+            parentDisplayName: pName == "Saya" ? "Ibu" : pName
+        )
+        self.evaluatedOverview = overview
+        self.baseline = overview.baseline
+
+        // Cek apakah perlu memanggil Gemini API:
+        // Hanya panggil jika ada trigger berbahaya, atau 1x per hari, atau force refresh manual.
+        var overviewSummaryText = overview.statusBadge
+        let shouldCallAI = shouldCallGeminiAPI(for: overview, forceRefresh: forceGemini)
+
+        if shouldCallAI {
+            do {
+                let (output, _) = try await GeminiService.shared.generateInsight(input: promptInput)
+                let cleaned = RuleEngine.shared.sanitizeInsightOutput(output, overview: overview)
+                self.insightOutput = cleaned
+                self.isUsingLocalRuleFallback = false
+                self.lastGeminiCallDate = Date()
+                overviewSummaryText = cleaned.todayOverview.summary
+            } catch {
+                print("⚠️ [SyncViewModel] Gemini error, using rule fallback: \(error)")
+                self.isUsingLocalRuleFallback = true
+                let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "Ibu" : pName)
+                self.insightOutput = fallback
+                overviewSummaryText = fallback.todayOverview.summary
+            }
+        } else if let existing = self.insightOutput {
+            self.isUsingLocalRuleFallback = false
+            overviewSummaryText = existing.todayOverview.summary
+        } else {
+            self.isUsingLocalRuleFallback = true
+            let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "Ibu" : pName)
+            self.insightOutput = fallback
+            overviewSummaryText = fallback.todayOverview.summary
+        }
+
         let record = HealthRecord.create(
             from: summary,
             inviteCode: syncState.inviteCode ?? "LOCAL",
-            parentName: "Saya",
-            history: history
+            parentName: pName,
+            history: history,
+            overviewTitle: overview.headline,
+            overviewBody: overviewSummaryText,
+            activityStatusBadge: overview.activity.status,
+            sleepStatusBadge: overview.sleep.status,
+            heartStatusBadge: overview.heart.status
         )
         self.healthRecord = record
         self.historicalSummaries = history
         self.lastSyncDate = Date()
-        print("✅ [SyncViewModel] Loaded real parent health data: HR=\(record.displayHeartRate ?? -1), Steps=\(record.stepCount ?? -1), Sleep=\(record.sleepHours ?? -1)")
+        print("✅ [SyncViewModel] Synced parent health data: HR=\(record.displayHeartRate ?? -1), Steps=\(record.stepCount ?? -1), Sleep=\(record.sleepHours ?? -1), Title=\(record.summaryTitle)")
+
+        // Auto-push to CloudKit if parent is sharing
+        if syncState.role == .parent {
+            let code = syncState.inviteCode ?? "SHARED"
+            Task { [weak self] in
+                guard let self else { return }
+                try? await self.cloudKit.pushHealthSnapshot(summary, record: record, inviteCode: code, parentName: pName)
+                try? await self.cloudKit.pushHealthRecord(record)
+            }
+        }
+    }
+
+    // MARK: - Continuous Auto Refresh Loop (Every 60 Seconds / Per Menit)
+
+    func startPeriodicAutoRefresh() {
+        stopPeriodicAutoRefresh()
+
+        // Timer refresh per 60 detik (1 menit)
+        periodicRefreshTimer = Timer.scheduledTimer(withTimeInterval: 60.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if self.syncState.role == .parent {
+                    await self.loadParentLocalHealthData()
+                    if let code = self.syncState.inviteCode, self.syncState.status == .accepted {
+                        await self.pushParentHealthData(code: code)
+                    }
+                } else if self.syncState.status == .accepted {
+                    await self.fetchSharedParentSnapshot()
+                }
+            }
+        }
+
+        // Observer Query untuk deteksi sampel Heart Rate baru di Apple Health
+        if syncState.role == .parent {
+            heartRateObserverQuery = healthKit.startHeartRateObserver { [weak self] in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if self.syncState.role == .parent {
+                        await self.loadParentLocalHealthData()
+                    }
+                }
+            }
+        }
+    }
+
+    func stopPeriodicAutoRefresh() {
+        periodicRefreshTimer?.invalidate()
+        periodicRefreshTimer = nil
+        if let query = heartRateObserverQuery {
+            healthKit.stopHeartRateObserver(query)
+            heartRateObserverQuery = nil
+        }
     }
 
     // MARK: - Native Apple CKShare (One-Way: Read-Only)
@@ -132,11 +243,12 @@ final class SyncViewModel {
             // Pre-push current health data in background asynchronously so share link is immediately ready!
             Task(priority: .background) { [weak self] in
                 guard let self else { return }
-                let summary = await self.healthKit.fetchTodaySummary()
-                let history = await self.healthKit.fetchHistoricalSummaries(days: 7)
-                let record = HealthRecord.create(from: summary, inviteCode: "SHARED", parentName: name, history: history)
-                try? await self.cloudKit.pushHealthRecord(record)
-                try? await self.cloudKit.pushHealthSnapshot(summary, inviteCode: "SHARED", parentName: name)
+                await self.loadParentLocalHealthData()
+                if let record = self.healthRecord {
+                    let summary = await self.healthKit.fetchTodaySummary()
+                    try? await self.cloudKit.pushHealthSnapshot(summary, record: record, inviteCode: "SHARED", parentName: name)
+                    try? await self.cloudKit.pushHealthRecord(record)
+                }
             }
 
             print("✅ Native CKShare ready: \(share.url?.absoluteString ?? "no url")")
@@ -228,8 +340,23 @@ final class SyncViewModel {
                 self.bannerMessage = "Undangan diterima dari \(pName)! Data kesehatan kini terhubung."
                 self.showAcceptedBanner = true
             } catch {
-                print("❌ acceptNativeShare error: \(error)")
-                self.errorMessage = "Gagal menerima undangan sharing: \(error.localizedDescription)"
+                print("⚠️ acceptNativeShare error (\(error.localizedDescription)), falling back to shared snapshot...")
+                self.syncState = SyncState(
+                    role: .child,
+                    inviteCode: "SHARED",
+                    status: .accepted,
+                    partnerName: "Orang Tua",
+                    lastSyncDate: Date()
+                )
+                self.parentName = "Orang Tua"
+                persistState()
+                await fetchSharedParentSnapshot()
+                if self.healthRecord != nil {
+                    self.bannerMessage = "Terhubung dengan data kesehatan Orang Tua!"
+                    self.showAcceptedBanner = true
+                } else {
+                    self.errorMessage = "Gagal menerima undangan sharing: \(error.localizedDescription)"
+                }
             }
             return
         }
@@ -365,13 +492,48 @@ final class SyncViewModel {
 
     func pushParentHealthData(code: String) async {
         let summary = await healthKit.fetchTodaySummary()
-        let history = await healthKit.fetchHistoricalSummaries(days: 7)
+        let history = await healthKit.fetchHistoricalSummaries(days: 14)
         let name = UIDevice.current.name.isEmpty ? "Orang Tua" : UIDevice.current.name
+        let pName = (parentName.isEmpty || parentName == "Nama Ortu 1") ? name : parentName
 
-        let record = HealthRecord.create(from: summary, inviteCode: code, parentName: name, history: history)
+        let (overview, promptInput) = RuleEngine.shared.evaluate(
+            today: summary,
+            history: history,
+            parentDisplayName: pName == "Saya" ? "Ibu" : pName
+        )
+        self.evaluatedOverview = overview
+        self.baseline = overview.baseline
+
+        var overviewSummaryText = overview.statusBadge
+        if let existingOutput = self.insightOutput {
+            overviewSummaryText = existingOutput.todayOverview.summary
+        } else if shouldCallGeminiAPI(for: overview, forceRefresh: false) {
+            if let (output, _) = try? await GeminiService.shared.generateInsight(input: promptInput) {
+                let cleaned = RuleEngine.shared.sanitizeInsightOutput(output, overview: overview)
+                self.insightOutput = cleaned
+                self.lastGeminiCallDate = Date()
+                overviewSummaryText = cleaned.todayOverview.summary
+            }
+        } else {
+            let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "Ibu" : pName)
+            self.insightOutput = fallback
+            overviewSummaryText = fallback.todayOverview.summary
+        }
+
+        let record = HealthRecord.create(
+            from: summary,
+            inviteCode: code,
+            parentName: pName,
+            history: history,
+            overviewTitle: overview.headline,
+            overviewBody: overviewSummaryText,
+            activityStatusBadge: overview.activity.status,
+            sleepStatusBadge: overview.sleep.status,
+            heartStatusBadge: overview.heart.status
+        )
 
         do {
-            try await cloudKit.pushHealthSnapshot(summary, inviteCode: code, parentName: name)
+            try await cloudKit.pushHealthSnapshot(summary, record: record, inviteCode: code, parentName: pName)
             try await cloudKit.pushHealthRecord(record)
 
             lastSyncDate = Date()
@@ -381,8 +543,7 @@ final class SyncViewModel {
             persistState()
             print("✅ Successfully pushed HealthRecord for code: \(code) on date: \(record.formattedDate)")
         } catch {
-            print("❌ Push parent health data error: \(error)")
-            errorMessage = error.localizedDescription
+            print("⚠️ Push parent health data background error: \(error)")
         }
     }
 
@@ -395,7 +556,30 @@ final class SyncViewModel {
                 parentSnapshot = result.summary
                 parentName = result.parentName
                 lastSyncDate = result.updatedAt
-                healthRecord = HealthRecord.create(from: result.summary, inviteCode: syncState.inviteCode ?? "SHARED", parentName: result.parentName)
+                
+                if let fullRecord = result.record {
+                    self.healthRecord = fullRecord
+                } else {
+                    let (overview, _) = RuleEngine.shared.evaluate(
+                        today: result.summary,
+                        history: self.historicalSummaries,
+                        parentDisplayName: result.parentName
+                    )
+                    let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: result.parentName)
+                    self.insightOutput = fallback
+                    self.healthRecord = HealthRecord.create(
+                        from: result.summary,
+                        inviteCode: syncState.inviteCode ?? "SHARED",
+                        parentName: result.parentName,
+                        history: self.historicalSummaries,
+                        overviewTitle: overview.headline,
+                        overviewBody: fallback.todayOverview.summary,
+                        activityStatusBadge: overview.activity.status,
+                        sleepStatusBadge: overview.sleep.status,
+                        heartStatusBadge: overview.heart.status
+                    )
+                }
+                
                 syncState.partnerName = result.parentName
                 syncState.lastSyncDate = result.updatedAt
                 syncState.status = .accepted
@@ -404,15 +588,13 @@ final class SyncViewModel {
                 return
             }
 
-            // 2. Fallback to public database if inviteCode is present
-            if let code = syncState.inviteCode {
-                await fetchParentSnapshot(code: code)
-            }
+            // 2. Fallback to public database with inviteCode or default to "SHARED"
+            let code = syncState.inviteCode ?? "SHARED"
+            await fetchParentSnapshot(code: code)
         } catch {
             print("⚠️ fetchSharedParentSnapshot error: \(error)")
-            if let code = syncState.inviteCode {
-                await fetchParentSnapshot(code: code)
-            }
+            let code = syncState.inviteCode ?? "SHARED"
+            await fetchParentSnapshot(code: code)
         }
     }
 
@@ -440,8 +622,27 @@ final class SyncViewModel {
                 syncState.lastSyncDate = result.updatedAt
                 syncState.status = .accepted
 
-                if self.healthRecord == nil {
-                    self.healthRecord = HealthRecord.create(from: result.summary, inviteCode: code, parentName: result.parentName)
+                if let rec = result.record {
+                    self.healthRecord = rec
+                } else if self.healthRecord == nil {
+                    let (overview, _) = RuleEngine.shared.evaluate(
+                        today: result.summary,
+                        history: self.historicalSummaries,
+                        parentDisplayName: result.parentName
+                    )
+                    let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: result.parentName)
+                    self.insightOutput = fallback
+                    self.healthRecord = HealthRecord.create(
+                        from: result.summary,
+                        inviteCode: code,
+                        parentName: result.parentName,
+                        history: self.historicalSummaries,
+                        overviewTitle: overview.headline,
+                        overviewBody: fallback.todayOverview.summary,
+                        activityStatusBadge: overview.activity.status,
+                        sleepStatusBadge: overview.sleep.status,
+                        heartStatusBadge: overview.heart.status
+                    )
                 }
             }
 
@@ -460,12 +661,16 @@ final class SyncViewModel {
         let appStorageRole = UserDefaults.standard.string(forKey: "userRole")
         if appStorageRole == UserRole.parent.rawValue && syncState.role != .parent {
             syncState.role = .parent
+        } else if appStorageRole == UserRole.child.rawValue && syncState.role != .child {
+            syncState.role = .child
         }
 
         switch syncState.role {
         case .child:
-            if syncState.status == .accepted {
-                await fetchSharedParentSnapshot()
+            await fetchSharedParentSnapshot()
+            if syncState.status != .accepted && healthRecord == nil {
+                // If not yet connected to a remote parent, preview local data
+                await loadParentLocalHealthData()
             }
         case .parent:
             await loadParentLocalHealthData()
@@ -534,5 +739,31 @@ final class SyncViewModel {
         if let stored = appStorageRole, stored == UserRole.parent.rawValue && syncState.role != .parent {
             syncState.role = .parent
         }
+    }
+
+    // MARK: - Smart AI Rate-Limiting & Alert Triggering
+
+    var lastGeminiCallDate: Date? {
+        get { UserDefaults.standard.object(forKey: "arterious.lastGeminiCallDate") as? Date }
+        set { UserDefaults.standard.set(newValue, forKey: "arterious.lastGeminiCallDate") }
+    }
+
+    func shouldCallGeminiAPI(for overview: EvaluatedHealthOverview, forceRefresh: Bool = false) -> Bool {
+        guard APIConfig.isConfigured else { return false }
+        if forceRefresh { return true }
+
+        // 1. Kondisi / trigger berbahaya (misal: penurunan pola atau detak jantung abnormal)
+        let isDangerousTrigger = overview.conditionStatus == "DECLINED" ||
+                                 overview.heart.status.localizedCaseInsensitiveContains("Perhatian") ||
+                                 overview.heart.status.localizedCaseInsensitiveContains("Meningkat")
+        if isDangerousTrigger {
+            return true
+        }
+
+        // 2. Jika kondisi normal/stabil, batasi hanya sekali per hari
+        guard let lastDate = lastGeminiCallDate else {
+            return true
+        }
+        return !Calendar.current.isDateInToday(lastDate)
     }
 }

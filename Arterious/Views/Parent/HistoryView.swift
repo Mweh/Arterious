@@ -268,7 +268,7 @@ struct HistoryView: View {
             }
             return "-"
         } else {
-            if let hr = historicalSummaryForSelectedDate?.latestHeartRate ?? historicalSummaryForSelectedDate?.restingHeartRate {
+            if let hr = historicalSummaryForSelectedDate?.latestHeartRate {
                 return "\(Int(hr))"
             }
             return "-"
@@ -279,8 +279,8 @@ struct HistoryView: View {
         if isViewingToday {
             return syncViewModel.healthRecord?.heartRateStatus ?? "Belum ada data"
         }
-        if let hr = historicalSummaryForSelectedDate?.latestHeartRate ?? historicalSummaryForSelectedDate?.restingHeartRate {
-            return hr < 60 ? "Sedikit rendah" : (hr > 100 ? "Sedikit tinggi" : "Dalam rentang normal")
+        if let hr = historicalSummaryForSelectedDate?.latestHeartRate {
+            return hr < 55 ? "Cenderung Lambat" : (hr > 85 ? "Sedikit Meningkat" : "Stabil")
         }
         return "Belum ada data"
     }
@@ -332,12 +332,12 @@ struct HistoryView: View {
 
     private var summaryTitleText: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.summaryTitle ?? "Belum ada data"
+            return syncViewModel.healthRecord?.summaryTitle ?? "Perubahan Pola Perlu Diperhatikan"
         }
         let hasData = (historicalSummaryForSelectedDate?.latestHeartRate != nil) ||
                       (historicalSummaryForSelectedDate?.sleepHours != nil && historicalSummaryForSelectedDate!.sleepHours! > 0) ||
                       (historicalSummaryForSelectedDate?.stepCount != nil)
-        return hasData ? "Kondisi terpantau" : "Belum ada data"
+        return hasData ? (syncViewModel.healthRecord?.summaryTitle ?? "Perubahan Pola Perlu Diperhatikan") : "Belum ada data"
     }
 
     private var summaryBodyText: String {

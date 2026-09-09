@@ -1,0 +1,44 @@
+# Environment & Secrets
+.env
+.env.*
+*.env
+Arterious/Configuration/.env
+
+# AI Guidelines & Docs
+AGENTS.md
+docs/
+Arterious/docs/
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.Spotlight-V100
+.Trashes
+
+# Xcode
+build/
+DerivedData/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+xcuserdata/
+*.xcuserdatad
+*.xccheckout
+*.moved-aside
+*.xcuserstate
+*.xcscmblueprint
+
+# Swift Package Manager
+.build/
+Packages/
+
+# CocoaPods
+Pods/

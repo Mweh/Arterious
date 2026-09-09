@@ -1,0 +1,47 @@
+{
+  "_meta": {
+    "description": "Concern state record per domain — sesuai PRD §8 dan §15.4",
+    "source": "State machine berdasarkan rule evaluation + history",
+    "user_id": "PARENT_001",
+    "evaluation_date": "2026-09-06"
+  },
+  "concerns": [
+    {
+      "domain": "sleep",
+      "state": "NEW_CONCERN",
+      "entered_at": "2026-09-06T08:00:00+07:00",
+      "previous_state": "NONE",
+      "transition_reason": "SLEEP_SHORT terpenuhi 3 malam berturut-turut + SLEEP_SE_VERY_POOR 2 malam",
+      "triggered_rules": ["SLEEP_SHORT", "SLEEP_SE_VERY_POOR", "SLEEP_TIMING_SHIFT", "SLEEP_AWAKE_HIGH"],
+      "days_in_current_state": 1,
+      "notification_sent": true,
+      "last_notification_at": "2026-09-06T08:01:00+07:00"
+    },
+    {
+      "domain": "activity",
+      "state": "NEW_CONCERN",
+      "entered_at": "2026-09-06T21:00:00+07:00",
+      "previous_state": "OBSERVATION",
+      "transition_reason": "ACTIVITY_VERY_LOW terpenuhi 3 hari berturut + walking speed turun >15%",
+      "triggered_rules": ["ACTIVITY_VERY_LOW", "ACTIVITY_WALK_SLOW"],
+      "days_in_current_state": 1,
+      "notification_sent": true,
+      "last_notification_at": "2026-09-06T21:01:00+07:00"
+    },
+    {
+      "domain": "heart",
+      "state": "ESCALATED_CONCERN",
+      "entered_at": "2026-09-06T21:00:00+07:00",
+      "previous_state": "NEW_CONCERN",
+      "transition_reason": "HEART_RECOVERY: RHR naik + HRV turun + sleep buruk selama 2 hari (multi-domain)",
+      "triggered_rules": ["HEART_RHR_HIGH", "HEART_HRV_LOW", "HEART_RECOVERY"],
+      "days_in_current_state": 1,
+      "notification_sent": true,
+      "last_notification_at": "2026-09-06T21:01:00+07:00"
+    }
+  ],
+  "overall": {
+    "overall_care_status": "CAUTION",
+    "rationale": "Sleep NEW_CONCERN + Activity NEW_CONCERN + Heart ESCALATED_CONCERN = multi-domain concern = CAUTION"
+  }
+}

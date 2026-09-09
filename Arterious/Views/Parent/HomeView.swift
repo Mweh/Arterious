@@ -17,7 +17,7 @@ struct HomeView: View {
         if userRole == UserRole.parent.rawValue {
             return true
         }
-        return syncViewModel.syncState.status == .accepted && hasConnectedParent
+        return (syncViewModel.syncState.status == .accepted || syncViewModel.healthRecord != nil) && hasConnectedParent
     }
 
     private var displayName: String {
@@ -267,28 +267,54 @@ struct HomeView: View {
                 Spacer()
             }
 
-            // "Today's Summary" Blue Tinted Card
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text("Today's Summary")
-                    .font(AppTypography.subheadlineRegular)
-                    .foregroundStyle(AppColor.textSecondary)
+            // "Today's Summary" Blue Tinted Card with direct access to Caregiver AI Insights
+            NavigationLink {
+                LLMInsightView()
+            } label: {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    HStack {
+                        Text("Today's Summary")
+                            .font(AppTypography.subheadlineRegular)
+                            .foregroundStyle(AppColor.textSecondary)
 
-                Text(syncViewModel.healthRecord?.summaryTitle ?? "Belum ada data hari ini")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .padding(.top, 1)
+                        Spacer()
 
-                Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")
-                    .font(AppTypography.bodyRegular)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("AI Insight")
+                                .font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(AppColor.actionBlue)
+                    }
+
+                    Text(syncViewModel.healthRecord?.summaryTitle ?? "Perubahan Pola Perlu Diperhatikan")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .padding(.top, 1)
+
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(.purple)
+                            .padding(.top, 2)
+
+                        Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")
+                            .font(AppTypography.bodyRegular)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                     .padding(.top, 2)
+                }
+                .padding(AppSpacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppColor.Accent.blue12)
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
             }
-            .padding(AppSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.Accent.blue12)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
+            .buttonStyle(.plain)
 
             // Section "Today's Data"
             VStack(alignment: .leading, spacing: AppSpacing.md) {
@@ -400,6 +426,17 @@ struct HomeView: View {
                 .background(Color(.systemGray6))
                 .clipShape(Circle())
         }
+    }
+
+    private func badgeColor(for badge: String) -> Color {
+        let lower = badge.lowercased()
+        if lower.contains("menurun") || lower.contains("penurunan") {
+            return .red
+        }
+        if lower.contains("membaik") || lower.contains("meningkat") {
+            return .green
+        }
+        return AppColor.actionBlue
     }
 }
 

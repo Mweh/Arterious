@@ -143,11 +143,12 @@ final class CloudKitSyncManager {
             throw SyncError.encodingFailed
         }
 
+        let recordID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(inviteCode)")
         let record: CKRecord
-        if let existing = try? await fetchSnapshotRecord(inviteCode: inviteCode) {
+        if let existing = try? await publicDB.record(for: recordID) {
             record = existing
         } else {
-            record = CKRecord(recordType: CKRecordType.parentHealthSnapshot)
+            record = CKRecord(recordType: CKRecordType.parentHealthSnapshot, recordID: recordID)
             record[CKField.inviteCode] = inviteCode
         }
 
@@ -159,15 +160,18 @@ final class CloudKitSyncManager {
 
     // MARK: - Parent: Push Structured HealthRecord (Per-Day Upsert)
 
-    /// Saves or updates a HealthRecord for the current day.
+    /// Saves or updates a HealthRecord for the current day using deterministic recordID.
     func pushHealthRecord(_ record: HealthRecord) async throws {
         try await ensureCloudKitAvailable()
 
+        let dateStr = dateFormatter.string(from: record.recordDate)
+        let recordID = CKRecord.ID(recordName: "HealthRecord_\(record.inviteCode)_\(dateStr)")
+
         let ckRecord: CKRecord
-        if let existing = try? await fetchExistingHealthRecord(inviteCode: record.inviteCode, date: record.recordDate) {
+        if let existing = try? await publicDB.record(for: recordID) {
             ckRecord = existing
         } else {
-            ckRecord = CKRecord(recordType: CKRecordType.healthRecord)
+            ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
         }
 
         ckRecord[CKField.inviteCode] = record.inviteCode

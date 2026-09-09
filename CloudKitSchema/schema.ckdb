@@ -1,4 +1,4 @@
-DEFINE SCHEMA;
+DEFINE SCHEMA
 
 DEFINE RECORD TYPE SharingInvite (
     "childDeviceID" STRING,

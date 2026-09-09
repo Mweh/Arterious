@@ -85,11 +85,11 @@ final class CloudKitSyncManager {
 
     // MARK: - Generate Invite Link (Bidirectional)
 
-    /// Creates a SharingInvite record in CloudKit and returns a deep link URL.
-    func generateInviteLink(senderRole: SyncRole = .child, senderName: String = "Keluarga") async throws -> URL {
+    /// Creates a SharingInvite record in CloudKit for the specified 8-digit code and returns a deep link URL.
+    func generateInviteLink(code: String, senderRole: SyncRole = .child, senderName: String = "Keluarga") async throws -> URL {
         try await ensureCloudKitAvailable()
-        let code = generateCode()
-        let record = CKRecord(recordType: CKRecordType.sharingInvite)
+        let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
+        let record = CKRecord(recordType: CKRecordType.sharingInvite, recordID: recordID)
         record[CKField.inviteCode] = code
         record[CKField.status] = "pending"
         record[CKField.childDeviceID] = UIDevice.current.identifierForVendor?.uuidString ?? "unknown"

@@ -91,9 +91,13 @@ final class SyncViewModel {
 
         // Attempt background CloudKit registration
         Task {
-            _ = try? await cloudKit.generateInviteLink(senderRole: syncState.role, senderName: UIDevice.current.name)
-            if syncState.role == .parent {
-                await pushParentHealthData(code: code)
+            do {
+                _ = try await cloudKit.generateInviteLink(code: code, senderRole: syncState.role, senderName: UIDevice.current.name)
+                if syncState.role == .parent {
+                    await pushParentHealthData(code: code)
+                }
+            } catch {
+                self.errorMessage = "Gagal mendaftarkan undangan di CloudKit: \(error.localizedDescription)"
             }
         }
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// First step of onboarding: Brand introduction and key feature overview.
+/// First step of onboarding: Brand introduction with iPhone mockup and key feature overview.
 struct OnboardingWelcomeView: View {
 
     let onContinue: () -> Void
@@ -14,83 +14,90 @@ struct OnboardingWelcomeView: View {
 
     private let features: [FeatureItem] = [
         FeatureItem(
-            iconName: "heart.text.square",
-            title: "Daily Health Summary",
-            subtitle: "Monitor heart rate, daily steps, and sleep patterns with ease."
+            iconName: "doc.text",
+            title: "Pantau Kesehatan",
+            subtitle: "Lihat kondisi harian orang tua dengan mudah"
         ),
         FeatureItem(
-            iconName: "bell.and.waves.left.and.right",
-            title: "Early Awareness",
-            subtitle: "Receive gentle notifications when meaningful wellness pattern changes occur."
+            iconName: "bell",
+            title: "Dapatkan Notifikasi",
+            subtitle: "Notifikasi saat ada perubahan penting"
         ),
         FeatureItem(
             iconName: "person.crop.circle.badge.plus",
-            title: "Connected Family",
-            subtitle: "Stay informed about your parents' wellness trends securely and privately."
+            title: "Tetap terhubung",
+            subtitle: "Tetap dekat dengan mereka setiap hari"
         )
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer()
-                .frame(height: AppSpacing.xxl)
+        VStack(spacing: 0) {
+            // MARK: - iPhone Mockup Hero Image
+            Image("Frame")
+                .resizable()
+                .scaledToFit()
+                .frame(maxWidth: .infinity)
+                .clipped()
 
-            // Brand Header
-            VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                ArteriousLogoView(size: 64)
+            // MARK: - Features & CTA
+            VStack(spacing: 0) {
+                // Feature list
+                VStack(spacing: 0) {
+                    ForEach(Array(features.enumerated()), id: \.element.id) { index, feature in
+                        featureRow(feature)
 
-                Text("Arterious")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-            }
-            .padding(.bottom, AppSpacing.xl * 1.2)
-
-            // Features List
-            VStack(spacing: AppSpacing.lg) {
-                ForEach(features) { feature in
-                    featureRow(feature)
+                        if index < features.count - 1 {
+                            Divider()
+                                .padding(.leading, 52)
+                        }
+                    }
                 }
+                .padding(.top, AppSpacing.xl)
+
+                Spacer()
+
+                // Continue Button
+                Button(action: onContinue) {
+                    Text("Lanjut")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(.white)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 54)
+                        .background(AppColor.Brand.primaryBlue)
+                        .clipShape(Capsule())
+                }
+                .padding(.bottom, AppSpacing.xl)
             }
-
-            Spacer()
-
-            // Continue Button
-            AppButton(
-                title: "Continue",
-                isFullWidth: true,
-                action: onContinue
-            )
-            .padding(.bottom, AppSpacing.lg)
+            .padding(.horizontal, AppSpacing.lg)
+            .background(AppColor.Background.secondaryWhite)
         }
-        .padding(.horizontal, AppSpacing.lg)
-        .background(AppColor.backgroundSecondary.ignoresSafeArea())
+        .background(AppColor.Background.secondaryWhite.ignoresSafeArea())
+        .ignoresSafeArea(edges: .top)
     }
 
     // MARK: - Feature Row
 
     private func featureRow(_ item: FeatureItem) -> some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            HStack(alignment: .top, spacing: AppSpacing.md) {
-                Image(systemName: item.iconName)
-                    .font(.system(size: 26))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .frame(width: 36, height: 36)
+        HStack(alignment: .top, spacing: AppSpacing.md) {
+            Image(systemName: item.iconName)
+                .font(.system(size: 22, weight: .regular))
+                .foregroundStyle(AppColor.Gray.gray100)
+                .frame(width: 36, height: 36)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(AppTypography.headline)
-                        .foregroundStyle(AppColor.textPrimary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(AppColor.Gray.gray100)
 
-                    Text(item.subtitle)
-                        .font(AppTypography.subheadline)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(item.subtitle)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(AppColor.Gray.gray50)
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
-                .padding(.leading, 48)
+            Spacer()
         }
+        .padding(.vertical, AppSpacing.md)
     }
 }
 

@@ -6,54 +6,62 @@ struct OnboardingRoleView: View {
     @Binding var selectedRole: UserRole
     let onContinue: () -> Void
 
+    private let subtitleColor = Color(hex: "8E8E93")
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Spacer()
-                .frame(height: AppSpacing.xxl)
 
-            // Header
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text("Start with\nyour role")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .lineSpacing(2)
+            // MARK: - Header
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Mulai dengan\nperan Anda")
+                    .font(AppTypography.largeTitleBold) // SF Pro 34 Bold
+                    .foregroundStyle(Color.black)
+                    .lineSpacing(4) // Line height 41
 
-                Text("Choose the role that best suits you so we can provide the best experience.")
-                    .font(AppTypography.body)
-                    .foregroundStyle(AppColor.textSecondary)
+                Text("Pilih peran yang paling sesuai agar\nkami dapat memberikan\npengalaman terbaik untuk Anda.")
+                    .font(AppTypography.bodyRegular) // SF Pro 17 Regular
+                    .foregroundStyle(subtitleColor)
+                    .lineSpacing(3) // Line height 22
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, AppSpacing.xs)
+                    .padding(.top, 2)
             }
-            .padding(.bottom, AppSpacing.xl * 1.2)
+            .padding(.top, 20) // ~80pt from screen top with safe area
+            .padding(.bottom, 32) // 32pt stack spacing
 
-            // Role Selection Cards
-            VStack(spacing: AppSpacing.md) {
+            // MARK: - Role Selection Cards
+            VStack(spacing: 16) {
                 roleCard(
                     role: .parent,
                     iconName: "person.fill",
-                    iconColor: AppColor.roleParent,
-                    iconBgColor: AppColor.roleParent.opacity(0.14)
+                    iconColor: AppColor.Brand.primaryBlue,
+                    iconBgColor: Color(hex: "0088FF", opacity: 0.16),
+                    descriptionText: "Gunakan aplikasi untuk\nmemantau dan menjaga\nkesehatan Anda."
                 )
 
                 roleCard(
                     role: .child,
                     iconName: "person.2.fill",
-                    iconColor: AppColor.roleChild,
-                    iconBgColor: AppColor.roleChild.opacity(0.14)
+                    iconColor: AppColor.Accent.green,
+                    iconBgColor: Color(hex: "34C759", opacity: 0.16),
+                    descriptionText: "Pantau kondisi orang\ntua & notifikasi saat\nada perubahan penting"
                 )
             }
 
             Spacer()
 
-            // Continue Button
-            AppButton(
-                title: "Continue",
-                isFullWidth: true,
-                action: onContinue
-            )
-            .padding(.bottom, AppSpacing.lg)
+            // MARK: - Lanjut Button
+            Button(action: onContinue) {
+                Text("Lanjut")
+                    .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(AppColor.Brand.primaryBlue)
+                    .clipShape(Capsule())
+            }
+            .padding(.bottom, AppSpacing.xl)
         }
-        .padding(.horizontal, AppSpacing.lg)
+        .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 
@@ -63,7 +71,8 @@ struct OnboardingRoleView: View {
         role: UserRole,
         iconName: String,
         iconColor: Color,
-        iconBgColor: Color
+        iconBgColor: Color,
+        descriptionText: String
     ) -> some View {
         let isSelected = selectedRole == role
 
@@ -72,11 +81,11 @@ struct OnboardingRoleView: View {
                 selectedRole = role
             }
         } label: {
-            HStack(alignment: .center, spacing: AppSpacing.md) {
+            HStack(alignment: .center, spacing: 14) {
                 // Radio indicator
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.system(size: 22))
-                    .foregroundStyle(isSelected ? AppColor.actionBlue : Color(.systemGray3))
+                    .foregroundStyle(isSelected ? AppColor.Brand.primaryBlue : Color(.systemGray4))
 
                 // Circular Icon Avatar
                 ZStack {
@@ -90,33 +99,32 @@ struct OnboardingRoleView: View {
                 }
 
                 // Text Content
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text(role.title)
-                        .font(AppTypography.headline)
-                        .foregroundStyle(AppColor.textPrimary)
+                        .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
+                        .foregroundStyle(Color.black)
 
-                    Text(role.description)
-                        .font(AppTypography.subheadline)
-                        .foregroundStyle(AppColor.textSecondary)
+                    Text(descriptionText)
+                        .font(AppTypography.subheadlineRegular) // SF Pro 15 Regular
+                        .foregroundStyle(subtitleColor)
                         .multilineTextAlignment(.leading)
+                        .lineSpacing(2) // Line height 20
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
             }
-            .padding(AppSpacing.lg)
-            .background(AppColor.backgroundSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.xl))
+            .padding(.horizontal, 18)
+            .padding(.vertical, 20)
+            .background(Color.white)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
             .overlay(
-                RoundedRectangle(cornerRadius: AppRadius.xl)
-                    .stroke(
-                        isSelected ? AppColor.actionBlue.opacity(0.3) : Color(.separator).opacity(0.4),
-                        lineWidth: isSelected ? 1.5 : 1
-                    )
+                RoundedRectangle(cornerRadius: AppRadius.r24)
+                    .stroke(Color.black.opacity(0.04), lineWidth: 1)
             )
             .shadow(
-                color: Color.black.opacity(isSelected ? 0.04 : 0.02),
-                radius: 6,
+                color: Color.black.opacity(0.03),
+                radius: 8,
                 x: 0,
                 y: 2
             )

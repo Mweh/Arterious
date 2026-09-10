@@ -16,75 +16,57 @@ struct OnboardingContainerView: View {
             AppColor.backgroundPrimary
                 .ignoresSafeArea()
 
-            VStack(spacing: 0) {
-                // Top Navigation Bar
-                topNavigationBar
-
-                // Screen Steps
-                Group {
-                    switch currentStep {
-                    case 1:
-                        OnboardingWelcomeView {
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 2
-                            }
+            // Step Content
+            Group {
+                switch currentStep {
+                case 1:
+                    OnboardingWelcomeView {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            currentStep = 2
                         }
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .trailing)),
-                            removal: .opacity.combined(with: .move(edge: .leading))
-                        ))
-
-                    case 2:
-                        OnboardingRoleView(selectedRole: $selectedRole) {
-                            storedUserRole = selectedRole.rawValue
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 3
-                            }
-                        }
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .trailing)),
-                            removal: .opacity.combined(with: .move(edge: .leading))
-                        ))
-
-                    case 3:
-                        OnboardingHealthView {
-                            completeOnboarding()
-                        }
-                        .transition(.asymmetric(
-                            insertion: .opacity.combined(with: .move(edge: .trailing)),
-                            removal: .opacity.combined(with: .move(edge: .leading))
-                        ))
-
-                    default:
-                        EmptyView()
                     }
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .trailing)),
+                        removal: .opacity.combined(with: .move(edge: .leading))
+                    ))
+
+                case 2:
+                    OnboardingRoleView(selectedRole: $selectedRole) {
+                        storedUserRole = selectedRole.rawValue
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            currentStep = 3
+                        }
+                    }
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .trailing)),
+                        removal: .opacity.combined(with: .move(edge: .leading))
+                    ))
+
+                case 3:
+                    OnboardingHealthView {
+                        completeOnboarding()
+                    }
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .trailing)),
+                        removal: .opacity.combined(with: .move(edge: .leading))
+                    ))
+
+                default:
+                    EmptyView()
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-    }
-
-    // MARK: - Top Navigation Bar
-
-    private var topNavigationBar: some View {
-        HStack {
-            if currentStep > 1 {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentStep -= 1
+        .gesture(
+            DragGesture(minimumDistance: 30)
+                .onEnded { value in
+                    if value.translation.width > 60 && currentStep > 1 {
+                        withAnimation(.easeInOut(duration: 0.3)) {
+                            currentStep -= 1
+                        }
                     }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .padding(AppSpacing.xs)
                 }
-            }
-
-            Spacer()
-        }
-        .padding(.horizontal, AppSpacing.lg)
-        .padding(.top, AppSpacing.xs)
-        .frame(height: 44)
+        )
     }
 
     // MARK: - Completion

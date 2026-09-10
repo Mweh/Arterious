@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// First step of onboarding: Brand introduction and key feature overview.
+/// First step of onboarding: Brand introduction with iPhone mockup and key feature overview.
 struct OnboardingWelcomeView: View {
 
     let onContinue: () -> Void
@@ -14,83 +14,99 @@ struct OnboardingWelcomeView: View {
 
     private let features: [FeatureItem] = [
         FeatureItem(
-            iconName: "heart.text.square",
-            title: "Daily Health Summary",
-            subtitle: "Monitor heart rate, daily steps, and sleep patterns with ease."
+            iconName: "doc.text",
+            title: "Pantau Kesehatan",
+            subtitle: "Lihat kondisi harian orang tua dengan mudah"
         ),
         FeatureItem(
             iconName: "bell.and.waves.left.and.right",
-            title: "Early Awareness",
-            subtitle: "Receive gentle notifications when meaningful wellness pattern changes occur."
+            title: "Dapatkan Notifikasi",
+            subtitle: "Notifikasi saat ada perubahan penting"
         ),
         FeatureItem(
-            iconName: "person.crop.circle.badge.plus",
-            title: "Connected Family",
-            subtitle: "Stay informed about your parents' wellness trends securely and privately."
+            iconName: "person.badge.plus",
+            title: "Tetap terhubung",
+            subtitle: "Tetap dekat dengan mereka setiap hari"
         )
     ]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Spacer()
-                .frame(height: AppSpacing.xxl)
+        VStack(spacing: 0) {
 
-            // Brand Header
-            VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                ArteriousLogoView(size: 64)
+            // MARK: - Hero Image dengan gradient fade halus
+            ZStack(alignment: .bottom) {
+                Image("OnboardingPage1Image")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
 
-                Text("Arterious")
-                    .font(.system(size: 34, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
+                // Gradient fade ke warna background F2F2F7
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: AppColor.backgroundPrimary.opacity(0.65), location: 0.65),
+                        .init(color: AppColor.backgroundPrimary, location: 1.0)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 120)
             }
-            .padding(.bottom, AppSpacing.xl * 1.2)
 
-            // Features List
-            VStack(spacing: AppSpacing.lg) {
-                ForEach(features) { feature in
+            // MARK: - Features List
+            VStack(spacing: 0) {
+                ForEach(Array(features.enumerated()), id: \.element.id) { _, feature in
                     featureRow(feature)
+                    Divider()
+                        .background(AppColor.separator)
+                        .padding(.leading, 48)
                 }
             }
+            .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
+            .padding(.top, AppSpacing.xs)
 
             Spacer()
 
-            // Continue Button
-            AppButton(
-                title: "Continue",
-                isFullWidth: true,
-                action: onContinue
-            )
-            .padding(.bottom, AppSpacing.lg)
+            // MARK: - Lanjut Button
+            Button(action: onContinue) {
+                Text("Lanjut")
+                    .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(AppColor.Brand.primaryBlue)
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
+            .padding(.bottom, AppSpacing.xl)
         }
-        .padding(.horizontal, AppSpacing.lg)
-        .background(AppColor.backgroundSecondary.ignoresSafeArea())
+        .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 
     // MARK: - Feature Row
 
     private func featureRow(_ item: FeatureItem) -> some View {
-        VStack(alignment: .leading, spacing: AppSpacing.md) {
-            HStack(alignment: .top, spacing: AppSpacing.md) {
-                Image(systemName: item.iconName)
-                    .font(.system(size: 26))
+        HStack(alignment: .center, spacing: AppSpacing.md + 2) {
+            Image(systemName: item.iconName)
+                .font(.system(size: 22, weight: .regular))
+                .foregroundStyle(AppColor.textPrimary)
+                .frame(width: 32, height: 32, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text(item.title)
+                    .font(AppTypography.calloutBold) // SF Pro 16 Bold
                     .foregroundStyle(AppColor.textPrimary)
-                    .frame(width: 36, height: 36)
 
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(AppTypography.headline)
-                        .foregroundStyle(AppColor.textPrimary)
-
-                    Text(item.subtitle)
-                        .font(AppTypography.subheadline)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
+                Text(item.subtitle)
+                    .font(AppTypography.footnoteRegular) // SF Pro 13 Regular
+                    .foregroundStyle(AppColor.textSecondary)
+                    .lineSpacing(2) // Line height 18
+                    .fixedSize(horizontal: false, vertical: true)
             }
 
-            Divider()
-                .padding(.leading, 48)
+            Spacer(minLength: 0)
         }
+        .padding(.vertical, 12)
     }
 }
 

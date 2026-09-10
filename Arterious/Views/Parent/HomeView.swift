@@ -6,11 +6,11 @@ struct HomeView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = true
     @AppStorage("userRole") private var userRole: String = UserRole.parent.rawValue
 
-    @State private var hasConnectedParent: Bool = true
-    @State private var selectedParentName: String = "Parent 1"
+    @State private var hasConnectedParent: Bool = false
+    @State private var selectedParentName: String = "Orang Tua 1"
     @State private var showingShareSheet: Bool = false
 
-    private let parentOptions = ["Parent 1", "Parent 2", "Mom", "Dad"]
+    private let parentOptions = ["Orang Tua 1", "Orang Tua 2", "Ibu", "Ayah"]
 
     var body: some View {
         NavigationStack {
@@ -29,7 +29,7 @@ struct HomeView: View {
                 .padding(.bottom, AppSpacing.xxl)
             }
             .background(AppColor.backgroundPrimary.ignoresSafeArea())
-            .navigationTitle("Home")
+            .navigationTitle("Beranda")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     roleSwitcherMenu
@@ -75,26 +75,31 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Empty State Card
+    // MARK: - Empty State Card (role-aware)
 
     private var emptyStateCard: some View {
-        VStack(spacing: AppSpacing.lg) {
-            HealthOrbitIllustrationView()
-                .padding(.top, AppSpacing.md)
+        let isChild = userRole == UserRole.child.rawValue
 
-            VStack(spacing: AppSpacing.xs) {
-                Text("Stay close, even from afar")
-                    .font(.system(size: 20, weight: .bold))
+        return VStack(spacing: AppSpacing.xxl) {
+            HealthOrbitIllustrationView()
+                .padding(.top, AppSpacing.xxl)
+
+            VStack(spacing: AppSpacing.sm) {
+                Text("Tetap dekat, meski berjauhan")
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
                     .multilineTextAlignment(.center)
 
-                Text("Monitor health and activity pattern changes from a distance, so you know when to check in on them")
-                    .font(AppTypography.subheadlineRegular)
+                Text(isChild
+                    ? "Pantau perubahan pola kesehatan dan aktivitas orang tua dari jauh, agar kamu tahu kapan waktunya mengecek kabar mereka"
+                    : "Bagikan data kesehatanmu dengan anggota keluarga agar mereka bisa memantau kondisimu dari jauh"
+                )
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(AppColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
-                    .padding(.horizontal, AppSpacing.sm)
             }
+            .padding(.horizontal, AppSpacing.xxl)
 
             Button {
                 showingShareSheet = true
@@ -103,7 +108,7 @@ struct HomeView: View {
                     Image(systemName: "person.crop.circle.badge.plus")
                         .font(.system(size: 16, weight: .medium))
 
-                    Text("Ask Contact to Share Data")
+                    Text(isChild ? "Minta Kontak Membagikan Data" : "Kirim Undangan")
                         .font(AppTypography.buttonLabel)
                 }
                 .foregroundStyle(Color.white)
@@ -112,7 +117,8 @@ struct HomeView: View {
                 .background(AppColor.actionBlue)
                 .clipShape(Capsule())
             }
-            .padding(.bottom, AppSpacing.lg)
+            .padding(.horizontal, AppSpacing.xxl)
+            .padding(.bottom, AppSpacing.xxl)
         }
         .frame(maxWidth: .infinity)
         .background(AppColor.backgroundSecondary)
@@ -150,18 +156,18 @@ struct HomeView: View {
                 Spacer()
             }
 
-            // "Today's Summary" Blue Tinted Card
+            // "Ringkasan Hari Ini" Blue Tinted Card
             VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text("Today's Summary")
+                Text("Ringkasan Hari Ini")
                     .font(AppTypography.subheadlineRegular)
                     .foregroundStyle(AppColor.textSecondary)
 
-                Text("Condition fairly stable")
+                Text("Kondisi cukup stabil")
                     .font(.system(size: 20, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
                     .padding(.top, 1)
 
-                Text("Good sleep pattern, heart rate within normal range, and activity slightly better than usual.")
+                Text("Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
                     .font(AppTypography.bodyRegular)
                     .foregroundStyle(AppColor.textSecondary)
                     .lineSpacing(3)
@@ -173,9 +179,9 @@ struct HomeView: View {
             .background(AppColor.Accent.blue12)
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
 
-            // Section "Today's Data"
+            // Section "Data Hari Ini"
             VStack(alignment: .leading, spacing: AppSpacing.md) {
-                Text("Today's Data")
+                Text("Data Hari Ini")
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
 

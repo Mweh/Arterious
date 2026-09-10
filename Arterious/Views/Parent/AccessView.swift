@@ -1,7 +1,6 @@
 import SwiftUI
 import Contacts
 
-/// The "Access" tab screen for managing shared contacts and invitations.
 struct AccessView: View {
 
     @State private var showingAddAccess = false
@@ -9,22 +8,62 @@ struct AccessView: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    // Main Access Card
-                    mainAccessCard
+            ZStack {
+                AppColor.backgroundPrimary
+                    .ignoresSafeArea()
 
-                    // Active Shared Members
-                    if !sharedContacts.isEmpty {
-                        sharedMembersSection
+                if sharedContacts.isEmpty {
+                    // MARK: - Profile / Empty State
+                    emptyStateView
+                } else {
+                    // MARK: - Profile / Default
+                    ScrollView {
+                        connectedParentsCard
+                            .padding(.horizontal, 16)
+                            .padding(.top, 16)
                     }
                 }
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.sm)
-                .padding(.bottom, AppSpacing.xxl)
             }
-            .background(AppColor.backgroundPrimary.ignoresSafeArea())
-            .navigationTitle("Access")
+            .navigationTitle("Akses")
+            .toolbar {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    HStack(spacing: 10) {
+                        Button {
+                            showingAddAccess = true
+                        } label: {
+                            Image(systemName: "plus")
+                                .font(.system(size: 15, weight: .semibold))
+                                .foregroundStyle(Color.black)
+                                .frame(width: 36, height: 36)
+                                .background(Color.white)
+                                .clipShape(Circle())
+                                .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+                        }
+
+                        // Tombol pensil untuk switch/testing cepat antara Empty State dan Default State
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.25)) {
+                                if sharedContacts.isEmpty {
+                                    sharedContacts = [
+                                        ContactItem(id: "1", name: "Nama Ortu 1", phone: "+62812345678"),
+                                        ContactItem(id: "2", name: "Nama Ortu 2", phone: "+62812345679")
+                                    ]
+                                } else {
+                                    sharedContacts.removeAll()
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(Color.black)
+                                .frame(width: 36, height: 36)
+                                .background(Color.white)
+                                .clipShape(Circle())
+                                .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+                        }
+                    }
+                }
+            }
             .sheet(isPresented: $showingAddAccess) {
                 AddAccessSheet { newContact in
                     if !sharedContacts.contains(where: { $0.id == newContact.id }) {
@@ -39,107 +78,53 @@ struct AccessView: View {
         }
     }
 
-    // MARK: - Main Access Card
+    // MARK: - Daftar Akun Terhubung (Profile / Default)
 
-    private var mainAccessCard: some View {
-        VStack(spacing: AppSpacing.lg) {
-            HealthOrbitIllustrationView()
-                .padding(.top, AppSpacing.md)
-
-            VStack(spacing: AppSpacing.xs) {
-                Text("Stay close, even from afar")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .multilineTextAlignment(.center)
-
-                Text("Share your wellness patterns and activity so your loved ones know your condition.")
-                    .font(AppTypography.subheadlineRegular)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(2)
-                    .padding(.horizontal, AppSpacing.sm)
-            }
-
-            Button(action: handleSendInvitation) {
-                HStack(spacing: AppSpacing.xs) {
-                    Image(systemName: "person.crop.circle.badge.plus")
-                        .font(.system(size: 16, weight: .medium))
-
-                    Text("Send Invitation")
-                        .font(AppTypography.buttonLabel)
+    private var connectedParentsCard: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(sharedContacts.enumerated()), id: \.element.id) { index, contact in
+                if index > 0 {
+                    Divider()
+                        .padding(.horizontal, 16)
                 }
-                .foregroundStyle(Color.white)
-                .padding(.horizontal, AppSpacing.xl)
-                .padding(.vertical, 14)
-                .background(AppColor.actionBlue)
-                .clipShape(Capsule())
-            }
-            .padding(.bottom, AppSpacing.lg)
-        }
-        .frame(maxWidth: .infinity)
-        .background(AppColor.backgroundSecondary)
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.r32))
-        .shadow(color: Color.black.opacity(0.04), radius: 10, x: 0, y: 3)
-    }
 
-    // MARK: - Shared Members Section
-
-    private var sharedMembersSection: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.sm) {
-            Text("Active Access")
-                .font(AppTypography.headline)
-                .foregroundStyle(AppColor.textPrimary)
-
-            ForEach(sharedContacts) { contact in
-                HStack(spacing: AppSpacing.md) {
-                    ZStack {
-                        Circle()
-                            .fill(AppColor.Gray.gray100)
-                            .frame(width: 44, height: 44)
-
-                        Text(contact.initial)
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Color.white)
-                    }
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(contact.name)
-                            .font(AppTypography.bodySemibold)
-                            .foregroundStyle(AppColor.textPrimary)
-
-                        Text("Receiving wellness updates")
-                            .font(AppTypography.captionRegular)
-                            .foregroundStyle(AppColor.Accent.green)
-                    }
+                HStack {
+                    Text(contact.name)
+                        .font(.system(size: 16, weight: .regular))
+                        .foregroundStyle(Color.black)
 
                     Spacer()
 
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(AppColor.Accent.green)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color(hex: "C7C7CC"))
                 }
-                .padding(AppSpacing.md)
-                .background(AppColor.backgroundSecondary)
-                .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
+                .padding(.horizontal, 16)
+                .padding(.vertical, 16)
+                .contentShape(Rectangle())
             }
         }
-        .padding(.top, AppSpacing.sm)
+        .background(Color.white)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .shadow(color: Color.black.opacity(0.02), radius: 6, x: 0, y: 2)
     }
 
-    // MARK: - Contacts Permission Handler
+    // MARK: - Empty State (Profile / Empty State)
 
-    private func handleSendInvitation() {
-        let store = CNContactStore()
-        let status = CNContactStore.authorizationStatus(for: .contacts)
+    private var emptyStateView: some View {
+        VStack(spacing: 8) {
+            Text("Belum Ada Akun Terhubung")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(Color(hex: "707076"))
 
-        if status == .notDetermined {
-            store.requestAccess(for: .contacts) { _, _ in
-                DispatchQueue.main.async {
-                    self.showingAddAccess = true
-                }
-            }
-        } else {
-            showingAddAccess = true
+            Text("Ketuk tombol (+) di atas atau\nkembali ke Beranda untuk mulai\nmenghubungkan akun.")
+                .font(.system(size: 15, weight: .regular))
+                .foregroundStyle(Color(hex: "8E8E93"))
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
         }
+        .padding(.horizontal, 32)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
     }
 }
 

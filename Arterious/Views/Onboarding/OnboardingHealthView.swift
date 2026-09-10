@@ -1,18 +1,6 @@
 import SwiftUI
 import UserNotifications
 
-/// Third step of onboarding: Requesting HealthKit and Notifications permissions.
-/// Meticulously aligned to the Figma/Sketch inspector source of truth:
-/// - Layout W: 280, H: 382
-/// - Corners: Rounded 24
-/// - Borders: Center 3 (#707076)
-/// - Top offset: Exactly 80pt from the very top of the screen
-/// - Horizontal padding: Exactly 16pt
-/// - Stack spacing: Exactly 32pt
-/// - Title: "Hubungkan ke Health" (SF Pro 22 Bold)
-/// - Subtitle: 6-line SF Pro Regular in #8E8E93
-/// - CTA: "Hubungkan" (52pt height, Capsule, Blue #0088FF)
-/// - Disclaimer: 3-line SF Pro 11.5 Regular in Black
 struct OnboardingHealthView: View {
 
     let onComplete: () -> Void
@@ -20,57 +8,39 @@ struct OnboardingHealthView: View {
     @State private var isConnecting = false
     @State private var errorMessage: String?
 
-    // MARK: - Layout Constants
-    private enum Layout {
-        static let screenTopOffset: CGFloat = 80
-        static let horizontalPadding: CGFloat = 16
-        static let headerSpacing: CGFloat = 8
-        static let stackSpacing: CGFloat = 32
-
-        // Health Preview Card (from Figma inspector: W: 280, H: 382)
-        static let cardWidth: CGFloat = 280
-        static let cardHeight: CGFloat = 382
-        static let cardCornerRadius: CGFloat = 24
-        static let cardBorderWidth: CGFloat = 3
-
-        // Button & Footer
-        static let buttonHeight: CGFloat = 52
-        static let buttonSpacing: CGFloat = 12
-        static let footerBottomPadding: CGFloat = 16
-    }
-
     // MARK: - Colors
     private let subtitleColor = Color(hex: "8E8E93")
-    private let frameBorderColor = Color(hex: "707076")
-    private let pillBackgroundColor = Color(hex: "E5E5EA")
+    private let frameBorderColor = Color(hex: "8A8A8E")
+    private let pillBackgroundColor = Color(hex: "E4E4E6")
+    private let rowContainerBg = Color(hex: "F8F8F8")
+    private let rowTextColor = Color(hex: "BFBFBF")
+    private let rowDetailColor = Color(hex: "C7C7CC")
 
     var body: some View {
         VStack(spacing: 0) {
 
-            // MARK: - Header (Top: 80pt from screen top, Left/Right: 16pt)
-            VStack(alignment: .leading, spacing: Layout.headerSpacing) {
+            // MARK: - Header
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Hubungkan ke Health")
-                    .font(.system(size: 22, weight: .bold)) // SF Pro 22 Bold
+                    .font(.system(size: 22, weight: .bold))
                     .foregroundStyle(Color.black)
 
                 Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
-                    .font(.system(size: 15.5, weight: .regular)) // SF Pro Regular
+                    .font(.system(size: 18, weight: .regular))
                     .foregroundStyle(subtitleColor)
                     .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, Layout.horizontalPadding)
-            .padding(.top, Layout.screenTopOffset)
+            .padding(.horizontal, 24)
+            .padding(.top, 75)
 
-            // Gap 32pt between Header and Mockup (from Figma Stack ↕ 32)
-            Spacer()
-                .frame(height: Layout.stackSpacing)
+            Spacer(minLength: 24)
 
-            // MARK: - Health Access Graphic Mockup (Exact Figma: W: 280, H: 382, Corners: 24, Border: 3)
+            // MARK: - Health Access Graphic Mockup
             healthAccessMockup
 
-            Spacer()
+            Spacer(minLength: 24)
 
             // Error Banner if needed
             if let errorMessage {
@@ -81,8 +51,7 @@ struct OnboardingHealthView: View {
             }
 
             // MARK: - Bottom Area (Button + Disclaimer)
-            VStack(spacing: Layout.buttonSpacing) {
-                // Hubungkan Button
+            VStack(spacing: 12) {
                 Button(action: requestPermissionsAndProceed) {
                     HStack(spacing: AppSpacing.xs) {
                         if isConnecting {
@@ -91,94 +60,93 @@ struct OnboardingHealthView: View {
                                 .scaleEffect(0.8)
                         }
                         Text("Hubungkan")
-                            .font(.system(size: 17, weight: .semibold)) // SF Pro 17 Semibold
+                            .font(.system(size: 17, weight: .semibold))
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: Layout.buttonHeight)
+                    .frame(height: 52)
                     .background(AppColor.Brand.primaryBlue)
                     .clipShape(Capsule())
                 }
                 .disabled(isConnecting)
 
-                // Medical Disclaimer Footnote (3 lines, SF Pro 11.5 Regular, Black)
                 VStack(spacing: 2) {
                     Text("Data kamu tidak pernah meninggalkan perangkat ini.")
-                    Text("Arterious bukan pengganti seorang medis profesional. Selalu")
+                    Text("Arterious bukan pengganti saran medis profesional. Selalu")
                     Text("konsultasikan dengan dokter.")
                 }
-                .font(.system(size: 11.5, weight: .regular))
+                .font(.system(size: 12.5, weight: .regular))
                 .foregroundStyle(Color.black)
                 .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, Layout.horizontalPadding)
-            .padding(.bottom, Layout.footerBottomPadding)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white)
-        .ignoresSafeArea(edges: .top) // Allows screenTopOffset (80pt) to measure directly from screen top
     }
 
-    // MARK: - Health Access Mockup (W: 280, H: 382, Corners: 24, Border: 3)
+    // MARK: - Health Access Mockup
 
     private var healthAccessMockup: some View {
         VStack(spacing: 0) {
             // Apple Health App Icon
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.white)
-                    .frame(width: 48, height: 48)
-                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
-
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 24))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [Color(hex: "FF2D55"), Color(hex: "FF3B30")],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                    )
-            }
-            .padding(.top, 16)
+            Image("AppleHealthIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 52, height: 52)
+                .shadow(color: Color.black.opacity(0.10), radius: 6, x: 0, y: 3)
+                .padding(.top, 20)
 
             Text("Health")
-                .font(.system(size: 13, weight: .semibold))
+                .font(.system(size: 13, weight: .bold))
                 .foregroundStyle(Color.black)
                 .padding(.top, 4)
 
-            // "Turn On All" pill
-            Text("Turn On All")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(AppColor.Brand.primaryBlue)
-                .frame(maxWidth: .infinity)
-                .frame(height: 34)
-                .background(pillBackgroundColor)
-                .clipShape(Capsule())
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
+            // "Turn On All" pill (Left-aligned text)
+            HStack {
+                Text("Turn On All")
+                    .font(.system(size: 14, weight: .regular))
+                    .foregroundStyle(AppColor.Brand.primaryBlue)
+                Spacer()
+            }
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .background(pillBackgroundColor)
+            .clipShape(Capsule())
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
 
-            // Permissions List Preview
+            // Permissions List Preview Card
             VStack(spacing: 0) {
                 permissionRow(title: "Heart Rate")
-                Divider().padding(.leading, 6)
+                Divider().padding(.leading, 12)
                 permissionRow(title: "HRV")
-                Divider().padding(.leading, 6)
+                Divider().padding(.leading, 12)
                 permissionRow(title: "Sleep")
-                Divider().padding(.leading, 6)
+                Divider().padding(.leading, 12)
                 permissionRow(title: "Activity")
             }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(
+                TopRoundedRectangle(cornerRadius: 14)
+                    .fill(rowContainerBg)
+            )
             .padding(.horizontal, 14)
-            .padding(.top, 8)
+            .padding(.top, 16)
 
             Spacer(minLength: 0)
         }
-        .frame(width: Layout.cardWidth, height: Layout.cardHeight) // EXACT Figma: W: 280, H: 382
-        .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: Layout.cardCornerRadius)) // EXACT Figma: Rounded 24
+        .frame(width: 280, height: 315)
+        .background(
+            TopRoundedRectangle(cornerRadius: 24)
+                .fill(Color.white)
+        )
         .overlay(
-            RoundedRectangle(cornerRadius: Layout.cardCornerRadius)
-                .stroke(frameBorderColor, lineWidth: Layout.cardBorderWidth) // EXACT Figma: Border 3
+            OpenCardShape(cornerRadius: 24)
+                .stroke(frameBorderColor, lineWidth: 3)
         )
     }
 
@@ -186,18 +154,18 @@ struct OnboardingHealthView: View {
         HStack {
             Text(title)
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(subtitleColor)
+                .foregroundStyle(rowTextColor)
 
             Spacer()
 
             HStack(spacing: 4) {
                 Text("Detail")
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Color(hex: "C7C7CC"))
+                    .foregroundStyle(rowDetailColor)
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color(hex: "C7C7CC"))
+                    .foregroundStyle(rowDetailColor)
             }
         }
         .padding(.vertical, 7)
@@ -232,6 +200,63 @@ struct OnboardingHealthView: View {
                 onComplete()
             }
         }
+    }
+}
+
+// MARK: - Shapes for Open-Bottom Card
+
+private struct OpenCardShape: Shape {
+    var cornerRadius: CGFloat = 24
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cornerRadius))
+        path.addArc(
+            center: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(270),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return path
+    }
+}
+
+private struct TopRoundedRectangle: Shape {
+    var cornerRadius: CGFloat = 24
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cornerRadius))
+        path.addArc(
+            center: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(270),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 

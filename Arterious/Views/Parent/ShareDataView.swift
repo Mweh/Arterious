@@ -86,11 +86,11 @@ struct ShareDataView: View {
 
             // Content Copy
             VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                Text("Share Data")
+                Text("Bagikan Data")
                     .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
 
-                Text("Granting access allows the person you choose to view your health trends regularly and receive alerts when unusual changes occur.")
+                Text("Memberikan akses memungkinkan orang yang kamu pilih untuk melihat tren kesehatanmu secara berkala dan menerima pembaruan saat ada perubahan.")
                     .font(AppTypography.body)
                     .foregroundStyle(AppColor.textSecondary)
                     .lineSpacing(3)
@@ -103,13 +103,13 @@ struct ShareDataView: View {
             // Actions
             VStack(spacing: AppSpacing.sm) {
                 AppButton(
-                    title: "Continue",
+                    title: "Lanjut",
                     isFullWidth: true,
                     action: onConfirm
                 )
 
                 Button(action: onDismiss) {
-                    Text("Cancel")
+                    Text("Batal")
                         .font(AppTypography.buttonLabel)
                         .foregroundStyle(AppColor.textPrimary)
                         .frame(maxWidth: .infinity)

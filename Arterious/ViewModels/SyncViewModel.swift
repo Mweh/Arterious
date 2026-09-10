@@ -668,10 +668,6 @@ final class SyncViewModel {
         switch syncState.role {
         case .child:
             await fetchSharedParentSnapshot()
-            if syncState.status != .accepted && healthRecord == nil {
-                // If not yet connected to a remote parent, preview local data
-                await loadParentLocalHealthData()
-            }
         case .parent:
             await loadParentLocalHealthData()
             // If parent shared a link, check if child has actually accepted it

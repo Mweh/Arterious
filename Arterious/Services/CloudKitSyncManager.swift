@@ -74,7 +74,12 @@ final class CloudKitSyncManager {
     }()
 
     private init() {
-        container = CKContainer(identifier: "iCloud.com.helloworld.arterious")
+        let bundleID = Bundle.main.bundleIdentifier ?? ""
+        if bundleID == "com.helloworld.arterious" {
+            container = CKContainer(identifier: "iCloud.com.helloworld.arterious")
+        } else {
+            container = CKContainer.default()
+        }
         publicDB = container.publicCloudDatabase
         privateDB = container.privateCloudDatabase
         sharedDB = container.sharedCloudDatabase

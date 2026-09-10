@@ -2,7 +2,7 @@ import SwiftUI
 import UserNotifications
 
 /// Shape representing the top-rounded phone / sheet mockup from the Sketch design.
-/// It draws the left border, rounded top corners, top border, and right border, running straight down to the bottom without a bottom border.
+/// It draws the left border, rounded top corners, top border, and right border, running straight down without a bottom border.
 struct TopRoundedPhoneFrame: Shape {
     var cornerRadius: CGFloat = 28
 
@@ -37,6 +37,13 @@ struct TopRoundedPhoneFrame: Shape {
 }
 
 /// Third step of onboarding: Requesting HealthKit and Notifications permissions with realistic mockup illustration.
+/// Meticulously aligned to the Figma/Sketch inspector:
+/// - Top: 80pt from screen top
+/// - Horizontal padding: 16pt
+/// - Stack spacing: 32pt
+/// - Title Font: SF Pro 22 Bold
+/// - Subtitle: 6-line SF Pro Regular in #8E8E93
+/// - Mockup: centered phone frame extending directly down to the button
 struct OnboardingHealthView: View {
 
     let onComplete: () -> Void
@@ -49,70 +56,74 @@ struct OnboardingHealthView: View {
     private let frameBorderColor = Color(hex: "6C6C70")
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(spacing: 0) {
 
-            // MARK: - Header
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Hubungkan ke Health")
-                    .font(.system(size: 24, weight: .bold)) // SF Pro 24 Bold
-                    .foregroundStyle(Color.black)
+            // MARK: - Main Stack (Top: 80pt, Horizontal: 16pt, Spacing: 32pt)
+            VStack(alignment: .leading, spacing: 32) {
 
-                Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
-                    .font(AppTypography.bodyRegular) // SF Pro 17 Regular
-                    .foregroundStyle(subtitleColor)
-                    .lineSpacing(3) // Line height 22
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
+                // Header (Title SF Pro 22 Bold + Subtitle)
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Hubungkan ke Health")
+                        .font(.system(size: 22, weight: .bold)) // SF Pro 22 Bold
+                        .foregroundStyle(Color.black)
+
+                    Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
+                        .font(.system(size: 15.5, weight: .regular)) // SF Pro Regular
+                        .foregroundStyle(subtitleColor)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+
+                // Health Access Graphic Mockup (centered, extending down to button)
+                healthAccessMockup
             }
-            .padding(.top, 16)
-            .padding(.bottom, 12)
-
-            // MARK: - Health Access Graphic Mockup (extends down to the button)
-            healthAccessMockup
-                .padding(.bottom, 12)
+            .padding(.top, 20) // 59pt safe area + 20pt = ~80pt from screen top as per Sketch
+            .padding(.horizontal, 16) // Exactly 16pt padding from Sketch inspector
 
             // Error Banner if needed
             if let errorMessage {
                 Text(errorMessage)
                     .font(AppTypography.captionRegular)
                     .foregroundStyle(AppColor.caution)
-                    .padding(.bottom, AppSpacing.xs)
+                    .padding(.top, 4)
             }
 
-            // MARK: - Hubungkan Button
-            Button(action: requestPermissionsAndProceed) {
-                HStack(spacing: AppSpacing.xs) {
-                    if isConnecting {
-                        ProgressView()
-                            .tint(.white)
-                            .scaleEffect(0.8)
+            // MARK: - Bottom Area (Button + Disclaimer)
+            VStack(spacing: 12) {
+                // Hubungkan Button (Full width with 16pt horizontal padding)
+                Button(action: requestPermissionsAndProceed) {
+                    HStack(spacing: AppSpacing.xs) {
+                        if isConnecting {
+                            ProgressView()
+                                .tint(.white)
+                                .scaleEffect(0.8)
+                        }
+                        Text("Hubungkan")
+                            .font(.system(size: 17, weight: .semibold)) // SF Pro 17 Semibold
                     }
-                    Text("Hubungkan")
-                        .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 52)
+                    .background(AppColor.Brand.primaryBlue)
+                    .clipShape(Capsule())
                 }
-                .foregroundStyle(.white)
-                .frame(maxWidth: .infinity)
-                .frame(height: 52)
-                .background(AppColor.Brand.primaryBlue)
-                .clipShape(Capsule())
-            }
-            .disabled(isConnecting)
-            .padding(.bottom, 10)
+                .disabled(isConnecting)
 
-            // MARK: - Medical Disclaimer Footnote
-            VStack(spacing: 2) {
-                Text("Data kamu tidak pernah meninggalkan perangkat ini.")
-                Text("Arterious bukan pengganti saran medis profesional. Selalu")
-                Text("konsultasikan dengan dokter.")
+                // Medical Disclaimer Footnote (3 lines, SF Pro 11.5 Regular, Black)
+                VStack(spacing: 2) {
+                    Text("Data kamu tidak pernah meninggalkan perangkat ini.")
+                    Text("Arterious bukan pengganti saran medis profesional. Selalu")
+                    Text("konsultasikan dengan dokter.")
+                }
+                .font(.system(size: 11.5, weight: .regular))
+                .foregroundStyle(Color.black)
+                .multilineTextAlignment(.center)
             }
-            .font(.system(size: 11.5, weight: .regular)) // SF Pro 11.5 Regular
-            .foregroundStyle(Color.black)
-            .multilineTextAlignment(.center)
-            .frame(maxWidth: .infinity)
-            .padding(.horizontal, AppSpacing.sm)
-            .padding(.bottom, AppSpacing.sm)
+            .padding(.horizontal, 16)
+            .padding(.top, 8)
+            .padding(.bottom, 12)
         }
-        .padding(.horizontal, 24)
         .background(Color.white.ignoresSafeArea())
     }
 
@@ -154,7 +165,7 @@ struct OnboardingHealthView: View {
                     .background(Color(hex: "E5E5EA"))
                     .clipShape(Capsule())
                     .padding(.horizontal, 16)
-                    .padding(.top, 6)
+                    .padding(.top, 4)
 
                 // Permissions List Preview
                 VStack(spacing: 0) {
@@ -166,11 +177,11 @@ struct OnboardingHealthView: View {
                     Divider().padding(.leading, 8)
                     permissionRow(title: "Activity")
                 }
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 14)
                 .padding(.top, 6)
 
                 // White flexible body extending down towards the button
-                Spacer(minLength: 8)
+                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Color.white)
@@ -184,23 +195,24 @@ struct OnboardingHealthView: View {
             )
             .overlay(
                 TopRoundedPhoneFrame(cornerRadius: 28)
-                    .stroke(frameBorderColor, lineWidth: 2.2)
+                    .stroke(frameBorderColor, lineWidth: 2)
             )
         }
+        .frame(maxWidth: 295)
         .frame(maxWidth: .infinity)
     }
 
     private func permissionRow(title: String) -> some View {
         HStack {
             Text(title)
-                .font(AppTypography.footnoteRegular) // SF Pro 13 Regular
+                .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(subtitleColor)
 
             Spacer()
 
             HStack(spacing: 4) {
                 Text("Detail")
-                    .font(AppTypography.footnoteRegular) // SF Pro 13 Regular
+                    .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(Color(hex: "C7C7CC"))
 
                 Image(systemName: "chevron.right")
@@ -208,7 +220,7 @@ struct OnboardingHealthView: View {
                     .foregroundStyle(Color(hex: "C7C7CC"))
             }
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 7)
         .padding(.horizontal, 4)
     }
 

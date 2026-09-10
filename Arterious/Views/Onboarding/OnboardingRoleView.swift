@@ -25,8 +25,8 @@ struct OnboardingRoleView: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
-            .padding(.top, 20)
-            .padding(.bottom, 28)
+            .padding(.top, 20) // ~80pt from screen top with safe area
+            .padding(.bottom, 32) // 32pt stack spacing
 
             // MARK: - Role Selection Cards
             VStack(spacing: 16) {
@@ -61,7 +61,7 @@ struct OnboardingRoleView: View {
             }
             .padding(.bottom, AppSpacing.xl)
         }
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 

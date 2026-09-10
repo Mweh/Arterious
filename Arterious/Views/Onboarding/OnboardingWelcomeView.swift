@@ -62,7 +62,7 @@ struct OnboardingWelcomeView: View {
                         .padding(.leading, 48)
                 }
             }
-            .padding(.horizontal, AppSpacing.lg + 4)
+            .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
             .padding(.top, AppSpacing.xs)
 
             Spacer()
@@ -77,7 +77,7 @@ struct OnboardingWelcomeView: View {
                     .background(AppColor.Brand.primaryBlue)
                     .clipShape(Capsule())
             }
-            .padding(.horizontal, AppSpacing.lg + 4)
+            .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
             .padding(.bottom, AppSpacing.xl)
         }
         .background(AppColor.backgroundPrimary.ignoresSafeArea())

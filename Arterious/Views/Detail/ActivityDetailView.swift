@@ -102,8 +102,9 @@ struct ActivityDetailView: View {
             .padding(.top, AppSpacing.sm)
             .padding(.bottom, AppSpacing.xxl)
         }
-        .background(AppColor.backgroundPrimary.ignoresSafeArea())
+        .background(AppColor.backgroundPrimary.ignoresSafeArea(edges: .bottom))
         .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {

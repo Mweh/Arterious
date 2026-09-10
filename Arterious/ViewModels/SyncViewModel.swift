@@ -221,13 +221,13 @@ final class SyncViewModel {
 
     /// Prepares a native `CKShare` and uploads the latest HealthKit data.
     /// Returns the `CKShare` to be presented in `UICloudSharingController` or Share Sheet.
-    func requestNativeShare() async -> CKShare? {
-        if let existing = self.nativeShare, existing.url != nil {
+    func requestNativeShare(suppressErrorMessage: Bool = false) async -> CKShare? {
+        if let existing = nativeShare {
             return existing
         }
 
         isLoading = true
-        errorMessage = nil
+        if !suppressErrorMessage { errorMessage = nil }
         defer { isLoading = false }
 
         do {
@@ -255,7 +255,14 @@ final class SyncViewModel {
             return share
         } catch {
             print("❌ requestNativeShare error: \(error)")
-            self.errorMessage = error.localizedDescription
+            if !suppressErrorMessage {
+                let desc = error.localizedDescription
+                if desc.localizedCaseInsensitiveContains("container configuration") || desc.localizedCaseInsensitiveContains("Bad Container") {
+                    self.errorMessage = "iCloud CloudKit belum dikonfigurasi di Apple Developer Portal untuk tim/bundle ini. Buka Xcode > Signing & Capabilities > iCloud, lalu centang container CloudKit."
+                } else {
+                    self.errorMessage = desc
+                }
+            }
             return nil
         }
     }

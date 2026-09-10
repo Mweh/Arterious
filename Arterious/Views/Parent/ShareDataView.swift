@@ -38,7 +38,7 @@ struct ShareDataView: View {
         .task {
             // Pre-warm the native share link immediately in background upon view load
             if syncViewModel.nativeShare == nil {
-                _ = await syncViewModel.requestNativeShare()
+                _ = await syncViewModel.requestNativeShare(suppressErrorMessage: true)
             }
         }
     }

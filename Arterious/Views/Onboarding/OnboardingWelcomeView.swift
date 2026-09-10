@@ -5,9 +5,6 @@ struct OnboardingWelcomeView: View {
 
     let onContinue: () -> Void
 
-    // Background warna abu-abu muda sesuai design (#F2F2F7)
-    private let pageBackground = Color(hex: "F2F2F7")
-
     private struct FeatureItem: Identifiable {
         let id = UUID()
         let iconName: String
@@ -22,12 +19,12 @@ struct OnboardingWelcomeView: View {
             subtitle: "Lihat kondisi harian orang tua dengan mudah"
         ),
         FeatureItem(
-            iconName: "bell",
+            iconName: "bell.and.waves.left.and.right",
             title: "Dapatkan Notifikasi",
             subtitle: "Notifikasi saat ada perubahan penting"
         ),
         FeatureItem(
-            iconName: "person.crop.circle.badge.plus",
+            iconName: "person.badge.plus",
             title: "Tetap terhubung",
             subtitle: "Tetap dekat dengan mereka setiap hari"
         )
@@ -36,79 +33,79 @@ struct OnboardingWelcomeView: View {
     var body: some View {
         VStack(spacing: 0) {
 
-            // MARK: - Hero Image dengan gradient fade ke abu-abu
+            // MARK: - Hero Image dengan gradient fade halus
             ZStack(alignment: .bottom) {
                 Image("OnboardingPage1Image")
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)
 
-                // Gradient fade ke warna yang sama dengan background halaman
+                // Gradient fade ke warna background F2F2F7
                 LinearGradient(
                     gradient: Gradient(stops: [
                         .init(color: .clear, location: 0.0),
-                        .init(color: pageBackground.opacity(0.6), location: 0.65),
-                        .init(color: pageBackground, location: 1.0)
+                        .init(color: AppColor.backgroundPrimary.opacity(0.65), location: 0.65),
+                        .init(color: AppColor.backgroundPrimary, location: 1.0)
                     ]),
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 130)
+                .frame(height: 120)
             }
 
-            // MARK: - Features
+            // MARK: - Features List
             VStack(spacing: 0) {
-                ForEach(Array(features.enumerated()), id: \.element.id) { index, feature in
+                ForEach(Array(features.enumerated()), id: \.element.id) { _, feature in
                     featureRow(feature)
-                    if index < features.count - 1 {
-                        Divider()
-                            .padding(.leading, 52)
-                    }
+                    Divider()
+                        .background(AppColor.separator)
+                        .padding(.leading, 50)
                 }
             }
-            .padding(.horizontal, AppSpacing.lg)
+            .padding(.horizontal, AppSpacing.lg + 4)
+            .padding(.top, AppSpacing.xs)
 
             Spacer()
 
             // MARK: - Lanjut Button
             Button(action: onContinue) {
                 Text("Lanjut")
-                    .font(.system(size: 17, weight: .semibold))
+                    .font(AppTypography.buttonLabel)
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
-                    .frame(height: 54)
+                    .frame(height: 52)
                     .background(AppColor.Brand.primaryBlue)
                     .clipShape(Capsule())
             }
-            .padding(.horizontal, AppSpacing.lg)
+            .padding(.horizontal, AppSpacing.lg + 4)
             .padding(.bottom, AppSpacing.xl)
         }
-        .background(pageBackground.ignoresSafeArea())
+        .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 
     // MARK: - Feature Row
 
     private func featureRow(_ item: FeatureItem) -> some View {
-        HStack(alignment: .top, spacing: AppSpacing.md) {
+        HStack(alignment: .center, spacing: AppSpacing.md + 2) {
             Image(systemName: item.iconName)
                 .font(.system(size: 22, weight: .regular))
-                .foregroundStyle(AppColor.Gray.gray100)
-                .frame(width: 36, height: 36)
+                .foregroundStyle(AppColor.textPrimary)
+                .frame(width: 32, height: 32, alignment: .center)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
                     .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppColor.Gray.gray100)
+                    .foregroundStyle(AppColor.textPrimary)
 
                 Text(item.subtitle)
-                    .font(.system(size: 13))
-                    .foregroundStyle(AppColor.Gray.gray50)
+                    .font(.system(size: 13, weight: .regular))
+                    .foregroundStyle(AppColor.textSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Spacer()
+            Spacer(minLength: 0)
         }
-        .padding(.vertical, AppSpacing.md)
+        .padding(.vertical, 12)
     }
 }
 

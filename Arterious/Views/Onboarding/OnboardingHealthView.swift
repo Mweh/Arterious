@@ -11,26 +11,24 @@ struct OnboardingHealthView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Spacer()
-                .frame(height: AppSpacing.xxl)
 
-            // Header
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+            // MARK: - Header
+            VStack(alignment: .leading, spacing: 8) {
                 Text("Hubungkan ke Health")
-                    .font(.system(size: 34, weight: .bold))
+                    .font(.system(size: 24, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
 
                 Text("Arterious membutuhkan izin akses data kesehatan agar dapat berfungsi dengan optimal. Tenang saja, data kesehatanmu hanya disimpan secara lokal di perangkat dan tidak akan pernah diunggah.")
-                    .font(AppTypography.body)
+                    .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(AppColor.textSecondary)
+                    .lineSpacing(3)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, AppSpacing.xs)
             }
-            .padding(.bottom, AppSpacing.lg)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
 
-            // Health Access Graphic Mockup
+            // MARK: - Health Access Graphic Mockup
             healthAccessMockup
-                .padding(.bottom, AppSpacing.md)
 
             Spacer()
 
@@ -42,27 +40,39 @@ struct OnboardingHealthView: View {
                     .padding(.bottom, AppSpacing.xs)
             }
 
-            // Connect Button
-            AppButton(
-                title: "Hubungkan",
-                isLoading: isConnecting,
-                isFullWidth: true,
-                action: requestPermissionsAndProceed
-            )
-            .padding(.bottom, AppSpacing.xs)
+            // MARK: - Hubungkan Button
+            Button(action: requestPermissionsAndProceed) {
+                HStack(spacing: AppSpacing.xs) {
+                    if isConnecting {
+                        ProgressView()
+                            .tint(.white)
+                            .scaleEffect(0.8)
+                    }
+                    Text("Hubungkan")
+                        .font(AppTypography.buttonLabel)
+                }
+                .foregroundStyle(.white)
+                .frame(maxWidth: .infinity)
+                .frame(height: 52)
+                .background(AppColor.Brand.primaryBlue)
+                .clipShape(Capsule())
+            }
+            .disabled(isConnecting)
+            .padding(.bottom, 8)
 
-            // Medical Disclaimer Footnote
+            // MARK: - Medical Disclaimer Footnote
             VStack(spacing: 2) {
                 Text("Data kamu tidak pernah meninggalkan perangkat ini.")
                 Text("Arterious bukan pengganti saran medis profesional. Selalu konsultasikan dengan dokter.")
             }
-            .font(.system(size: 11))
+            .font(.system(size: 11, weight: .regular))
             .foregroundStyle(AppColor.textSecondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
-            .padding(.bottom, AppSpacing.sm)
+            .padding(.horizontal, AppSpacing.sm)
+            .padding(.bottom, AppSpacing.md)
         }
-        .padding(.horizontal, AppSpacing.lg)
+        .padding(.horizontal, AppSpacing.lg + 4)
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 
@@ -70,55 +80,55 @@ struct OnboardingHealthView: View {
 
     private var healthAccessMockup: some View {
         VStack(spacing: 0) {
-            VStack(spacing: AppSpacing.sm) {
-                // Apple Health Icon
+            VStack(spacing: 10) {
+                // Apple Health App Icon
                 ZStack {
-                    RoundedRectangle(cornerRadius: 14)
+                    RoundedRectangle(cornerRadius: 12)
                         .fill(Color.white)
-                        .frame(width: 54, height: 54)
-                        .shadow(color: Color.black.opacity(0.08), radius: 8, x: 0, y: 3)
+                        .frame(width: 48, height: 48)
+                        .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 2)
 
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 26))
+                        .font(.system(size: 24))
                         .foregroundStyle(
                             LinearGradient(
-                                colors: [Color(red: 1.0, green: 0.18, blue: 0.33), Color(red: 0.95, green: 0.1, blue: 0.2)],
+                                colors: [Color(hex: "FF2D55"), Color(hex: "FF3B30")],
                                 startPoint: .top,
                                 endPoint: .bottom
                             )
                         )
                 }
-                .padding(.top, AppSpacing.md)
+                .padding(.top, 14)
 
                 Text("Health")
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 13, weight: .semibold))
                     .foregroundStyle(AppColor.textPrimary)
 
                 // "Turn On All" pill
                 Text("Turn On All")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppColor.actionBlue)
-                    .padding(.horizontal, AppSpacing.md)
+                    .foregroundStyle(AppColor.Brand.primaryBlue)
+                    .padding(.horizontal, 16)
                     .padding(.vertical, 7)
                     .frame(maxWidth: .infinity)
-                    .background(Color(.secondarySystemFill))
+                    .background(Color(hex: "EFEFF4"))
                     .clipShape(Capsule())
-                    .padding(.horizontal, AppSpacing.md)
-                    .padding(.top, 4)
+                    .padding(.horizontal, 14)
+                    .padding(.top, 2)
 
                 // Permissions List Preview
                 VStack(spacing: 0) {
                     permissionRow(title: "Heart Rate")
-                    Divider().padding(.leading, AppSpacing.sm)
+                    Divider().padding(.leading, 8)
                     permissionRow(title: "HRV")
-                    Divider().padding(.leading, AppSpacing.sm)
+                    Divider().padding(.leading, 8)
                     permissionRow(title: "Sleep")
-                    Divider().padding(.leading, AppSpacing.sm)
+                    Divider().padding(.leading, 8)
                     permissionRow(title: "Activity")
                 }
-                .padding(.horizontal, AppSpacing.sm)
-                .padding(.top, AppSpacing.xs)
-                .padding(.bottom, AppSpacing.sm)
+                .padding(.horizontal, 10)
+                .padding(.top, 4)
+                .padding(.bottom, 8)
             }
             .background(Color.white)
             .clipShape(
@@ -136,7 +146,7 @@ struct OnboardingHealthView: View {
                     bottomTrailingRadius: 0,
                     topTrailingRadius: 24
                 )
-                .stroke(Color(.systemGray4).opacity(0.6), lineWidth: 1.5)
+                .stroke(Color(.systemGray4).opacity(0.7), lineWidth: 1.5)
             )
         }
         .frame(maxWidth: 290)
@@ -146,14 +156,14 @@ struct OnboardingHealthView: View {
     private func permissionRow(title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 13))
+                .font(.system(size: 13, weight: .regular))
                 .foregroundStyle(Color(.systemGray))
 
             Spacer()
 
             HStack(spacing: 4) {
                 Text("Detail")
-                    .font(.system(size: 13))
+                    .font(.system(size: 13, weight: .regular))
                     .foregroundStyle(Color(.systemGray2))
 
                 Image(systemName: "chevron.right")
@@ -162,7 +172,7 @@ struct OnboardingHealthView: View {
             }
         }
         .padding(.vertical, 9)
-        .padding(.horizontal, AppSpacing.xs)
+        .padding(.horizontal, 4)
     }
 
     // MARK: - Permissions Flow
@@ -172,14 +182,14 @@ struct OnboardingHealthView: View {
         errorMessage = nil
 
         Task {
-            // 1. Request Apple HealthKit access (triggers iOS Health Access modal)
+            // 1. Request Apple HealthKit access
             do {
                 try await HealthKitManager.shared.requestAuthorization()
             } catch {
-                // HealthKit may fail on simulators without data, proceed anyway gracefully
+                // Simulator fallback
             }
 
-            // 2. Request Notification permissions (triggers iOS Notification alert)
+            // 2. Request Notification permissions
             do {
                 _ = try await UNUserNotificationCenter.current().requestAuthorization(
                     options: [.alert, .badge, .sound]

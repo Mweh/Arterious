@@ -38,7 +38,7 @@ struct OnboardingWelcomeView: View {
 
             // MARK: - Hero Image dengan gradient fade ke abu-abu
             ZStack(alignment: .bottom) {
-                Image("Frame")
+                Image("OnboardingPage1Image")
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)

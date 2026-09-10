@@ -59,7 +59,7 @@ struct OnboardingWelcomeView: View {
                     featureRow(feature)
                     Divider()
                         .background(AppColor.separator)
-                        .padding(.leading, 50)
+                        .padding(.leading, 48)
                 }
             }
             .padding(.horizontal, AppSpacing.lg + 4)
@@ -70,7 +70,7 @@ struct OnboardingWelcomeView: View {
             // MARK: - Lanjut Button
             Button(action: onContinue) {
                 Text("Lanjut")
-                    .font(AppTypography.buttonLabel)
+                    .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
                     .frame(height: 52)
@@ -94,12 +94,13 @@ struct OnboardingWelcomeView: View {
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(item.title)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(AppTypography.calloutBold) // SF Pro 16 Bold
                     .foregroundStyle(AppColor.textPrimary)
 
                 Text(item.subtitle)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(AppTypography.footnoteRegular) // SF Pro 13 Regular
                     .foregroundStyle(AppColor.textSecondary)
+                    .lineSpacing(2) // Line height 18
                     .fixedSize(horizontal: false, vertical: true)
             }
 

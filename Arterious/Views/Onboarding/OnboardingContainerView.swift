@@ -12,7 +12,7 @@ struct OnboardingContainerView: View {
     var onFinish: (() -> Void)?
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
+        ZStack {
             AppColor.backgroundPrimary
                 .ignoresSafeArea()
 
@@ -56,23 +56,6 @@ struct OnboardingContainerView: View {
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
-
-            // Optional Top-Leading Back Button for Steps 2 & 3 (floating overlay, does not push content)
-            if currentStep > 1 {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.3)) {
-                        currentStep -= 1
-                    }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 18, weight: .semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .padding(.leading, AppSpacing.sm)
-                .padding(.top, 4)
-            }
         }
         .gesture(
             DragGesture(minimumDistance: 30)

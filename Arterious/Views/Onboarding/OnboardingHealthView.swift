@@ -15,17 +15,19 @@ struct OnboardingHealthView: View {
             // MARK: - Header
             VStack(alignment: .leading, spacing: 8) {
                 Text("Hubungkan ke Health")
-                    .font(.system(size: 24, weight: .bold))
+                    .font(AppTypography.title2Bold) // SF Pro 22 Bold
                     .foregroundStyle(AppColor.textPrimary)
+                    .lineSpacing(4) // Line height 26
 
                 Text("Arterious membutuhkan izin akses data kesehatan agar dapat berfungsi dengan optimal. Tenang saja, data kesehatanmu hanya disimpan secara lokal di perangkat dan tidak akan pernah diunggah.")
-                    .font(.system(size: 15, weight: .regular))
+                    .font(AppTypography.bodyRegular) // SF Pro 17 Regular
                     .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(3)
+                    .lineSpacing(4) // Line height 22
                     .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 4)
             }
-            .padding(.top, 24)
-            .padding(.bottom, 16)
+            .padding(.top, 20)
+            .padding(.bottom, 20)
 
             // MARK: - Health Access Graphic Mockup
             healthAccessMockup
@@ -35,7 +37,7 @@ struct OnboardingHealthView: View {
             // Error Banner if needed
             if let errorMessage {
                 Text(errorMessage)
-                    .font(AppTypography.caption)
+                    .font(AppTypography.captionRegular)
                     .foregroundStyle(AppColor.caution)
                     .padding(.bottom, AppSpacing.xs)
             }
@@ -49,7 +51,7 @@ struct OnboardingHealthView: View {
                             .scaleEffect(0.8)
                     }
                     Text("Hubungkan")
-                        .font(AppTypography.buttonLabel)
+                        .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
                 }
                 .foregroundStyle(.white)
                 .frame(maxWidth: .infinity)
@@ -65,7 +67,7 @@ struct OnboardingHealthView: View {
                 Text("Data kamu tidak pernah meninggalkan perangkat ini.")
                 Text("Arterious bukan pengganti saran medis profesional. Selalu konsultasikan dengan dokter.")
             }
-            .font(.system(size: 11, weight: .regular))
+            .font(AppTypography.captionRegular) // SF Pro 12 Regular
             .foregroundStyle(AppColor.textSecondary)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
@@ -133,18 +135,18 @@ struct OnboardingHealthView: View {
             .background(Color.white)
             .clipShape(
                 UnevenRoundedRectangle(
-                    topLeadingRadius: 24,
+                    topLeadingRadius: AppRadius.r24,
                     bottomLeadingRadius: 0,
                     bottomTrailingRadius: 0,
-                    topTrailingRadius: 24
+                    topTrailingRadius: AppRadius.r24
                 )
             )
             .overlay(
                 UnevenRoundedRectangle(
-                    topLeadingRadius: 24,
+                    topLeadingRadius: AppRadius.r24,
                     bottomLeadingRadius: 0,
                     bottomTrailingRadius: 0,
-                    topTrailingRadius: 24
+                    topTrailingRadius: AppRadius.r24
                 )
                 .stroke(Color(.systemGray4).opacity(0.7), lineWidth: 1.5)
             )
@@ -156,14 +158,14 @@ struct OnboardingHealthView: View {
     private func permissionRow(title: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 13, weight: .regular))
+                .font(AppTypography.footnoteRegular) // SF Pro 13 Regular
                 .foregroundStyle(Color(.systemGray))
 
             Spacer()
 
             HStack(spacing: 4) {
                 Text("Detail")
-                    .font(.system(size: 13, weight: .regular))
+                    .font(AppTypography.footnoteRegular) // SF Pro 13 Regular
                     .foregroundStyle(Color(.systemGray2))
 
                 Image(systemName: "chevron.right")

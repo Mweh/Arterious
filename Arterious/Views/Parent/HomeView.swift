@@ -27,6 +27,10 @@ struct HomeView: View {
         return syncViewModel.parentName.isEmpty ? selectedParentName : syncViewModel.parentName
     }
 
+    private var isUsingAIEngine: Bool {
+        APIConfig.isConfigured && !syncViewModel.isUsingLocalRuleFallback
+    }
+
     private var childInvitationMessage: String {
         let childName = UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name
         let encodedName = childName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? childName
@@ -280,14 +284,14 @@ struct HomeView: View {
                         Spacer()
 
                         HStack(spacing: 4) {
-                            Image(systemName: "sparkles")
+                            Image(systemName: isUsingAIEngine ? "sparkles" : "doc.text.magnifyingglass")
                                 .font(.system(size: 13, weight: .semibold))
-                            Text("AI Insight")
+                            Text(isUsingAIEngine ? "AI Insight" : "Health Insight")
                                 .font(.system(size: 12, weight: .semibold))
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 11, weight: .semibold))
                         }
-                        .foregroundStyle(AppColor.actionBlue)
+                        .foregroundStyle(isUsingAIEngine ? AppColor.actionBlue : .teal)
                     }
 
                     Text(syncViewModel.healthRecord?.summaryTitle ?? "Perubahan Pola Perlu Diperhatikan")
@@ -296,9 +300,9 @@ struct HomeView: View {
                         .padding(.top, 1)
 
                     HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: "sparkles")
+                        Image(systemName: isUsingAIEngine ? "sparkles" : "doc.text.magnifyingglass")
                             .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(.purple)
+                            .foregroundStyle(isUsingAIEngine ? .purple : .teal)
                             .padding(.top, 2)
 
                         Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")

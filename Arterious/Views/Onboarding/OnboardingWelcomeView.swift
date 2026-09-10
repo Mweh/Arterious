@@ -31,80 +31,57 @@ struct OnboardingWelcomeView: View {
     ]
 
     var body: some View {
-        GeometryReader { geo in
+        VStack(spacing: 0) {
+
+            // MARK: - Hero Image
             ZStack(alignment: .bottom) {
+                Image("Frame")
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity)
 
-                // MARK: - Background
-                Color(hex: "F2F2F7")
-                    .ignoresSafeArea()
-
-                // MARK: - Hero Image (top ~58% of screen)
-                VStack(spacing: 0) {
-                    ZStack(alignment: .bottom) {
-                        Image("Frame")
-                            .resizable()
-                            .scaledToFill()
-                            .frame(width: geo.size.width, height: geo.size.height * 0.58)
-                            .clipped()
-                            .ignoresSafeArea(edges: .top)
-
-                        // Gradient fade bottom of image → white
-                        LinearGradient(
-                            gradient: Gradient(stops: [
-                                .init(color: .clear, location: 0.0),
-                                .init(color: .white.opacity(0.6), location: 0.65),
-                                .init(color: .white, location: 1.0)
-                            ]),
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
-                        .frame(height: geo.size.height * 0.28)
-                    }
-                    .frame(height: geo.size.height * 0.58)
-
-                    Spacer()
-                }
-
-                // MARK: - Bottom Content Panel
-                VStack(spacing: 0) {
-                    Spacer()
-
-                    VStack(spacing: 0) {
-                        // Feature list
-                        VStack(spacing: 0) {
-                            ForEach(Array(features.enumerated()), id: \.element.id) { index, feature in
-                                featureRow(feature)
-
-                                if index < features.count - 1 {
-                                    Divider()
-                                        .padding(.leading, 52)
-                                }
-                            }
-                        }
-
-                        Spacer()
-                            .frame(height: AppSpacing.xl)
-
-                        // Continue Button
-                        Button(action: onContinue) {
-                            Text("Lanjut")
-                                .font(.system(size: 17, weight: .semibold))
-                                .foregroundStyle(.white)
-                                .frame(maxWidth: .infinity)
-                                .frame(height: 54)
-                                .background(AppColor.Brand.primaryBlue)
-                                .clipShape(Capsule())
-                        }
-                        .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : AppSpacing.xl)
-                    }
-                    .padding(.horizontal, AppSpacing.lg)
-                    .padding(.top, AppSpacing.xl)
-                    .background(.white)
-                }
-                .frame(height: geo.size.height * 0.44)
+                // Gradient: transparent → white, so image melts into white content below
+                LinearGradient(
+                    gradient: Gradient(stops: [
+                        .init(color: .clear, location: 0.0),
+                        .init(color: .white.opacity(0.5), location: 0.6),
+                        .init(color: .white, location: 1.0)
+                    ]),
+                    startPoint: .top,
+                    endPoint: .bottom
+                )
+                .frame(height: 120)
             }
+
+            // MARK: - Features
+            VStack(spacing: 0) {
+                ForEach(Array(features.enumerated()), id: \.element.id) { index, feature in
+                    featureRow(feature)
+                    if index < features.count - 1 {
+                        Divider()
+                            .padding(.leading, 52)
+                    }
+                }
+            }
+            .padding(.horizontal, AppSpacing.lg)
+
+            Spacer()
+
+            // MARK: - Lanjut Button
+            Button(action: onContinue) {
+                Text("Lanjut")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 54)
+                    .background(AppColor.Brand.primaryBlue)
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.bottom, AppSpacing.xl)
         }
-        .ignoresSafeArea(edges: .bottom)
+        .background(Color.white)
+        .ignoresSafeArea(edges: .top)
     }
 
     // MARK: - Feature Row
@@ -122,7 +99,7 @@ struct OnboardingWelcomeView: View {
                     .foregroundStyle(AppColor.Gray.gray100)
 
                 Text(item.subtitle)
-                    .font(.system(size: 13, weight: .regular))
+                    .font(.system(size: 13))
                     .foregroundStyle(AppColor.Gray.gray50)
                     .fixedSize(horizontal: false, vertical: true)
             }

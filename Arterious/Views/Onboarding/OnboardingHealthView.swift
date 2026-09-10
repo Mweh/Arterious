@@ -2,15 +2,14 @@ import SwiftUI
 import UserNotifications
 
 /// Third step of onboarding: Requesting HealthKit and Notifications permissions with realistic mockup illustration.
-/// Meticulously aligned to the Figma/Sketch inspector:
-/// - Top offset: Exactly 80pt from the very top of the screen
-/// - Horizontal padding: Exactly 16pt
-/// - Stack spacing: Exactly 32pt
+/// Exact 1-to-1 match to the Figma / Sketch artboard:
+/// - Screen Top to Title: Exactly 80pt
+/// - Screen Horizontal Margin: Exactly 16pt
+/// - Stack Spacing (Header to Mockup): Exactly 32pt
 /// - Title Font: SF Pro 22 Bold
-/// - Subtitle: 6-line SF Pro Regular in #8E8E93
-/// - Mockup Card: Width 280pt, CornerRadius 24pt, Border 3pt #707076 (exact Figma inspector values)
-/// - Button: Full width with 16pt margin, 52pt height, Capsule, Blue #0088FF
-/// - Disclaimer: 3-line SF Pro 11.5 Regular in Black
+/// - Subtitle: 6-line SF Pro Regular in #8E8E93 with lineSpacing 3
+/// - Mockup Card: Width 280pt, Height 609pt, CornerRadius 24pt, Border 3pt #707076 (from Figma inspector)
+/// - Bottom Overlay: White container with 52pt Capsule blue button and 3-line disclaimer
 struct OnboardingHealthView: View {
 
     let onComplete: () -> Void
@@ -23,44 +22,48 @@ struct OnboardingHealthView: View {
     private let frameBorderColor = Color(hex: "707076")
 
     var body: some View {
-        VStack(spacing: 0) {
+        ZStack(alignment: .bottom) {
 
-            // MARK: - Header (Top: 80pt from screen top, Left/Right: 16pt)
-            VStack(alignment: .leading, spacing: 8) {
-                Text("Hubungkan ke Health")
-                    .font(.system(size: 22, weight: .bold)) // SF Pro 22 Bold
-                    .foregroundStyle(Color.black)
+            // MARK: - Scrollable / Top Content Stack
+            VStack(alignment: .center, spacing: 0) {
 
-                Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
-                    .font(.system(size: 15.5, weight: .regular)) // SF Pro Regular
-                    .foregroundStyle(subtitleColor)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                // Header (Title + Subtitle)
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Hubungkan ke Health")
+                        .font(.system(size: 22, weight: .bold)) // SF Pro 22 Bold
+                        .foregroundStyle(Color.black)
+
+                    Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
+                        .font(.system(size: 15.5, weight: .regular)) // SF Pro Regular
+                        .foregroundStyle(subtitleColor)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 16)
+                .padding(.top, 80) // Exactly 80pt from top of screen as per Figma inspector
+
+                // Gap 32pt between Header and Mockup (from Figma Stack ↕ 32)
+                Spacer()
+                    .frame(height: 32)
+
+                // Health Access Mockup Card (W: 280, H: 609, Corners: 24, Border: 3)
+                healthAccessMockup
+
+                Spacer()
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 16)
-            .padding(.top, 80) // Exactly 80pt from top of screen as per Figma inspector
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
 
-            // Gap 32pt to Mockup as per Figma Stack (↕ 32)
-            Spacer()
-                .frame(height: 32)
-
-            // MARK: - Health Access Graphic Mockup (W: 280, Corners: 24, Border: 3)
-            healthAccessMockup
-
-            Spacer()
-
-            // Error Banner if needed
-            if let errorMessage {
-                Text(errorMessage)
-                    .font(AppTypography.captionRegular)
-                    .foregroundStyle(AppColor.caution)
-                    .padding(.bottom, 6)
-            }
-
-            // MARK: - Bottom Area (Button + Disclaimer)
+            // MARK: - Bottom Area (Button + Disclaimer) sitting over bottom of mockup card
             VStack(spacing: 12) {
-                // Hubungkan Button (Full width with 16pt margin)
+                // Error Banner if needed
+                if let errorMessage {
+                    Text(errorMessage)
+                        .font(AppTypography.captionRegular)
+                        .foregroundStyle(AppColor.caution)
+                }
+
+                // Hubungkan Button
                 Button(action: requestPermissionsAndProceed) {
                     HStack(spacing: AppSpacing.xs) {
                         if isConnecting {
@@ -90,26 +93,28 @@ struct OnboardingHealthView: View {
                 .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 16)
+            .padding(.top, 16)
             .padding(.bottom, 16)
+            .background(Color.white) // Solid white covers the bottom of the 609pt card
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color.white)
-        .ignoresSafeArea(edges: .top) // Allows padding(.top, 80) to measure from screen top
+        .ignoresSafeArea(edges: .top)
     }
 
-    // MARK: - Health Access Mockup
+    // MARK: - Health Access Mockup (W: 280, H: 609, Corners: 24, Border: 3)
 
     private var healthAccessMockup: some View {
         VStack(spacing: 0) {
             // Apple Health App Icon
             ZStack {
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 14)
                     .fill(Color.white)
-                    .frame(width: 48, height: 48)
-                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
+                    .frame(width: 52, height: 52)
+                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 3)
 
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 24))
+                    .font(.system(size: 26))
                     .foregroundStyle(
                         LinearGradient(
                             colors: [Color(hex: "FF2D55"), Color(hex: "FF3B30")],
@@ -118,7 +123,7 @@ struct OnboardingHealthView: View {
                         )
                     )
             }
-            .padding(.top, 16)
+            .padding(.top, 22)
 
             Text("Health")
                 .font(.system(size: 13, weight: .semibold))
@@ -129,13 +134,12 @@ struct OnboardingHealthView: View {
             Text("Turn On All")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppColor.Brand.primaryBlue)
-                .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity)
-                .frame(height: 34)
+                .frame(height: 36)
                 .background(Color(hex: "E5E5EA"))
                 .clipShape(Capsule())
-                .padding(.horizontal, 14)
-                .padding(.top, 12)
+                .padding(.horizontal, 16)
+                .padding(.top, 14)
 
             // Permissions List Preview
             VStack(spacing: 0) {
@@ -147,16 +151,17 @@ struct OnboardingHealthView: View {
                 Divider().padding(.leading, 6)
                 permissionRow(title: "Activity")
             }
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-            .padding(.bottom, 14)
+            .padding(.horizontal, 16)
+            .padding(.top, 10)
+
+            Spacer()
         }
-        .frame(width: 280) // EXACTLY 280 from Figma Layout inspector: W: 280!
+        .frame(width: 280, height: 609) // EXACT Figma Layout: W: 280, H: 609
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 24)) // EXACTLY 24 from Figma Corners inspector: 24!
+        .clipShape(RoundedRectangle(cornerRadius: 24)) // EXACT Figma Corners: 24
         .overlay(
             RoundedRectangle(cornerRadius: 24)
-                .stroke(frameBorderColor, lineWidth: 3) // EXACTLY 3 from Figma Borders inspector: 3!
+                .stroke(frameBorderColor, lineWidth: 3) // EXACT Figma Border: 3
         )
     }
 
@@ -179,7 +184,7 @@ struct OnboardingHealthView: View {
             }
         }
         .padding(.vertical, 8)
-        .padding(.horizontal, 4)
+        .padding(.horizontal, 2)
     }
 
     // MARK: - Permissions Flow

@@ -4,10 +4,15 @@ import SwiftUI
 struct HistoryView: View {
 
     @Environment(SyncViewModel.self) private var syncViewModel
+    @AppStorage("userRole") private var userRole: String = UserRole.parent.rawValue
 
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showingCalendarPicker: Bool = false
     @State private var selectedCalendarDate: Date = Date()
+
+    private var isChildEmpty: Bool {
+        userRole == UserRole.child.rawValue && (syncViewModel.syncState.status != .accepted || syncViewModel.healthRecord == nil)
+    }
 
     private struct DayItem: Identifiable {
         let id: String
@@ -67,87 +72,96 @@ struct HistoryView: View {
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    // Weekly Calendar Strip
-                    weekCalendarStrip
+                if isChildEmpty {
+                    childEmptyStateView
+                        .padding(.horizontal, AppSpacing.lg)
+                        .padding(.top, AppSpacing.sm)
+                        .padding(.bottom, AppSpacing.xxl)
+                } else {
+                    VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                        // Weekly Calendar Strip
+                        weekCalendarStrip
 
-                    // Selected Date Header
-                    Text(currentSelectedDateString)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .padding(.top, AppSpacing.xs)
-
-                    // "Summary" Blue Tinted Card
-                    summaryCard
-
-                    // Section "Data"
-                    VStack(alignment: .leading, spacing: AppSpacing.md) {
-                        Text("Data")
-                            .font(.system(size: 19, weight: .bold))
+                        // Selected Date Header
+                        Text(currentSelectedDateString)
+                            .font(.system(size: 16, weight: .semibold))
                             .foregroundStyle(AppColor.textPrimary)
+                            .padding(.top, AppSpacing.xs)
 
-                        // 1. Detak Jantung / Heart Rate (Regular Heart Rate)
-                        NavigationLink {
-                            HeartRateDetailView()
-                        } label: {
-                            HealthMetricSummaryCard(
-                                iconName: "heart.fill",
-                                iconColor: AppColor.Accent.red,
-                                iconBgColor: AppColor.Accent.red12,
-                                title: "Detak Jantung",
-                                value: heartRateDisplayValue,
-                                unit: heartRateDisplayValue == "-" ? nil : "BPM",
-                                subtitle: heartRateSubtitle,
-                                dateString: displayDateString,
-                                chartValues: heartRateChartValues
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        // "Summary" Blue Tinted Card
+                        summaryCard
 
-                        // 2. Tidur / Sleep
-                        NavigationLink {
-                            SleepDetailView()
-                        } label: {
-                            HealthMetricSummaryCard(
-                                iconName: "bed.double.fill",
-                                iconColor: Color(red: 0.55, green: 0.45, blue: 0.9),
-                                iconBgColor: Color(red: 0.55, green: 0.45, blue: 0.9).opacity(0.12),
-                                title: "Tidur",
-                                value: sleepDisplayValue,
-                                subtitle: sleepSubtitle,
-                                dateString: displayDateString,
-                                chartValues: sleepChartValues
-                            )
-                        }
-                        .buttonStyle(.plain)
+                        // Section "Data"
+                        VStack(alignment: .leading, spacing: AppSpacing.md) {
+                            Text("Data")
+                                .font(.system(size: 19, weight: .bold))
+                                .foregroundStyle(AppColor.textPrimary)
 
-                        // 3. Aktivitas / Steps
-                        NavigationLink {
-                            ActivityDetailView()
-                        } label: {
-                            HealthMetricSummaryCard(
-                                iconName: "figure.walk",
-                                iconColor: AppColor.Accent.green,
-                                iconBgColor: AppColor.Accent.green12,
-                                title: "Aktivitas",
-                                value: stepsDisplayValue,
-                                subtitle: stepsSubtitle,
-                                dateString: displayDateString,
-                                chartValues: stepChartValues
-                            )
+                            // 1. Detak Jantung / Heart Rate (Regular Heart Rate)
+                            NavigationLink {
+                                HeartRateDetailView()
+                            } label: {
+                                HealthMetricSummaryCard(
+                                    iconName: "heart.fill",
+                                    iconColor: AppColor.Accent.red,
+                                    iconBgColor: AppColor.Accent.red12,
+                                    title: "Detak Jantung",
+                                    value: heartRateDisplayValue,
+                                    unit: heartRateDisplayValue == "-" ? nil : "BPM",
+                                    subtitle: heartRateSubtitle,
+                                    dateString: displayDateString,
+                                    chartValues: heartRateChartValues
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            // 2. Tidur / Sleep
+                            NavigationLink {
+                                SleepDetailView()
+                            } label: {
+                                HealthMetricSummaryCard(
+                                    iconName: "bed.double.fill",
+                                    iconColor: Color(red: 0.55, green: 0.45, blue: 0.9),
+                                    iconBgColor: Color(red: 0.55, green: 0.45, blue: 0.9).opacity(0.12),
+                                    title: "Tidur",
+                                    value: sleepDisplayValue,
+                                    subtitle: sleepSubtitle,
+                                    dateString: displayDateString,
+                                    chartValues: sleepChartValues
+                                )
+                            }
+                            .buttonStyle(.plain)
+
+                            // 3. Aktivitas / Steps
+                            NavigationLink {
+                                ActivityDetailView()
+                            } label: {
+                                HealthMetricSummaryCard(
+                                    iconName: "figure.walk",
+                                    iconColor: AppColor.Accent.green,
+                                    iconBgColor: AppColor.Accent.green12,
+                                    title: "Aktivitas",
+                                    value: stepsDisplayValue,
+                                    subtitle: stepsSubtitle,
+                                    dateString: displayDateString,
+                                    chartValues: stepChartValues
+                                )
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.top, AppSpacing.sm)
+                    .padding(.bottom, AppSpacing.xxl)
                 }
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.sm)
-                .padding(.bottom, AppSpacing.xxl)
             }
             .background(AppColor.backgroundPrimary.ignoresSafeArea())
             .navigationTitle("History")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    calendarToolbarButton
+                if !isChildEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        calendarToolbarButton
+                    }
                 }
             }
             .sheet(isPresented: $showingCalendarPicker) {
@@ -377,6 +391,30 @@ struct HistoryView: View {
             return pts.map { CGFloat(maxVal > 0 ? $0 / maxVal : 0.5) }
         }
         return [0.4, 0.6, 0.5, 0.9, 0.8, 0.3]
+    }
+
+    // MARK: - Child Empty State
+
+    private var childEmptyStateView: some View {
+        VStack(spacing: AppSpacing.sm) {
+            Spacer()
+                .frame(height: 140)
+
+            Text("Belum Ada Riwayat")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color(.systemGray))
+                .multilineTextAlignment(.center)
+
+            Text("Hubungkan dengan akun orang tua di menu Beranda atau Akses untuk mulai memantau riwayat data kesehatan.")
+                .font(AppTypography.subheadlineRegular)
+                .foregroundStyle(Color(.systemGray2))
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .padding(.horizontal, AppSpacing.xl)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

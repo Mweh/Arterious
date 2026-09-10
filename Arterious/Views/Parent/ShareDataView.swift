@@ -292,9 +292,11 @@ struct ShareDataView: View {
         }
 
         let activityVC = UIActivityViewController(activityItems: [message], applicationActivities: nil)
-        activityVC.completionWithItemsHandler = { _, _, _, _ in
-            withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
-                currentStep = 2
+        activityVC.completionWithItemsHandler = { _, completed, _, _ in
+            if completed {
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.8)) {
+                    currentStep = 2
+                }
             }
         }
         if let popover = activityVC.popoverPresentationController {

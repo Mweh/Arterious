@@ -38,8 +38,12 @@ struct OnboardingContainerView: View {
                     case 2:
                         OnboardingRoleView(selectedRole: $selectedRole) {
                             storedUserRole = selectedRole.rawValue
-                            withAnimation(.easeInOut(duration: 0.3)) {
-                                currentStep = 3
+                            if selectedRole == .child {
+                                completeOnboarding()
+                            } else {
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    currentStep = 3
+                                }
                             }
                         }
                         .transition(.asymmetric(

@@ -42,9 +42,19 @@ final class SyncViewModel {
     var showAcceptedBanner: Bool = false
     var bannerMessage: String = ""
 
+    /// Connection success modal for both Child and Parent POV
+    var showConnectionSuccessModal: Bool = false
+    var connectionSuccessMessage: String = ""
+
+    /// Loading status message during iCloud fetch
+    var loadingStatusMessage: String = "Menghubungkan ke iCloud..."
+
     /// Detected clipboard invite URL for prompt
     var detectedClipboardURL: URL? = nil
     var showDetectedClipboardPrompt: Bool = false
+
+    /// Secondary parent name for parent selector sheet
+    var secondaryParentName: String? = nil
 
     /// Holds the active native Apple CKShare for presentation in UICloudSharingController
     var nativeShare: CKShare?
@@ -61,6 +71,20 @@ final class SyncViewModel {
     private var parentPushTask: Task<Void, Never>?
     @ObservationIgnored private var periodicRefreshTimer: Timer?
     @ObservationIgnored private var heartRateObserverQuery: HKQuery?
+    @ObservationIgnored private var isProcessingInvite: Bool = false
+
+    /// Real user name for display and invites (defaults to CloudKit name, clean device name, or saved name)
+    var userDisplayName: String {
+        get {
+            if let saved = UserDefaults.standard.string(forKey: "userDisplayName"), !saved.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                return saved
+            }
+            return ""
+        }
+        set {
+            UserDefaults.standard.set(newValue, forKey: "userDisplayName")
+        }
+    }
 
     // MARK: - Persistence Keys
 
@@ -72,6 +96,67 @@ final class SyncViewModel {
         self.healthKit = healthKit ?? .shared
         loadPersistedState()
         startPeriodicAutoRefresh()
+        Task {
+            _ = await resolveUserDisplayName()
+        }
+    }
+
+    /// Resolves the user's real first and last name from CloudKit identity or clean device name
+    func resolveUserDisplayName() async -> String {
+        if !userDisplayName.isEmpty {
+            return userDisplayName
+        }
+
+        // 1. Try CloudKit User Identity
+        if let userRecordID = try? await cloudKitContainer.userRecordID(),
+           let identity = try? await cloudKitContainer.userIdentity(forUserRecordID: userRecordID),
+           let components = identity.nameComponents {
+            let given = components.givenName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let family = components.familyName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let fullName = [given, family].filter { !$0.isEmpty }.joined(separator: " ")
+            if !fullName.isEmpty {
+                userDisplayName = fullName
+                return fullName
+            }
+        }
+
+        // 2. Try parsing from device name (e.g. "Bagus Krishna's iPhone" -> "Bagus Krishna")
+        let cleaned = cleanDeviceName(UIDevice.current.name)
+        if !cleaned.isEmpty {
+            userDisplayName = cleaned
+            return cleaned
+        }
+
+        let fallback = (syncState.role == .parent) ? "Orang Tua" : "Anak"
+        userDisplayName = fallback
+        return fallback
+    }
+
+    private func cleanDeviceName(_ rawName: String) -> String {
+        var name = rawName
+        let patterns = [
+            "['’]s\\s+iPhone.*",
+            "['’]s\\s+iPad.*",
+            "['’]s\\s+Apple\\s*Watch.*",
+            "^iPhone\\s+milik\\s+",
+            "^iPad\\s+milik\\s+",
+            "^iPhone\\s+de\\s+",
+            "^iPad\\s+de\\s+",
+            "^iPhone\\s+von\\s+",
+            "^iPad\\s+von\\s+",
+            "\\s+iPhone$",
+            "\\s+iPad$"
+        ]
+        for pattern in patterns {
+            if let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) {
+                name = regex.stringByReplacingMatches(in: name, options: [], range: NSRange(location: 0, length: name.utf16.count), withTemplate: "")
+            }
+        }
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty || trimmed.lowercased() == "iphone" || trimmed.lowercased() == "ipad" {
+            return ""
+        }
+        return trimmed
     }
 
     // MARK: - Role Management
@@ -223,8 +308,8 @@ final class SyncViewModel {
     /// Generates a fresh, single-use invite code and prepares the share link.
     func prepareSingleUseShareInvite() async -> (code: String, rawURL: String) {
         let uniqueCode = "ART-" + String(UUID().uuidString.prefix(6)).uppercased()
-        let name = UIDevice.current.name.isEmpty ? "Orang Tua" : UIDevice.current.name
-        let pName = (parentName.isEmpty || parentName == "Nama Ortu 1") ? name : parentName
+        let realName = !userDisplayName.isEmpty ? userDisplayName : (UIDevice.current.name.isEmpty ? "Orang Tua" : UIDevice.current.name)
+        let pName = (parentName.isEmpty || parentName == "Nama Ortu 1" || parentName == "iPhone") ? realName : parentName
         let encodedName = pName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pName
 
         // 1. Create one-time invite record in CloudKit with status = "pending"
@@ -308,9 +393,19 @@ final class SyncViewModel {
     /// Handles incoming links: either native iCloud share URL (https://www.icloud.com/share/...)
     /// or custom deep links (arterious://...). Validates user role before processing.
     func handleIncomingShareURL(url: URL) async {
+        // Prevent concurrent processing race conditions
+        guard !isProcessingInvite else {
+            print("⏳ [SyncViewModel] Already processing an invite, skipping duplicate invocation.")
+            return
+        }
+
+        isProcessingInvite = true
         isLoading = true
         errorMessage = nil
-        defer { isLoading = false }
+        defer {
+            isProcessingInvite = false
+            isLoading = false
+        }
 
         let urlString = url.absoluteString
 
@@ -356,6 +451,7 @@ final class SyncViewModel {
                         let (pName, share) = try await cloudKit.acceptNativeShare(url: targetURL)
                         self.syncState = SyncState(role: .child, inviteCode: "SHARED", status: .accepted, partnerName: pName, lastSyncDate: Date())
                         self.parentName = pName
+                        UserDefaults.standard.set(pName, forKey: "savedParentName")
                         self.nativeShare = share
                         persistState()
                         await fetchSharedParentSnapshot()
@@ -371,8 +467,15 @@ final class SyncViewModel {
                 return
             }
 
+            // If already accepted on this device, don't re-validate or throw error
+            if syncState.status == .accepted && syncState.inviteCode == inviteCode {
+                print("✅ [SyncViewModel] Invite \(inviteCode) already active, refreshing data.")
+                await fetchSharedParentSnapshot()
+                return
+            }
+
             // CRITICAL: Validate and accept the single-use invite in CloudKit!
-            let childDeviceName = UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name
+            let childDeviceName = !userDisplayName.isEmpty ? userDisplayName : (UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name)
             do {
                 let validatedParentName = try await cloudKit.validateAndAcceptInvite(code: inviteCode, childName: childDeviceName)
                 let finalParentName = validatedParentName.isEmpty ? pNameFromQuery : validatedParentName
@@ -392,6 +495,7 @@ final class SyncViewModel {
                     lastSyncDate: Date()
                 )
                 self.parentName = finalParentName
+                UserDefaults.standard.set(finalParentName, forKey: "savedParentName")
                 persistState()
 
                 await triggerAcceptNotification(parentName: finalParentName)
@@ -399,6 +503,8 @@ final class SyncViewModel {
 
                 self.bannerMessage = "Berhasil terhubung dengan data kesehatan \(finalParentName)!"
                 self.showAcceptedBanner = true
+                self.connectionSuccessMessage = "Kamu sekarang terhubung dengan \(finalParentName)! Data aktivitas, tidur, dan detak jantung dapat dipantau langsung di Beranda."
+                self.showConnectionSuccessModal = true
             } catch let syncError as SyncError {
                 print("❌ [SyncViewModel] validateAndAcceptInvite SyncError: \(syncError.localizedDescription)")
                 self.errorMessage = syncError.errorDescription
@@ -902,17 +1008,23 @@ final class SyncViewModel {
                     } else if details.status == "used" {
                         // Child accepted the invitation!
                         if self.syncState.status != .accepted || self.syncState.partnerName == nil {
+                            let childName = details.childName ?? "Anak"
                             self.syncState.status = .accepted
-                            self.syncState.partnerName = details.childName ?? "Anak"
+                            self.syncState.partnerName = childName
                             self.persistState()
+                            self.connectionSuccessMessage = "\(childName) telah berhasil terhubung dan sekarang dapat memantau data kesehatan Anda."
+                            self.showConnectionSuccessModal = true
                         }
                     }
                 } else if syncState.status == .pending {
                     let (hasAccepted, partnerName) = await cloudKit.checkActiveParticipants()
                     if hasAccepted {
+                        let childName = partnerName ?? "Anak"
                         syncState.status = .accepted
-                        syncState.partnerName = partnerName ?? "Anak"
+                        syncState.partnerName = childName
                         persistState()
+                        self.connectionSuccessMessage = "\(childName) telah berhasil terhubung dan sekarang dapat memantau data kesehatan Anda."
+                        self.showConnectionSuccessModal = true
                     }
                 }
 
@@ -958,6 +1070,8 @@ final class SyncViewModel {
         nativeShare = nil
         inviteURL = nil
         lastSyncDate = nil
+        parentName = ""
+        UserDefaults.standard.removeObject(forKey: "savedParentName")
         persistState()
     }
 
@@ -984,6 +1098,11 @@ final class SyncViewModel {
         }
         if let stored = appStorageRole, stored == UserRole.parent.rawValue && syncState.role != .parent {
             syncState.role = .parent
+        }
+        if let partner = syncState.partnerName, !partner.isEmpty {
+            self.parentName = partner
+        } else if let saved = UserDefaults.standard.string(forKey: "savedParentName"), !saved.isEmpty {
+            self.parentName = saved
         }
     }
 

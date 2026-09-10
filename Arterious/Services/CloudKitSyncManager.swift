@@ -542,8 +542,15 @@ final class CloudKitSyncManager {
         try await ensureCloudKitAvailable()
         let record = try await fetchInviteRecord(code: code)
         let status = record[CKField.status] as? String ?? "pending"
+        let childDeviceID = UIDevice.current.identifierForVendor?.uuidString ?? ""
+        let recordedChildID = record[CKField.childDeviceID] as? String ?? ""
 
         if status == "used" {
+            // If the same child device already marked it as used in this flow/session, return success idempotently
+            if !recordedChildID.isEmpty && recordedChildID == childDeviceID {
+                let parentName = record[CKField.parentName] as? String ?? record[CKField.senderName] as? String ?? "Orang Tua"
+                return parentName
+            }
             throw SyncError.inviteAlreadyUsed
         } else if status == "revoked" {
             throw SyncError.inviteRevoked
@@ -554,7 +561,7 @@ final class CloudKitSyncManager {
         // Mark as used immediately - link becomes permanently single-use!
         record[CKField.status] = "used"
         record[CKField.childName] = childName
-        record[CKField.childDeviceID] = UIDevice.current.identifierForVendor?.uuidString ?? ""
+        record[CKField.childDeviceID] = childDeviceID
         record[CKField.updatedAt] = Date()
         _ = try await saveRecordWithAllKeys(record, database: publicDB)
 

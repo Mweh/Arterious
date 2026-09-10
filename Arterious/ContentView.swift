@@ -55,6 +55,37 @@ struct ContentView: View {
         } message: {
             Text(syncViewModel.errorMessage ?? "")
         }
+        .alert("Berhasil Terhubung!", isPresented: Bindable(syncViewModel).showConnectionSuccessModal) {
+            Button("Mulai", role: .cancel) { }
+        } message: {
+            Text(syncViewModel.connectionSuccessMessage)
+        }
+        .overlay {
+            if syncViewModel.isLoading {
+                ZStack {
+                    Color.black.opacity(0.3)
+                        .ignoresSafeArea()
+
+                    VStack(spacing: AppSpacing.md) {
+                        ProgressView()
+                            .scaleEffect(1.2)
+                            .tint(AppColor.actionBlue)
+
+                        Text(syncViewModel.loadingStatusMessage.isEmpty ? "Menghubungkan ke iCloud..." : syncViewModel.loadingStatusMessage)
+                            .font(AppTypography.bodySemibold)
+                            .foregroundStyle(AppColor.textPrimary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(.horizontal, AppSpacing.xl)
+                    .padding(.vertical, AppSpacing.lg)
+                    .background(AppColor.backgroundSecondary)
+                    .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
+                    .shadow(color: Color.black.opacity(0.12), radius: 16, x: 0, y: 6)
+                }
+                .transition(.opacity)
+                .animation(.easeInOut(duration: 0.2), value: syncViewModel.isLoading)
+            }
+        }
         .overlay(alignment: .top) {
             if syncViewModel.showAcceptedBanner {
                 HStack(spacing: AppSpacing.sm) {

@@ -8,9 +8,10 @@ struct HomeView: View {
     @AppStorage("userRole") private var userRole: String = UserRole.parent.rawValue
 
     @State private var hasConnectedParent: Bool = true
-    @State private var selectedParentName: String = "Parent 1"
+    @State private var selectedParentName: String = "Nama Ortu 1"
     @State private var showingShareSheet: Bool = false
     @State private var showingManualPasteSheet: Bool = false
+    @State private var showingParentSelectorSheet: Bool = false
     @State private var manualPastedText: String = ""
 
     private var isActuallyConnected: Bool {
@@ -33,7 +34,7 @@ struct HomeView: View {
     }
 
     private var childInvitationMessage: String {
-        let childName = UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name
+        let childName = !syncViewModel.userDisplayName.isEmpty ? syncViewModel.userDisplayName : (UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name)
         let encodedName = childName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? childName
         return """
         Halo! Mari terhubung di aplikasi Arterious.
@@ -88,6 +89,11 @@ struct HomeView: View {
             .sheet(isPresented: $showingManualPasteSheet) {
                 manualPasteSheet
                     .presentationDetents([.medium])
+            }
+            .sheet(isPresented: $showingParentSelectorSheet) {
+                parentSelectorSheet
+                    .presentationDetents([.height(260), .fraction(0.35)])
+                    .presentationDragIndicator(.visible)
             }
             .alert("Tautan Undangan Terdeteksi", isPresented: Bindable(syncViewModel).showDetectedClipboardPrompt) {
                 Button("Hubungkan") {
@@ -248,6 +254,69 @@ struct HomeView: View {
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 
+    // MARK: - Parent Selector Sheet (Matching Screenshot 2)
+
+    private var parentSelectorSheet: some View {
+        VStack(spacing: 0) {
+            Text("Orang Tua")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(AppColor.textPrimary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.top, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.lg)
+
+            VStack(spacing: 0) {
+                // Parent 1 (active)
+                Button {
+                    selectedParentName = syncViewModel.parentName.isEmpty ? "Nama Ortu 1" : syncViewModel.parentName
+                    showingParentSelectorSheet = false
+                } label: {
+                    HStack(spacing: AppSpacing.md) {
+                        Image(systemName: selectedParentName != "Nama Ortu 2" ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(selectedParentName != "Nama Ortu 2" ? AppColor.actionBlue : Color(.systemGray4))
+
+                        Text(syncViewModel.parentName.isEmpty ? "Nama Ortu 1" : syncViewModel.parentName)
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(AppColor.textPrimary)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+
+                // Parent 2
+                Button {
+                    selectedParentName = syncViewModel.secondaryParentName ?? "Nama Ortu 2"
+                    showingParentSelectorSheet = false
+                } label: {
+                    HStack(spacing: AppSpacing.md) {
+                        Image(systemName: selectedParentName == "Nama Ortu 2" ? "checkmark.circle.fill" : "circle")
+                            .font(.system(size: 22))
+                            .foregroundStyle(selectedParentName == "Nama Ortu 2" ? AppColor.actionBlue : Color(.systemGray4))
+
+                        Text(syncViewModel.secondaryParentName ?? "Nama Ortu 2")
+                            .font(.system(size: 16, weight: .medium))
+                            .foregroundStyle(AppColor.textPrimary)
+
+                        Spacer()
+                    }
+                    .padding(.vertical, 14)
+                }
+                .buttonStyle(.plain)
+
+                Divider()
+            }
+            .padding(.horizontal, AppSpacing.lg)
+
+            Spacer()
+        }
+        .background(AppColor.backgroundPrimary.ignoresSafeArea())
+    }
+
     // MARK: - Connected Dashboard Content
 
     private var connectedDashboardContent: some View {
@@ -256,18 +325,25 @@ struct HomeView: View {
             HStack {
                 Spacer()
 
-                HStack(spacing: 6) {
-                    Text(displayName)
-                        .font(.system(size: 19, weight: .bold))
-                        .foregroundStyle(AppColor.textPrimary)
-
+                Button {
                     if userRole == UserRole.child.rawValue {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 13, weight: .bold))
-                            .foregroundStyle(AppColor.textSecondary)
+                        showingParentSelectorSheet = true
                     }
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(displayName)
+                            .font(.system(size: 19, weight: .bold))
+                            .foregroundStyle(AppColor.textPrimary)
+
+                        if userRole == UserRole.child.rawValue {
+                            Image(systemName: "chevron.down")
+                                .font(.system(size: 13, weight: .bold))
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
+                    }
+                    .padding(.vertical, 4)
                 }
-                .padding(.vertical, 4)
+                .buttonStyle(.plain)
 
                 Spacer()
             }

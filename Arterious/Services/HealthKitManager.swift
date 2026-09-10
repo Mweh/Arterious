@@ -36,6 +36,12 @@ final class HealthKitManager: @unchecked Sendable {
         }
         
         types.insert(HKObjectType.workoutType())
+        if let bioSex = HKObjectType.characteristicType(forIdentifier: .biologicalSex) {
+            types.insert(bioSex)
+        }
+        if let dob = HKObjectType.characteristicType(forIdentifier: .dateOfBirth) {
+            types.insert(dob)
+        }
         
         return types
     }()
@@ -721,5 +727,26 @@ final class HealthKitManager: @unchecked Sendable {
             }
             healthStore.execute(query)
         }
+    }
+
+    // MARK: - User Profile (Gender & Age)
+
+    func fetchUserProfile() -> (gender: String, age: Int?) {
+        guard isHealthKitAvailable else { return ("-", nil) }
+        var genderStr = "-"
+        if let sex = try? healthStore.biologicalSex() {
+            switch sex.biologicalSex {
+            case .male: genderStr = "Laki-Laki"
+            case .female: genderStr = "Perempuan"
+            case .other: genderStr = "Lainnya"
+            default: break
+            }
+        }
+        var ageVal: Int? = nil
+        if let dob = try? healthStore.dateOfBirthComponents(), let dobDate = dob.date {
+            let ageComponents = Calendar.current.dateComponents([.year], from: dobDate, to: Date())
+            ageVal = ageComponents.year
+        }
+        return (genderStr, ageVal)
     }
 }

@@ -5,6 +5,9 @@ struct OnboardingWelcomeView: View {
 
     let onContinue: () -> Void
 
+    // Background warna abu-abu muda sesuai design (#F2F2F7)
+    private let pageBackground = Color(hex: "F2F2F7")
+
     private struct FeatureItem: Identifiable {
         let id = UUID()
         let iconName: String
@@ -33,24 +36,24 @@ struct OnboardingWelcomeView: View {
     var body: some View {
         VStack(spacing: 0) {
 
-            // MARK: - Hero Image
+            // MARK: - Hero Image dengan gradient fade ke abu-abu
             ZStack(alignment: .bottom) {
                 Image("Frame")
                     .resizable()
                     .scaledToFit()
                     .frame(maxWidth: .infinity)
 
-                // Gradient: transparent → white, so image melts into white content below
+                // Gradient fade ke warna yang sama dengan background halaman
                 LinearGradient(
                     gradient: Gradient(stops: [
                         .init(color: .clear, location: 0.0),
-                        .init(color: .white.opacity(0.5), location: 0.6),
-                        .init(color: .white, location: 1.0)
+                        .init(color: pageBackground.opacity(0.6), location: 0.65),
+                        .init(color: pageBackground, location: 1.0)
                     ]),
                     startPoint: .top,
                     endPoint: .bottom
                 )
-                .frame(height: 120)
+                .frame(height: 130)
             }
 
             // MARK: - Features
@@ -80,8 +83,7 @@ struct OnboardingWelcomeView: View {
             .padding(.horizontal, AppSpacing.lg)
             .padding(.bottom, AppSpacing.xl)
         }
-        .background(Color.white)
-        .ignoresSafeArea(edges: .top)
+        .background(pageBackground.ignoresSafeArea())
     }
 
     // MARK: - Feature Row

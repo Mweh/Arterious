@@ -31,48 +31,80 @@ struct OnboardingWelcomeView: View {
     ]
 
     var body: some View {
-        VStack(spacing: 0) {
-            // MARK: - iPhone Mockup Hero Image
-            Image("Frame")
-                .resizable()
-                .scaledToFit()
-                .frame(maxWidth: .infinity)
-                .clipped()
+        GeometryReader { geo in
+            ZStack(alignment: .bottom) {
 
-            // MARK: - Features & CTA
-            VStack(spacing: 0) {
-                // Feature list
+                // MARK: - Background
+                Color(hex: "F2F2F7")
+                    .ignoresSafeArea()
+
+                // MARK: - Hero Image (top ~58% of screen)
                 VStack(spacing: 0) {
-                    ForEach(Array(features.enumerated()), id: \.element.id) { index, feature in
-                        featureRow(feature)
+                    ZStack(alignment: .bottom) {
+                        Image("Frame")
+                            .resizable()
+                            .scaledToFill()
+                            .frame(width: geo.size.width, height: geo.size.height * 0.58)
+                            .clipped()
+                            .ignoresSafeArea(edges: .top)
 
-                        if index < features.count - 1 {
-                            Divider()
-                                .padding(.leading, 52)
-                        }
+                        // Gradient fade bottom of image → white
+                        LinearGradient(
+                            gradient: Gradient(stops: [
+                                .init(color: .clear, location: 0.0),
+                                .init(color: .white.opacity(0.6), location: 0.65),
+                                .init(color: .white, location: 1.0)
+                            ]),
+                            startPoint: .top,
+                            endPoint: .bottom
+                        )
+                        .frame(height: geo.size.height * 0.28)
                     }
-                }
-                .padding(.top, AppSpacing.xl)
+                    .frame(height: geo.size.height * 0.58)
 
-                Spacer()
-
-                // Continue Button
-                Button(action: onContinue) {
-                    Text("Lanjut")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 54)
-                        .background(AppColor.Brand.primaryBlue)
-                        .clipShape(Capsule())
+                    Spacer()
                 }
-                .padding(.bottom, AppSpacing.xl)
+
+                // MARK: - Bottom Content Panel
+                VStack(spacing: 0) {
+                    Spacer()
+
+                    VStack(spacing: 0) {
+                        // Feature list
+                        VStack(spacing: 0) {
+                            ForEach(Array(features.enumerated()), id: \.element.id) { index, feature in
+                                featureRow(feature)
+
+                                if index < features.count - 1 {
+                                    Divider()
+                                        .padding(.leading, 52)
+                                }
+                            }
+                        }
+
+                        Spacer()
+                            .frame(height: AppSpacing.xl)
+
+                        // Continue Button
+                        Button(action: onContinue) {
+                            Text("Lanjut")
+                                .font(.system(size: 17, weight: .semibold))
+                                .foregroundStyle(.white)
+                                .frame(maxWidth: .infinity)
+                                .frame(height: 54)
+                                .background(AppColor.Brand.primaryBlue)
+                                .clipShape(Capsule())
+                        }
+                        .padding(.bottom, geo.safeAreaInsets.bottom > 0 ? geo.safeAreaInsets.bottom : AppSpacing.xl)
+                    }
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.top, AppSpacing.xl)
+                    .background(.white)
+                }
+                .frame(height: geo.size.height * 0.44)
             }
-            .padding(.horizontal, AppSpacing.lg)
-            .background(AppColor.Background.secondaryWhite)
         }
-        .background(AppColor.Background.secondaryWhite.ignoresSafeArea())
-        .ignoresSafeArea(edges: .top)
+        .ignoresSafeArea(edges: .bottom)
     }
 
     // MARK: - Feature Row

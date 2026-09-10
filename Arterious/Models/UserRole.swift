@@ -11,9 +11,9 @@ enum UserRole: String, Codable, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .parent:
-            return "Parent"
+            return "Orang Tua"
         case .child:
-            return "Child"
+            return "Anak"
         }
     }
 
@@ -21,9 +21,9 @@ enum UserRole: String, Codable, CaseIterable, Identifiable {
     var description: String {
         switch self {
         case .parent:
-            return "Use the app to monitor and maintain your wellness."
+            return "Gunakan aplikasi untuk memantau dan menjaga kesehatan Anda."
         case .child:
-            return "Monitor parent wellness trends & receive notifications on important changes."
+            return "Pantau kondisi orang tua & notifikasi saat ada perubahan penting"
         }
     }
 

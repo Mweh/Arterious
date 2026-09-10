@@ -8,8 +8,8 @@ import UserNotifications
 /// - Stack spacing: Exactly 32pt
 /// - Title Font: SF Pro 22 Bold
 /// - Subtitle: 6-line SF Pro Regular in #8E8E93
-/// - Mockup: Width 326pt, CornerRadius 28pt, Border 2pt #7C7C80
-/// - Button: Full width with 16pt padding, 52pt height, Capsule, Blue #0088FF
+/// - Mockup Card: Width 280pt, CornerRadius 24pt, Border 3pt #707076 (exact Figma inspector values)
+/// - Button: Full width with 16pt margin, 52pt height, Capsule, Blue #0088FF
 /// - Disclaimer: 3-line SF Pro 11.5 Regular in Black
 struct OnboardingHealthView: View {
 
@@ -20,7 +20,7 @@ struct OnboardingHealthView: View {
 
     // Color tokens matching the Sketch
     private let subtitleColor = Color(hex: "8E8E93")
-    private let frameBorderColor = Color(hex: "7C7C80")
+    private let frameBorderColor = Color(hex: "707076")
 
     var body: some View {
         VStack(spacing: 0) {
@@ -45,9 +45,8 @@ struct OnboardingHealthView: View {
             Spacer()
                 .frame(height: 32)
 
-            // MARK: - Health Access Graphic Mockup
+            // MARK: - Health Access Graphic Mockup (W: 280, Corners: 24, Border: 3)
             healthAccessMockup
-                .padding(.horizontal, 16)
 
             Spacer()
 
@@ -104,13 +103,13 @@ struct OnboardingHealthView: View {
         VStack(spacing: 0) {
             // Apple Health App Icon
             ZStack {
-                RoundedRectangle(cornerRadius: 14)
+                RoundedRectangle(cornerRadius: 12)
                     .fill(Color.white)
-                    .frame(width: 52, height: 52)
-                    .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 3)
+                    .frame(width: 48, height: 48)
+                    .shadow(color: Color.black.opacity(0.12), radius: 6, x: 0, y: 2)
 
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 26))
+                    .font(.system(size: 24))
                     .foregroundStyle(
                         LinearGradient(
                             colors: [Color(hex: "FF2D55"), Color(hex: "FF3B30")],
@@ -119,7 +118,7 @@ struct OnboardingHealthView: View {
                         )
                     )
             }
-            .padding(.top, 18)
+            .padding(.top, 16)
 
             Text("Health")
                 .font(.system(size: 13, weight: .semibold))
@@ -132,32 +131,32 @@ struct OnboardingHealthView: View {
                 .foregroundStyle(AppColor.Brand.primaryBlue)
                 .padding(.horizontal, 16)
                 .frame(maxWidth: .infinity)
-                .frame(height: 36)
+                .frame(height: 34)
                 .background(Color(hex: "E5E5EA"))
                 .clipShape(Capsule())
-                .padding(.horizontal, 16)
-                .padding(.top, 14)
+                .padding(.horizontal, 14)
+                .padding(.top, 12)
 
             // Permissions List Preview
             VStack(spacing: 0) {
                 permissionRow(title: "Heart Rate")
-                Divider().padding(.leading, 8)
+                Divider().padding(.leading, 6)
                 permissionRow(title: "HRV")
-                Divider().padding(.leading, 8)
+                Divider().padding(.leading, 6)
                 permissionRow(title: "Sleep")
-                Divider().padding(.leading, 8)
+                Divider().padding(.leading, 6)
                 permissionRow(title: "Activity")
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 16)
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 14)
         }
-        .frame(maxWidth: 326) // Proportional card width matching Sketch
+        .frame(width: 280) // EXACTLY 280 from Figma Layout inspector: W: 280!
         .background(Color.white)
-        .clipShape(RoundedRectangle(cornerRadius: 28))
+        .clipShape(RoundedRectangle(cornerRadius: 24)) // EXACTLY 24 from Figma Corners inspector: 24!
         .overlay(
-            RoundedRectangle(cornerRadius: 28)
-                .stroke(frameBorderColor, lineWidth: 2)
+            RoundedRectangle(cornerRadius: 24)
+                .stroke(frameBorderColor, lineWidth: 3) // EXACTLY 3 from Figma Borders inspector: 3!
         )
     }
 

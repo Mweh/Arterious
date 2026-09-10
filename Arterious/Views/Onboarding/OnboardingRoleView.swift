@@ -6,6 +6,8 @@ struct OnboardingRoleView: View {
     @Binding var selectedRole: UserRole
     let onContinue: () -> Void
 
+    private let subtitleColor = Color(hex: "8E8E93")
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
 
@@ -13,15 +15,15 @@ struct OnboardingRoleView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Mulai dengan\nperan Anda")
                     .font(AppTypography.largeTitleBold) // SF Pro 34 Bold
-                    .foregroundStyle(AppColor.textPrimary)
+                    .foregroundStyle(Color.black)
                     .lineSpacing(4) // Line height 41
 
-                Text("Pilih peran yang paling sesuai agar kami dapat memberikan pengalaman terbaik untuk Anda.")
+                Text("Pilih peran yang paling sesuai agar\nkami dapat memberikan\npengalaman terbaik untuk Anda.")
                     .font(AppTypography.bodyRegular) // SF Pro 17 Regular
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(4) // Line height 22
+                    .foregroundStyle(subtitleColor)
+                    .lineSpacing(3) // Line height 22
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 4)
+                    .padding(.top, 2)
             }
             .padding(.top, 20)
             .padding(.bottom, 28)
@@ -32,14 +34,16 @@ struct OnboardingRoleView: View {
                     role: .parent,
                     iconName: "person.fill",
                     iconColor: AppColor.Brand.primaryBlue,
-                    iconBgColor: Color(hex: "0088FF", opacity: 0.16)
+                    iconBgColor: Color(hex: "0088FF", opacity: 0.16),
+                    descriptionText: "Gunakan aplikasi untuk\nmemantau dan menjaga\nkesehatan Anda."
                 )
 
                 roleCard(
                     role: .child,
                     iconName: "person.2.fill",
                     iconColor: AppColor.Accent.green,
-                    iconBgColor: Color(hex: "34C759", opacity: 0.16)
+                    iconBgColor: Color(hex: "34C759", opacity: 0.16),
+                    descriptionText: "Pantau kondisi orang\ntua & notifikasi saat\nada perubahan penting"
                 )
             }
 
@@ -57,7 +61,7 @@ struct OnboardingRoleView: View {
             }
             .padding(.bottom, AppSpacing.xl)
         }
-        .padding(.horizontal, AppSpacing.lg + 4)
+        .padding(.horizontal, 24)
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 
@@ -67,7 +71,8 @@ struct OnboardingRoleView: View {
         role: UserRole,
         iconName: String,
         iconColor: Color,
-        iconBgColor: Color
+        iconBgColor: Color,
+        descriptionText: String
     ) -> some View {
         let isSelected = selectedRole == role
 
@@ -97,11 +102,11 @@ struct OnboardingRoleView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(role.title)
                         .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
-                        .foregroundStyle(AppColor.textPrimary)
+                        .foregroundStyle(Color.black)
 
-                    Text(role.description)
+                    Text(descriptionText)
                         .font(AppTypography.subheadlineRegular) // SF Pro 15 Regular
-                        .foregroundStyle(AppColor.textSecondary)
+                        .foregroundStyle(subtitleColor)
                         .multilineTextAlignment(.leading)
                         .lineSpacing(2) // Line height 20
                         .fixedSize(horizontal: false, vertical: true)

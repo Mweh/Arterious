@@ -78,7 +78,11 @@ struct AccessView: View {
                 }
                 Button("Batal", role: .cancel) { }
             } message: {
-                Text("Data kesehatan Anda tidak akan lagi dibagikan dengan \(partnerNameToDisconnect). Anggota keluarga tidak akan dapat memantau kondisi Anda lagi.")
+                if userRole == UserRole.parent.rawValue {
+                    Text("Data kesehatan Anda tidak akan lagi dibagikan dengan \(partnerNameToDisconnect). Anggota keluarga tidak akan dapat memantau kondisi Anda lagi.")
+                } else {
+                    Text("Anda tidak akan lagi memantau data kesehatan \(partnerNameToDisconnect).")
+                }
             }
         }
     }
@@ -139,7 +143,8 @@ struct AccessView: View {
 
             SwipeableMemberRow(
                 name: partner,
-                initial: String(partner.prefix(1)).uppercased()
+                initial: String(partner.prefix(1)).uppercased(),
+                subtitle: userRole == UserRole.parent.rawValue ? "Receiving wellness updates" : "Sharing wellness updates"
             ) {
                 partnerNameToDisconnect = partner
                 showingDisconnectConfirmation = true
@@ -155,6 +160,7 @@ struct AccessView: View {
 struct SwipeableMemberRow: View {
     let name: String
     let initial: String
+    var subtitle: String = "Receiving wellness updates"
     let onDelete: () -> Void
 
     @State private var offset: CGFloat = 0
@@ -193,7 +199,7 @@ struct SwipeableMemberRow: View {
                         .font(AppTypography.bodySemibold)
                         .foregroundStyle(AppColor.textPrimary)
 
-                    Text("Receiving wellness updates")
+                    Text(subtitle)
                         .font(AppTypography.captionRegular)
                         .foregroundStyle(AppColor.Accent.green)
                 }

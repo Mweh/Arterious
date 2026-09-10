@@ -14,8 +14,7 @@
 	<true/>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
-		<string>iCloud.$(CFBundleIdentifier)</string>
-		<string>iCloud.com.helloworld.Arterious</string>
+		<string>iCloud.com.helloworld.arterious</string>
 	</array>
 	<key>com.apple.developer.icloud-services</key>
 	<array>

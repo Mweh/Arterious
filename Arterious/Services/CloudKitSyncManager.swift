@@ -17,6 +17,9 @@ private enum CKField {
     static let childDeviceID = "childDeviceID"
     static let senderRole = "senderRole"
     static let senderName = "senderName"
+    static let childName = "childName"
+    static let revokedBy = "revokedBy"
+    static let createdAt = "createdAt"
     // ParentHealthSnapshot & HealthRecord
     static let snapshotJSON = "snapshotJSON"
     static let parentName = "parentName"
@@ -36,6 +39,7 @@ private enum CKField {
     static let summaryTitle = "summaryTitle"
     static let summaryBody = "summaryBody"
     static let recordJSON = "recordJSON"
+    static let insightJSON = "insightJSON"
 }
 
 private let subscriptionID = "parent-health-updates"
@@ -47,6 +51,7 @@ struct InviteDetails {
     let status: String
     let senderRole: String
     let senderName: String
+    var childName: String? = nil
 }
 
 // MARK: - CloudKitSyncManager
@@ -74,12 +79,8 @@ final class CloudKitSyncManager {
     }()
 
     private init() {
-        let bundleID = Bundle.main.bundleIdentifier ?? ""
-        if bundleID == "com.helloworld.arterious" {
-            container = CKContainer(identifier: "iCloud.com.helloworld.arterious")
-        } else {
-            container = CKContainer.default()
-        }
+        // Target container identifier matching Arterious.entitlements
+        container = CKContainer(identifier: "iCloud.com.helloworld.arterious")
         publicDB = container.publicCloudDatabase
         privateDB = container.privateCloudDatabase
         sharedDB = container.sharedCloudDatabase
@@ -215,7 +216,16 @@ final class CloudKitSyncManager {
         if let share = cachedShare {
             try? await privateDB.deleteRecord(withID: share.recordID)
             self.cachedShare = nil
+        } else {
+            let rootID = CKRecord.ID(recordName: "CurrentHealthRecord", zoneID: healthZone.zoneID)
+            if let rootRecord = try? await privateDB.record(for: rootID),
+               let shareRef = rootRecord.share {
+                try? await privateDB.deleteRecord(withID: shareRef.recordID)
+            }
         }
+        // Also remove public fallback snapshot so child cannot fetch stale data
+        let publicRecordID = CKRecord.ID(recordName: "ParentHealthSnapshot_SHARED")
+        try? await publicDB.deleteRecord(withID: publicRecordID)
     }
 
     /// Child fetches the parent's health record from the Shared Database (`sharedCloudDatabase`).
@@ -266,12 +276,7 @@ final class CloudKitSyncManager {
         do {
             try await ensureHealthZoneCreated()
             let rootID = CKRecord.ID(recordName: "CurrentHealthRecord", zoneID: healthZone.zoneID)
-            let privRecord: CKRecord
-            if let existing = try? await privateDB.record(for: rootID) {
-                privRecord = existing
-            } else {
-                privRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: rootID)
-            }
+            let privRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: rootID)
             privRecord[CKField.snapshotJSON] = jsonString
             if let recJson = recordJsonString {
                 privRecord[CKField.recordJSON] = recJson
@@ -285,13 +290,7 @@ final class CloudKitSyncManager {
 
         // 2. Also save to PublicDB for seamless compatibility
         let publicRecordID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(inviteCode)")
-        let publicRecord: CKRecord
-        if let existing = try? await publicDB.record(for: publicRecordID) {
-            publicRecord = existing
-        } else {
-            publicRecord = CKRecord(recordType: CKRecordType.parentHealthSnapshot, recordID: publicRecordID)
-        }
-
+        let publicRecord = CKRecord(recordType: CKRecordType.parentHealthSnapshot, recordID: publicRecordID)
         publicRecord[CKField.inviteCode] = inviteCode
         publicRecord[CKField.snapshotJSON] = jsonString
         if let recJson = recordJsonString {
@@ -312,12 +311,7 @@ final class CloudKitSyncManager {
         do {
             try await ensureHealthZoneCreated()
             let privRecordID = CKRecord.ID(recordName: "HealthRecord_\(dateString)", zoneID: healthZone.zoneID)
-            let privRecord: CKRecord
-            if let existing = try? await privateDB.record(for: privRecordID) {
-                privRecord = existing
-            } else {
-                privRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: privRecordID)
-            }
+            let privRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: privRecordID)
             populateRecord(privRecord, with: record)
             _ = try await saveRecordWithAllKeys(privRecord, database: privateDB)
         } catch {
@@ -326,12 +320,7 @@ final class CloudKitSyncManager {
 
         // 2. Save to PublicDB (fallback)
         let recordID = CKRecord.ID(recordName: "HealthRecord_\(record.inviteCode)_\(dateString)")
-        let ckRecord: CKRecord
-        if let existing = try? await publicDB.record(for: recordID) {
-            ckRecord = existing
-        } else {
-            ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
-        }
+        let ckRecord = CKRecord(recordType: CKRecordType.healthRecord, recordID: recordID)
         populateRecord(ckRecord, with: record)
         _ = try await saveRecordWithAllKeys(ckRecord, database: publicDB)
     }
@@ -372,6 +361,11 @@ final class CloudKitSyncManager {
         ckRecord[CKField.recentStepPoints] = record.recentStepPoints.map { String($0) }.joined(separator: ",")
         ckRecord[CKField.summaryTitle] = record.summaryTitle
         ckRecord[CKField.summaryBody] = record.summaryBody
+        if let insight = record.insightOutput,
+           let data = try? encoder.encode(insight),
+           let str = String(data: data, encoding: .utf8) {
+            ckRecord[CKField.insightJSON] = str
+        }
         ckRecord[CKField.updatedAt] = record.updatedAt
     }
 
@@ -440,6 +434,12 @@ final class CloudKitSyncManager {
         let stepPoints = (record[CKField.recentStepPoints] as? String ?? "")
             .split(separator: ",").compactMap { Double($0) }
 
+        var parsedInsight: LLMInsightOutput? = nil
+        if let str = record[CKField.insightJSON] as? String,
+           let data = str.data(using: .utf8) {
+            parsedInsight = try? decoder.decode(LLMInsightOutput.self, from: data)
+        }
+
         return HealthRecord(
             inviteCode: record[CKField.inviteCode] as? String ?? fallbackInviteCode,
             recordDate: record[CKField.recordDate] as? Date ?? Date(),
@@ -458,6 +458,7 @@ final class CloudKitSyncManager {
             recentStepPoints: stepPoints,
             summaryTitle: record[CKField.summaryTitle] as? String ?? "Belum ada data hari ini",
             summaryBody: record[CKField.summaryBody] as? String ?? "Data kesehatan belum tercatat di Apple Health hari ini.",
+            insightOutput: parsedInsight,
             updatedAt: record[CKField.updatedAt] as? Date ?? Date()
         )
     }
@@ -510,9 +511,56 @@ final class CloudKitSyncManager {
 
     func removeParentSubscription() async {
         try? await publicDB.deleteSubscription(withID: subscriptionID)
+        // Clean up shared zones so child's shared database no longer returns old parent data
+        if let sharedZones = try? await sharedDB.allRecordZones() {
+            for zone in sharedZones {
+                try? await sharedDB.deleteRecordZone(withID: zone.zoneID)
+            }
+        }
     }
 
-    // MARK: - Legacy Deep Link Support
+    // MARK: - Invite Lifecycle & Single-Use Enforcement
+
+    /// Parent creates a new one-time sharing invite record in Public Database.
+    func createInvite(code: String, parentName: String) async throws {
+        try await ensureCloudKitAvailable()
+        let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
+        let record = CKRecord(recordType: CKRecordType.sharingInvite, recordID: recordID)
+        record[CKField.inviteCode] = code
+        record[CKField.status] = "pending"
+        record[CKField.senderRole] = "parent"
+        record[CKField.senderName] = parentName
+        record[CKField.parentName] = parentName
+        record[CKField.createdAt] = Date()
+        record[CKField.updatedAt] = Date()
+        _ = try await saveRecordWithAllKeys(record, database: publicDB)
+    }
+
+    /// Child validates and accepts a single-use invite code.
+    /// If the invite was already used or revoked, throws a specific SyncError.
+    func validateAndAcceptInvite(code: String, childName: String) async throws -> String {
+        try await ensureCloudKitAvailable()
+        let record = try await fetchInviteRecord(code: code)
+        let status = record[CKField.status] as? String ?? "pending"
+
+        if status == "used" {
+            throw SyncError.inviteAlreadyUsed
+        } else if status == "revoked" {
+            throw SyncError.inviteRevoked
+        } else if status != "pending" && status != "accepted" {
+            throw SyncError.inviteInvalid
+        }
+
+        // Mark as used immediately - link becomes permanently single-use!
+        record[CKField.status] = "used"
+        record[CKField.childName] = childName
+        record[CKField.childDeviceID] = UIDevice.current.identifierForVendor?.uuidString ?? ""
+        record[CKField.updatedAt] = Date()
+        _ = try await saveRecordWithAllKeys(record, database: publicDB)
+
+        let parentName = record[CKField.parentName] as? String ?? record[CKField.senderName] as? String ?? "Orang Tua"
+        return parentName
+    }
 
     func fetchInviteDetails(code: String) async throws -> InviteDetails {
         let record = try await fetchInviteRecord(code: code)
@@ -520,29 +568,61 @@ final class CloudKitSyncManager {
             code: code,
             status: record[CKField.status] as? String ?? "pending",
             senderRole: record[CKField.senderRole] as? String ?? "child",
-            senderName: record[CKField.senderName] as? String ?? "Keluarga"
+            senderName: record[CKField.senderName] as? String ?? "Keluarga",
+            childName: record[CKField.childName] as? String
         )
     }
 
+    /// Revokes connection across both devices by marking the invite record as "revoked".
+    func revokeConnection(code: String, revokedBy: String) async {
+        do {
+            let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
+            let record: CKRecord
+            if let existing = try? await publicDB.record(for: recordID) {
+                record = existing
+            } else if let queried = try? await fetchInviteRecord(code: code) {
+                record = queried
+            } else {
+                record = CKRecord(recordType: CKRecordType.sharingInvite, recordID: recordID)
+                record[CKField.inviteCode] = code
+            }
+            record[CKField.status] = "revoked"
+            record[CKField.revokedBy] = revokedBy
+            record[CKField.updatedAt] = Date()
+            _ = try await saveRecordWithAllKeys(record, database: publicDB)
+        } catch {
+            print("⚠️ [CloudKitSyncManager] revokeConnection error: \(error)")
+        }
+
+        if revokedBy == "parent" {
+            await revokeParentShare()
+            let snapshotID = CKRecord.ID(recordName: "ParentHealthSnapshot_\(code)")
+            try? await publicDB.deleteRecord(withID: snapshotID)
+        } else {
+            await removeParentSubscription()
+        }
+    }
+
     func acceptInvite(code: String) async throws {
-        let record = try await fetchInviteRecord(code: code)
-        record[CKField.status] = "accepted"
-        _ = try await publicDB.save(record)
+        _ = try await validateAndAcceptInvite(code: code, childName: UIDevice.current.name)
     }
 
     private func fetchInviteRecord(code: String) async throws -> CKRecord {
         let recordID = CKRecord.ID(recordName: "SharingInvite_\(code)")
-        if let record = try? await publicDB.record(for: recordID) {
-            return record
+        do {
+            return try await publicDB.record(for: recordID)
+        } catch let ckError as CKError where ckError.code == .unknownItem {
+            let predicate = NSPredicate(format: "inviteCode == %@", code)
+            let query = CKQuery(recordType: CKRecordType.sharingInvite, predicate: predicate)
+            if let result = try? await publicDB.records(matching: query, resultsLimit: 1),
+               let (_, recordResult) = result.matchResults.first,
+               let record = try? recordResult.get() {
+                return record
+            }
+            throw SyncError.inviteNotFound
+        } catch {
+            throw error
         }
-        let predicate = NSPredicate(format: "inviteCode == %@", code)
-        let query = CKQuery(recordType: CKRecordType.sharingInvite, predicate: predicate)
-        if let result = try? await publicDB.records(matching: query, resultsLimit: 1),
-           let (_, recordResult) = result.matchResults.first,
-           let record = try? recordResult.get() {
-            return record
-        }
-        throw SyncError.inviteNotFound
     }
 
     private func fetchSnapshotRecord(inviteCode: String) async throws -> CKRecord {
@@ -567,6 +647,9 @@ final class CloudKitSyncManager {
 
 enum SyncError: LocalizedError, Equatable {
     case inviteNotFound
+    case inviteAlreadyUsed
+    case inviteRevoked
+    case inviteInvalid
     case snapshotNotFound
     case encodingFailed
     case invalidURL
@@ -574,11 +657,22 @@ enum SyncError: LocalizedError, Equatable {
 
     var errorDescription: String? {
         switch self {
-        case .inviteNotFound: return "Link sharing tidak ditemukan atau sudah kadaluarsa."
-        case .snapshotNotFound: return "Data orang tua belum tersedia."
-        case .encodingFailed: return "Gagal memproses data kesehatan."
-        case .invalidURL: return "Gagal membuat tautan sharing."
-        case .cloudKitUnavailable: return "iCloud tidak tersedia. Pastikan kamu sudah login di Settings."
+        case .inviteNotFound:
+            return "Tautan undangan tidak ditemukan atau sudah tidak valid."
+        case .inviteAlreadyUsed:
+            return "Tautan undangan ini sudah pernah digunakan dan tidak dapat dipakai lagi. Silakan minta tautan baru dari Orang Tua."
+        case .inviteRevoked:
+            return "Tautan undangan ini sudah tidak berlaku karena koneksi telah diputuskan. Silakan minta tautan baru dari Orang Tua."
+        case .inviteInvalid:
+            return "Status tautan undangan tidak valid."
+        case .snapshotNotFound:
+            return "Data orang tua belum tersedia."
+        case .encodingFailed:
+            return "Gagal memproses data kesehatan."
+        case .invalidURL:
+            return "Gagal membuat tautan sharing."
+        case .cloudKitUnavailable:
+            return "iCloud tidak tersedia. Pastikan kamu sudah login di Settings."
         }
     }
 }

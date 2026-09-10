@@ -257,35 +257,21 @@ struct ShareDataView: View {
 
     // MARK: - Sharing Actions
 
-    private func constructInvitationMessage(rawURL: String) -> String {
-        let parentName = UIDevice.current.name.isEmpty ? "Orang Tua" : UIDevice.current.name
-        let encodedURL = rawURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? rawURL
-        let encodedName = parentName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? parentName
-        let deepLink = "arterious://accept-share?url=\(encodedURL)&from=\(encodedName)"
-
+    private func constructInvitationMessage(code: String, rawURL: String) -> String {
         return """
-        Halo! Buka tautan ini di iPhone untuk memantau data kesehatanku di Arterious:
-        \(deepLink)
-
-        Atau salin tautan ini dan buka aplikasi Arterious:
+        Halo! Buka tautan satu kali ini di iPhone untuk memantau data kesehatanku di Arterious:
         \(rawURL)
+
+        (Kode Undangan: \(code))
         """
     }
 
     private func handleShare() {
-        // Fast path: if native share is already cached in memory, show immediately!
-        if let share = syncViewModel.nativeShare, let url = share.url {
-            let message = constructInvitationMessage(rawURL: url.absoluteString)
-            presentShareSheet(message: message)
-            return
-        }
-
         isPreparingShare = true
 
         Task {
-            let share = await syncViewModel.requestNativeShare()
-            let rawURL = share?.url?.absoluteString ?? "arterious://accept-share"
-            let message = constructInvitationMessage(rawURL: rawURL)
+            let (code, rawURL) = await syncViewModel.prepareSingleUseShareInvite()
+            let message = constructInvitationMessage(code: code, rawURL: rawURL)
 
             await MainActor.run {
                 self.isPreparingShare = false

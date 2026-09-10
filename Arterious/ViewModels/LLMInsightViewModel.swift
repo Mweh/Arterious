@@ -58,14 +58,17 @@ final class LLMInsightViewModel {
     init(
         healthKitManager: HealthKitManager? = nil,
         ruleEngine: RuleEngine? = nil,
-        geminiService: GeminiService? = nil
+        geminiService: GeminiService? = nil,
+        autoFetch: Bool = false
     ) {
         self.healthKitManager = healthKitManager ?? HealthKitManager.shared
         self.ruleEngine = ruleEngine ?? RuleEngine.shared
         self.geminiService = geminiService ?? GeminiService.shared
         
-        Task {
-            await loadAndGenerateInsight()
+        if autoFetch {
+            Task {
+                await loadAndGenerateInsight()
+            }
         }
     }
     
@@ -112,7 +115,7 @@ final class LLMInsightViewModel {
                 self.isUsingLocalRuleFallback = true
                 self.insightOutput = makeLocalFallbackInsight(from: overview)
             }
-        } else if let existing = self.insightOutput, !forceRefresh {
+        } else if self.insightOutput != nil, !forceRefresh {
             // Gunakan insight yang sudah ada untuk hari ini
             self.isUsingLocalRuleFallback = false
         } else {

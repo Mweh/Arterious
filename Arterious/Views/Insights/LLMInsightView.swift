@@ -14,14 +14,24 @@ import SwiftUI
 
 struct LLMInsightView: View {
     @Environment(SyncViewModel.self) private var syncViewModel
-    @State private var localViewModel = LLMInsightViewModel()
+    @State private var localViewModel = LLMInsightViewModel(autoFetch: false)
+    
+    private var isChild: Bool {
+        syncViewModel.syncState.role == .child
+    }
     
     private var activeOutput: LLMInsightOutput? {
-        syncViewModel.insightOutput ?? localViewModel.insightOutput
+        if isChild {
+            return syncViewModel.insightOutput ?? syncViewModel.fallbackInsightFromCurrentRecord
+        }
+        return syncViewModel.insightOutput ?? localViewModel.insightOutput
     }
     
     private var isFallback: Bool {
-        syncViewModel.insightOutput != nil ? syncViewModel.isUsingLocalRuleFallback : localViewModel.isUsingLocalRuleFallback
+        if isChild {
+            return syncViewModel.isUsingLocalRuleFallback
+        }
+        return syncViewModel.insightOutput != nil ? syncViewModel.isUsingLocalRuleFallback : localViewModel.isUsingLocalRuleFallback
     }
     
     private var parentDisplayName: String {
@@ -29,53 +39,72 @@ struct LLMInsightView: View {
         return (name.isEmpty || name == "Nama Ortu 1" || name == "Saya") ? "Ibu" : name
     }
     
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 16) {
-                if let output = activeOutput {
-                    // Banner Indikator Sumber Analisis (Aturan Lokal vs AI)
-                    if isFallback {
-                        HStack(spacing: 8) {
-                            Image(systemName: "doc.text.magnifyingglass")
-                                .font(.footnote.weight(.semibold))
-                            Text("Analisis Berdasarkan Aturan Klinis Lokal (Rule-Based)")
-                                .font(.footnote.weight(.medium))
-                            Spacer()
-                        }
-                        .foregroundStyle(.teal)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 8)
-                        .background(Color.teal.opacity(0.12))
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    }
-                    
-                    todayOverviewCard(output.todayOverview)
-                    activitySection(output.activityInsight)
-                    sleepSection(output.sleepInsight)
-                    heartSection(output.heartInsight)
-                    recommendedActionsSection(output.recommendedActions)
-                } else if localViewModel.isLoading || syncViewModel.isLoading {
-                    loadingCard
-                }
-            }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 24)
-            .frame(maxWidth: .infinity)
+    private var isCurrentlyLoading: Bool {
+        if isChild {
+            return syncViewModel.isLoading && activeOutput == nil
         }
-        .frame(maxWidth: .infinity)
-        .background(Color(.systemGroupedBackground))
+        return (localViewModel.isLoading || syncViewModel.isLoading) && activeOutput == nil
+    }
+    
+    var body: some View {
+        ZStack {
+            Color(.systemGroupedBackground)
+                .ignoresSafeArea()
+            
+            ScrollView(.vertical, showsIndicators: false) {
+                VStack(spacing: 16) {
+                    if let output = activeOutput {
+                        // Banner Indikator Sumber Analisis (Aturan Lokal vs AI)
+                        if isFallback {
+                            HStack(spacing: 8) {
+                                Image(systemName: "doc.text.magnifyingglass")
+                                    .font(.footnote.weight(.semibold))
+                                Text("Analisis Berdasarkan Aturan Klinis Lokal (Rule-Based)")
+                                    .font(.footnote.weight(.medium))
+                                    .fixedSize(horizontal: false, vertical: true)
+                                Spacer(minLength: 0)
+                            }
+                            .foregroundStyle(.teal)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(Color.teal.opacity(0.12))
+                            .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        }
+                        
+                        todayOverviewCard(output.todayOverview)
+                        activitySection(output.activityInsight)
+                        sleepSection(output.sleepInsight)
+                        heartSection(output.heartInsight)
+                        recommendedActionsSection(output.recommendedActions)
+                    } else if isCurrentlyLoading {
+                        loadingCard
+                    } else {
+                        loadingCard
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 8)
+                .padding(.bottom, 40)
+                .containerRelativeFrame(.horizontal) { width, _ in width }
+            }
+            .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
+        }
         .navigationTitle("Insight Kesehatan \(parentDisplayName)")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
-                if localViewModel.isLoading || syncViewModel.isLoading {
+                if isChild ? syncViewModel.isLoading : (localViewModel.isLoading || syncViewModel.isLoading) {
                     ProgressView()
                 } else {
                     Button {
                         Task {
-                            await syncViewModel.loadParentLocalHealthData(forceGemini: true)
-                            await localViewModel.loadAndGenerateInsight(forceRefresh: true)
+                            if isChild {
+                                await syncViewModel.fetchSharedParentSnapshot()
+                            } else {
+                                await syncViewModel.loadParentLocalHealthData(forceGemini: true)
+                                await localViewModel.loadAndGenerateInsight(forceRefresh: true)
+                            }
                         }
                     } label: {
                         Image(systemName: isFallback ? "arrow.clockwise" : "sparkles")
@@ -86,8 +115,23 @@ struct LLMInsightView: View {
             }
         }
         .refreshable {
-            await syncViewModel.loadParentLocalHealthData(forceGemini: true)
-            await localViewModel.loadAndGenerateInsight(forceRefresh: true)
+            if isChild {
+                await syncViewModel.fetchSharedParentSnapshot()
+            } else {
+                await syncViewModel.loadParentLocalHealthData(forceGemini: true)
+                await localViewModel.loadAndGenerateInsight(forceRefresh: true)
+            }
+        }
+        .task {
+            if isChild {
+                if syncViewModel.insightOutput == nil {
+                    await syncViewModel.fetchSharedParentSnapshot()
+                }
+            } else {
+                if syncViewModel.insightOutput == nil && localViewModel.insightOutput == nil {
+                    await localViewModel.loadAndGenerateInsight()
+                }
+            }
         }
     }
     
@@ -95,13 +139,14 @@ struct LLMInsightView: View {
     
     private func todayOverviewCard(_ overview: TodayOverviewInsight) -> some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
+            HStack(alignment: .center, spacing: 8) {
                 Text("TODAY'S OVERVIEW")
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(1)
+                    .lineLimit(1)
                 
-                Spacer()
+                Spacer(minLength: 4)
                 
                 statusBadgeView(status: overview.conditionStatus, label: overview.statusLabel)
             }
@@ -109,6 +154,7 @@ struct LLMInsightView: View {
             Text(overviewHeadline(overview.conditionStatus))
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.primary)
+                .fixedSize(horizontal: false, vertical: true)
             
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
@@ -120,9 +166,11 @@ struct LLMInsightView: View {
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
@@ -185,21 +233,25 @@ struct LLMInsightView: View {
                 Text(title)
                     .font(.headline)
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
                 
-                Spacer()
+                Spacer(minLength: 4)
                 
                 deltaBadge(metricInsight.deltaPercentage, status: metricInsight.status)
             }
             
             // Numbers Comparison Row
-            HStack(spacing: 12) {
+            HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Hari Ini")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Text(metricInsight.currentValue)
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
@@ -207,12 +259,15 @@ struct LLMInsightView: View {
                     .frame(height: 28)
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Baseline 14 Hari")
+                    Text("Baseline (14h)")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Text(metricInsight.baselineValue)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
@@ -223,13 +278,16 @@ struct LLMInsightView: View {
                     Text("Selisih")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
+                        .lineLimit(1)
                     Text(deltaText(metricInsight.deltaPercentage, status: metricInsight.status))
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(deltaColor(metricInsight.deltaPercentage, status: metricInsight.status))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
             .padding(.vertical, 8)
             .background(Color(.tertiarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
@@ -245,9 +303,11 @@ struct LLMInsightView: View {
                     .font(.footnote)
                     .foregroundStyle(.secondary)
                     .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
         }
         .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }
@@ -262,6 +322,8 @@ struct LLMInsightView: View {
                 Text(isFallback ? "Rekomendasi Tindakan (Rule-Based)" : "Rekomendasi Tindakan Caregiver")
                     .font(.headline)
                     .foregroundStyle(.primary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
             }
             
             VStack(alignment: .leading, spacing: 10) {
@@ -275,6 +337,7 @@ struct LLMInsightView: View {
                         Text(action)
                             .font(.subheadline)
                             .foregroundStyle(.primary)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             }
@@ -309,6 +372,8 @@ struct LLMInsightView: View {
                 .font(.caption2)
             Text(label)
                 .font(.caption.weight(.bold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
         }
         .foregroundStyle(fgColor)
         .padding(.horizontal, 10)
@@ -338,6 +403,8 @@ struct LLMInsightView: View {
         return Text(displayStatus)
             .font(.caption2.weight(.bold))
             .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.75)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.12))
@@ -407,4 +474,5 @@ struct LLMInsightView: View {
 
 #Preview {
     LLMInsightView()
+        .environment(SyncViewModel())
 }

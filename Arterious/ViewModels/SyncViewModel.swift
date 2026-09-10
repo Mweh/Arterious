@@ -102,7 +102,7 @@ final class SyncViewModel {
 
     // MARK: - Parent: Local HealthKit Data Loading
 
-    func loadParentLocalHealthData(forceGemini: Bool = false) async {
+    func loadParentLocalHealthData(forceGemini: Bool = false, autoPushToCloud: Bool = true) async {
         if healthKit.isHealthKitAvailable {
             try? await healthKit.requestAuthorization()
         }
@@ -157,15 +157,16 @@ final class SyncViewModel {
             overviewBody: overviewSummaryText,
             activityStatusBadge: overview.activity.status,
             sleepStatusBadge: overview.sleep.status,
-            heartStatusBadge: overview.heart.status
+            heartStatusBadge: overview.heart.status,
+            insightOutput: self.insightOutput
         )
         self.healthRecord = record
         self.historicalSummaries = history
         self.lastSyncDate = Date()
         print("✅ [SyncViewModel] Synced parent health data: HR=\(record.displayHeartRate ?? -1), Steps=\(record.stepCount ?? -1), Sleep=\(record.sleepHours ?? -1), Title=\(record.summaryTitle)")
 
-        // Auto-push to CloudKit if parent is sharing
-        if syncState.role == .parent {
+        // Auto-push to CloudKit if parent is sharing and autoPush is enabled
+        if syncState.role == .parent && autoPushToCloud {
             let code = syncState.inviteCode ?? "SHARED"
             Task { [weak self] in
                 guard let self else { return }
@@ -217,7 +218,49 @@ final class SyncViewModel {
         }
     }
 
-    // MARK: - Native Apple CKShare (One-Way: Read-Only)
+    // MARK: - Native Apple CKShare (One-Way: Read-Only) & Single-Use Invites
+
+    /// Generates a fresh, single-use invite code and prepares the share link.
+    func prepareSingleUseShareInvite() async -> (code: String, rawURL: String) {
+        let uniqueCode = "ART-" + String(UUID().uuidString.prefix(6)).uppercased()
+        let name = UIDevice.current.name.isEmpty ? "Orang Tua" : UIDevice.current.name
+        let pName = (parentName.isEmpty || parentName == "Nama Ortu 1") ? name : parentName
+        let encodedName = pName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? pName
+
+        // 1. Create one-time invite record in CloudKit with status = "pending"
+        try? await cloudKit.createInvite(code: uniqueCode, parentName: pName)
+
+        // 2. Set parent state to pending with this new code
+        self.syncState.inviteCode = uniqueCode
+        self.syncState.status = .pending
+        self.syncState.partnerName = nil
+        self.lastSyncDate = Date()
+        persistState()
+
+        // 3. Load local data without duplicate background task push
+        await loadParentLocalHealthData(autoPushToCloud: false)
+        if let record = self.healthRecord {
+            let summary = await self.healthKit.fetchTodaySummary()
+            try? await self.cloudKit.pushHealthSnapshot(summary, record: record, inviteCode: uniqueCode, parentName: pName)
+            try? await self.cloudKit.pushHealthRecord(record)
+        }
+
+        // 4. If native CKShare exists or can be created, embed the unique code in the deep link
+        var nativeShareURL: String? = nil
+        if let share = await requestNativeShare(suppressErrorMessage: true), let shareURL = share.url?.absoluteString {
+            nativeShareURL = shareURL
+        }
+
+        let rawURL: String
+        if let shareURL = nativeShareURL {
+            let encodedShareURL = shareURL.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? shareURL
+            rawURL = "arterious://accept-share?code=\(uniqueCode)&from=\(encodedName)&url=\(encodedShareURL)"
+        } else {
+            rawURL = "arterious://accept-share?code=\(uniqueCode)&from=\(encodedName)"
+        }
+
+        return (uniqueCode, rawURL)
+    }
 
     /// Prepares a native `CKShare` and uploads the latest HealthKit data.
     /// Returns the `CKShare` to be presented in `UICloudSharingController` or Share Sheet.
@@ -235,22 +278,6 @@ final class SyncViewModel {
             let share = try await cloudKit.getOrCreateNativeShare(parentName: name)
             self.nativeShare = share
             self.inviteURL = share.url
-            self.syncState.status = .pending
-            self.syncState.inviteCode = "SHARED"
-            self.lastSyncDate = Date()
-            persistState()
-
-            // Pre-push current health data in background asynchronously so share link is immediately ready!
-            Task(priority: .background) { [weak self] in
-                guard let self else { return }
-                await self.loadParentLocalHealthData()
-                if let record = self.healthRecord {
-                    let summary = await self.healthKit.fetchTodaySummary()
-                    try? await self.cloudKit.pushHealthSnapshot(summary, record: record, inviteCode: "SHARED", parentName: name)
-                    try? await self.cloudKit.pushHealthRecord(record)
-                }
-            }
-
             print("✅ Native CKShare ready: \(share.url?.absoluteString ?? "no url")")
             return share
         } catch {
@@ -258,9 +285,9 @@ final class SyncViewModel {
             if !suppressErrorMessage {
                 let desc = error.localizedDescription
                 if desc.localizedCaseInsensitiveContains("container configuration") || desc.localizedCaseInsensitiveContains("Bad Container") {
-                    self.errorMessage = "iCloud CloudKit belum dikonfigurasi di Apple Developer Portal untuk tim/bundle ini. Buka Xcode > Signing & Capabilities > iCloud, lalu centang container CloudKit."
+                    print("ℹ️ Native CKShare container not configured on Apple portal yet; fallback sharing link active.")
                 } else {
-                    self.errorMessage = desc
+                    self.errorMessage = formatUserFriendlyErrorMessage(error)
                 }
             }
             return nil
@@ -316,54 +343,70 @@ final class SyncViewModel {
                 return
             }
 
+            let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
+            let codeFromQuery = components?.queryItems?.first(where: { $0.name == "code" })?.value
+            let pNameFromQuery = components?.queryItems?.first(where: { $0.name == "from" })?.value ?? "Orang Tua"
+            let targetURLStr = components?.queryItems?.first(where: { $0.name == "url" })?.value
+
+            // Extract invite code
+            guard let inviteCode = codeFromQuery, !inviteCode.isEmpty else {
+                // If it's a raw iCloud URL without code, try to accept natively or report error
+                if let targetURL = URL(string: targetURLStr ?? urlString), urlString.contains("icloud.com/share") {
+                    do {
+                        let (pName, share) = try await cloudKit.acceptNativeShare(url: targetURL)
+                        self.syncState = SyncState(role: .child, inviteCode: "SHARED", status: .accepted, partnerName: pName, lastSyncDate: Date())
+                        self.parentName = pName
+                        self.nativeShare = share
+                        persistState()
+                        await fetchSharedParentSnapshot()
+                        self.bannerMessage = "Undangan diterima dari \(pName)! Data kesehatan kini terhubung."
+                        self.showAcceptedBanner = true
+                        return
+                    } catch {
+                        self.errorMessage = "Tautan undangan tidak memiliki kode valid."
+                        return
+                    }
+                }
+                self.errorMessage = "Tautan undangan tidak valid atau tidak memiliki kode aktivasi."
+                return
+            }
+
+            // CRITICAL: Validate and accept the single-use invite in CloudKit!
+            let childDeviceName = UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name
             do {
-                let actualURL: URL
-                if url.host == "accept-share",
-                   let targetStr = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems?.first(where: { $0.name == "url" })?.value,
-                   let targetURL = URL(string: targetStr) {
-                    actualURL = targetURL
-                } else {
-                    actualURL = url
+                let validatedParentName = try await cloudKit.validateAndAcceptInvite(code: inviteCode, childName: childDeviceName)
+                let finalParentName = validatedParentName.isEmpty ? pNameFromQuery : validatedParentName
+
+                // If native share URL was provided, attempt native share accept as well
+                if let targetStr = targetURLStr, let nativeURL = URL(string: targetStr) {
+                    if let (_, share) = try? await cloudKit.acceptNativeShare(url: nativeURL) {
+                        self.nativeShare = share
+                    }
                 }
 
-                let (pName, share) = try await cloudKit.acceptNativeShare(url: actualURL)
                 self.syncState = SyncState(
                     role: .child,
-                    inviteCode: "SHARED",
+                    inviteCode: inviteCode,
                     status: .accepted,
-                    partnerName: pName,
+                    partnerName: finalParentName,
                     lastSyncDate: Date()
                 )
-                self.parentName = pName
-                self.nativeShare = share
+                self.parentName = finalParentName
                 persistState()
 
-                // Trigger local notification on child's device
-                await triggerAcceptNotification(parentName: pName)
+                await triggerAcceptNotification(parentName: finalParentName)
+                await subscribeAndFetch(code: inviteCode)
 
-                // Fetch parent's health record from shared database
-                await fetchSharedParentSnapshot()
-
-                self.bannerMessage = "Undangan diterima dari \(pName)! Data kesehatan kini terhubung."
+                self.bannerMessage = "Berhasil terhubung dengan data kesehatan \(finalParentName)!"
                 self.showAcceptedBanner = true
+            } catch let syncError as SyncError {
+                print("❌ [SyncViewModel] validateAndAcceptInvite SyncError: \(syncError.localizedDescription)")
+                self.errorMessage = syncError.errorDescription
+                return
             } catch {
-                print("⚠️ acceptNativeShare error (\(error.localizedDescription)), falling back to shared snapshot...")
-                self.syncState = SyncState(
-                    role: .child,
-                    inviteCode: "SHARED",
-                    status: .accepted,
-                    partnerName: "Orang Tua",
-                    lastSyncDate: Date()
-                )
-                self.parentName = "Orang Tua"
-                persistState()
-                await fetchSharedParentSnapshot()
-                if self.healthRecord != nil {
-                    self.bannerMessage = "Terhubung dengan data kesehatan Orang Tua!"
-                    self.showAcceptedBanner = true
-                } else {
-                    self.errorMessage = "Gagal menerima undangan sharing: \(error.localizedDescription)"
-                }
+                print("❌ [SyncViewModel] validateAndAcceptInvite unexpected error: \(error)")
+                self.errorMessage = formatUserFriendlyErrorMessage(error)
+                return
             }
             return
         }
@@ -536,7 +579,8 @@ final class SyncViewModel {
             overviewBody: overviewSummaryText,
             activityStatusBadge: overview.activity.status,
             sleepStatusBadge: overview.sleep.status,
-            heartStatusBadge: overview.heart.status
+            heartStatusBadge: overview.heart.status,
+            insightOutput: self.insightOutput
         )
 
         do {
@@ -566,6 +610,8 @@ final class SyncViewModel {
                 
                 if let fullRecord = result.record {
                     self.healthRecord = fullRecord
+                    self.insightOutput = fullRecord.insightOutput ?? makeInsightOutput(from: fullRecord)
+                    self.synthesizeHistoryIfEmpty(from: fullRecord)
                 } else {
                     let (overview, _) = RuleEngine.shared.evaluate(
                         today: result.summary,
@@ -583,7 +629,8 @@ final class SyncViewModel {
                         overviewBody: fallback.todayOverview.summary,
                         activityStatusBadge: overview.activity.status,
                         sleepStatusBadge: overview.sleep.status,
-                        heartStatusBadge: overview.heart.status
+                        heartStatusBadge: overview.heart.status,
+                        insightOutput: fallback
                     )
                 }
                 
@@ -614,6 +661,8 @@ final class SyncViewModel {
         do {
             if let hr = try await cloudKit.fetchLatestHealthRecord(inviteCode: code) {
                 self.healthRecord = hr
+                self.insightOutput = hr.insightOutput ?? makeInsightOutput(from: hr)
+                self.synthesizeHistoryIfEmpty(from: hr)
                 self.parentName = hr.parentName
                 self.lastSyncDate = hr.updatedAt
                 self.syncState.partnerName = hr.parentName
@@ -631,6 +680,8 @@ final class SyncViewModel {
 
                 if let rec = result.record {
                     self.healthRecord = rec
+                    self.insightOutput = rec.insightOutput ?? makeInsightOutput(from: rec)
+                    self.synthesizeHistoryIfEmpty(from: rec)
                 } else if self.healthRecord == nil {
                     let (overview, _) = RuleEngine.shared.evaluate(
                         today: result.summary,
@@ -648,7 +699,8 @@ final class SyncViewModel {
                         overviewBody: fallback.todayOverview.summary,
                         activityStatusBadge: overview.activity.status,
                         sleepStatusBadge: overview.sleep.status,
-                        heartStatusBadge: overview.heart.status
+                        heartStatusBadge: overview.heart.status,
+                        insightOutput: fallback
                     )
                 }
             }
@@ -660,6 +712,144 @@ final class SyncViewModel {
             persistState()
             onSnapshotUpdated?()
         }
+    }
+
+    // MARK: - Child Helpers: HealthRecord to Insight & History Synthesis
+
+    var fallbackInsightFromCurrentRecord: LLMInsightOutput? {
+        guard let rec = healthRecord else { return nil }
+        return makeInsightOutput(from: rec)
+    }
+
+    func makeInsightOutput(from record: HealthRecord) -> LLMInsightOutput {
+        let statusUpper: String
+        let titleLower = record.summaryTitle.lowercased()
+        if titleLower.contains("penurunan") || record.activityStatus.lowercased().contains("menurun") {
+            statusUpper = "DECLINED"
+        } else if titleLower.contains("meningkat") || titleLower.contains("membaik") {
+            statusUpper = "IMPROVED"
+        } else {
+            statusUpper = "STABLE"
+        }
+        
+        let pName = (record.parentName.isEmpty || record.parentName == "Nama Ortu 1" || record.parentName == "Parent") ? "Ibu" : record.parentName
+        
+        // Activity domain
+        let steps = record.stepCount ?? 0
+        let stepAvg = record.recentStepPoints.isEmpty ? 3000.0 : (record.recentStepPoints.reduce(0, +) / Double(record.recentStepPoints.count))
+        let stepDelta = stepAvg > 0 ? (((Double(steps) - stepAvg) / stepAvg) * 100.0) : 0.0
+        let actInsightText: String
+        if steps == 0 && record.stepFormatted == "-" {
+            actInsightText = "Belum ada catatan langkah hari ini di Apple Health."
+        } else if steps >= 3000 {
+            actInsightText = "Pola aktivitas fisik \(pName) hari ini terpantau baik dan mendukung kelenturan pembuluh darah."
+        } else {
+            actInsightText = "Aktivitas fisik hari ini sedang berjalan. Luangkan waktu untuk mengajak jalan santai ringan."
+        }
+        
+        let actInsight = DomainMetricInsight(
+            currentValue: record.stepFormatted == "-" ? "-" : "\(record.stepFormatted) langkah",
+            baselineValue: "\(Int(stepAvg)) langkah",
+            deltaPercentage: stepDelta,
+            status: record.activityStatus,
+            insight: actInsightText
+        )
+        
+        // Sleep domain
+        let sleep = record.sleepHours ?? 0.0
+        let sleepAvg = record.recentSleepPoints.isEmpty ? 7.0 : (record.recentSleepPoints.reduce(0, +) / Double(record.recentSleepPoints.count))
+        let sleepDelta = sleepAvg > 0 ? (((sleep - sleepAvg) / sleepAvg) * 100.0) : 0.0
+        let sleepAvgHours = Int(sleepAvg)
+        let sleepAvgMins = Int(((sleepAvg - Double(sleepAvgHours)) * 60).rounded())
+        let sleepInsightText: String
+        if sleep == 0 && record.sleepFormatted == "-" {
+            sleepInsightText = "Belum ada catatan tidur semalam di Apple Health. Catatan tidur dapat diaktifkan melalui Sleep Focus di iPhone atau Apple Watch."
+        } else if sleep < 6.0 {
+            sleepInsightText = "Durasi tidur semalam kurang dari 6 jam (\(record.sleepFormatted)). Tanyakan dengan lembut apakah tidur \(pName) nyenyak semalam."
+        } else {
+            sleepInsightText = "Pola tidur semalam stabil dan memenuhi kebutuhan istirahat harian \(pName)."
+        }
+        
+        let sleepInsight = DomainMetricInsight(
+            currentValue: record.sleepFormatted,
+            baselineValue: "\(sleepAvgHours)j \(sleepAvgMins)m",
+            deltaPercentage: sleepDelta,
+            status: record.sleepStatus,
+            insight: sleepInsightText
+        )
+        
+        // Heart domain
+        let hr = record.displayHeartRate
+        let hrAvg = record.recentHeartRatePoints.isEmpty ? 70.0 : (record.recentHeartRatePoints.reduce(0, +) / Double(record.recentHeartRatePoints.count))
+        let hrDelta = (hr != nil && hrAvg > 0) ? (((hr! - hrAvg) / hrAvg) * 100.0) : 0.0
+        let hrInsightText: String
+        if hr == nil {
+            hrInsightText = "Detak jantung belum tercatat di Apple Health (memerlukan Apple Watch atau sensor denyut terhubung)."
+        } else if let h = hr, h > 85 {
+            hrInsightText = "Detak jantung saat santai sedikit meningkat dibanding acuan. Pastikan \(pName) cukup minum air dan beristirahat santai."
+        } else {
+            hrInsightText = "Detak jantung berada di rentang normal dan stabil."
+        }
+        
+        let heartInsight = DomainMetricInsight(
+            currentValue: hr != nil ? "\(Int(hr!)) BPM" : "-",
+            baselineValue: "\(Int(hrAvg)) BPM",
+            deltaPercentage: hrDelta,
+            status: record.heartRateStatus,
+            insight: hrInsightText
+        )
+        
+        // Recommended actions
+        let actions: [String]
+        if statusUpper == "DECLINED" {
+            actions = [
+                "Hubungi \(pName) dengan nada santai untuk menanyakan kabar dan bagaimana istirahatnya semalam.",
+                "Pastikan asupan cairan cukup dan ingatkan untuk tidak memaksakan aktivitas fisik berat.",
+                "Cek kembali ritme aktivitas sore nanti untuk melihat apakah ada perbaikan pola."
+            ]
+        } else {
+            actions = [
+                "Kondisi \(pName) terpantau baik, sapa seperti biasa untuk menjaga kedekatan.",
+                "Dukung kebiasaan jalan santai ringan di sore hari untuk menjaga sirkulasi darah.",
+                "Pastikan waktu tidur malam tetap teratur dan nyaman."
+            ]
+        }
+        
+        return LLMInsightOutput(
+            todayOverview: TodayOverviewInsight(
+                conditionStatus: statusUpper,
+                statusLabel: record.summaryTitle,
+                deltaPercentage: nil,
+                summary: record.summaryBody
+            ),
+            activityInsight: actInsight,
+            sleepInsight: sleepInsight,
+            heartInsight: heartInsight,
+            recommendedActions: actions
+        )
+    }
+
+    private func synthesizeHistoryIfEmpty(from record: HealthRecord) {
+        guard self.historicalSummaries.isEmpty else { return }
+        let count = max(record.recentStepPoints.count, record.recentSleepPoints.count, record.recentHeartRatePoints.count)
+        guard count > 0 else { return }
+        let calendar = Calendar.current
+        var list: [DailyHealthSummary] = []
+        for i in 0..<count {
+            let offset = (count - 1) - i
+            let dayDate = calendar.date(byAdding: .day, value: -offset, to: record.recordDate) ?? record.recordDate
+            let hr = i < record.recentHeartRatePoints.count ? record.recentHeartRatePoints[i] : nil
+            let sleep = i < record.recentSleepPoints.count ? record.recentSleepPoints[i] : nil
+            let steps = i < record.recentStepPoints.count ? record.recentStepPoints[i] : nil
+            list.append(DailyHealthSummary(
+                date: dayDate,
+                latestHeartRate: hr,
+                restingHeartRate: hr,
+                sleepHours: sleep,
+                stepCount: steps
+            ))
+        }
+        self.historicalSummaries = list
     }
 
     // MARK: - Refresh on Foreground
@@ -674,21 +864,63 @@ final class SyncViewModel {
 
         switch syncState.role {
         case .child:
-            await fetchSharedParentSnapshot()
-        case .parent:
-            await loadParentLocalHealthData()
-            // If parent shared a link, check if child has actually accepted it
-            if syncState.status == .pending {
-                let (hasAccepted, partnerName) = await cloudKit.checkActiveParticipants()
-                if hasAccepted {
-                    syncState.status = .accepted
-                    syncState.partnerName = partnerName ?? "Anak"
-                    persistState()
+            guard syncState.status == .accepted, let code = syncState.inviteCode, !code.isEmpty else {
+                return
+            }
+
+            // 1. Check if the connection has been revoked by parent in CloudKit
+            if let details = try? await cloudKit.fetchInviteDetails(code: code) {
+                if details.status == "revoked" {
+                    print("ℹ️ [SyncViewModel] Connection was revoked by parent. Resetting child state.")
+                    self.syncState = SyncState(role: .child, inviteCode: nil, status: .none, partnerName: nil, lastSyncDate: nil)
+                    self.parentSnapshot = nil
+                    self.healthRecord = nil
+                    self.insightOutput = nil
+                    self.evaluatedOverview = nil
+                    self.baseline = nil
+                    self.historicalSummaries = []
+                    self.persistState()
+                    self.errorMessage = "Koneksi data kesehatan telah diputuskan oleh Orang Tua."
+                    return
                 }
             }
-            if let code = syncState.inviteCode, syncState.status == .accepted {
-                startParentPushLoop(code: code)
+
+            await fetchSharedParentSnapshot()
+
+        case .parent:
+            await loadParentLocalHealthData()
+
+            // Check connection status if parent has an active or pending code
+            if let code = syncState.inviteCode, !code.isEmpty {
+                if let details = try? await cloudKit.fetchInviteDetails(code: code) {
+                    if details.status == "revoked" {
+                        print("ℹ️ [SyncViewModel] Connection was revoked by child. Resetting parent active sharing.")
+                        self.syncState.status = .none
+                        self.syncState.partnerName = nil
+                        self.syncState.inviteCode = nil
+                        self.persistState()
+                    } else if details.status == "used" {
+                        // Child accepted the invitation!
+                        if self.syncState.status != .accepted || self.syncState.partnerName == nil {
+                            self.syncState.status = .accepted
+                            self.syncState.partnerName = details.childName ?? "Anak"
+                            self.persistState()
+                        }
+                    }
+                } else if syncState.status == .pending {
+                    let (hasAccepted, partnerName) = await cloudKit.checkActiveParticipants()
+                    if hasAccepted {
+                        syncState.status = .accepted
+                        syncState.partnerName = partnerName ?? "Anak"
+                        persistState()
+                    }
+                }
+
+                if syncState.status == .accepted {
+                    startParentPushLoop(code: code)
+                }
             }
+
         case .unset:
             if appStorageRole == UserRole.parent.rawValue {
                 syncState.role = .parent
@@ -702,15 +934,26 @@ final class SyncViewModel {
     func disconnect() async {
         pollTask?.cancel()
         parentPushTask?.cancel()
-        if syncState.role == .child {
-            await cloudKit.removeParentSubscription()
-        } else if syncState.role == .parent {
-            await cloudKit.revokeParentShare()
-        }
+
+        let activeCode = syncState.inviteCode
         let currentRole = syncState.role
+
+        if let code = activeCode, !code.isEmpty {
+            await cloudKit.revokeConnection(code: code, revokedBy: currentRole == .parent ? "parent" : "child")
+        } else {
+            if currentRole == .child {
+                await cloudKit.removeParentSubscription()
+            } else if currentRole == .parent {
+                await cloudKit.revokeParentShare()
+            }
+        }
+
         syncState = SyncState(role: currentRole, inviteCode: nil, status: .none, partnerName: nil, lastSyncDate: nil)
         parentSnapshot = nil
         healthRecord = nil
+        insightOutput = nil
+        evaluatedOverview = nil
+        baseline = nil
         historicalSummaries = []
         nativeShare = nil
         inviteURL = nil
@@ -768,5 +1011,38 @@ final class SyncViewModel {
             return true
         }
         return !Calendar.current.isDateInToday(lastDate)
+    }
+
+    // MARK: - User-Friendly Error Formatter
+
+    func formatUserFriendlyErrorMessage(_ error: Error) -> String {
+        if let syncError = error as? SyncError {
+            return syncError.errorDescription ?? "Terjadi kesalahan pada sinkronisasi."
+        }
+
+        let nsError = error as NSError
+        if nsError.domain == CKErrorDomain {
+            let code = CKError.Code(rawValue: nsError.code)
+            switch code {
+            case .serviceUnavailable, .requestRateLimited, .zoneBusy:
+                let retrySec = (nsError.userInfo[CKErrorRetryAfterKey] as? NSNumber)?.intValue ?? 60
+                let minutes = max(1, Int(ceil(Double(retrySec) / 60.0)))
+                return "Server iCloud sedang sibuk atau dibatasi sementara oleh Apple. Silakan coba kembali dalam \(minutes) menit."
+            case .notAuthenticated:
+                return "Akun iCloud belum aktif. Silakan masuk ke Apple ID di Pengaturan iPhone Anda."
+            case .networkFailure, .networkUnavailable:
+                return "Koneksi internet bermasalah. Pastikan perangkat terhubung ke internet."
+            case .quotaExceeded:
+                return "Kapasitas penyimpanan iCloud penuh."
+            default:
+                break
+            }
+        }
+
+        let desc = error.localizedDescription
+        if desc.localizedCaseInsensitiveContains("throttled") || desc.localizedCaseInsensitiveContains("503") {
+            return "Server iCloud sedang sibuk. Silakan coba kembali dalam beberapa menit."
+        }
+        return desc
     }
 }

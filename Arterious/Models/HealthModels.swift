@@ -311,6 +311,7 @@ struct HealthRecord: Codable, Identifiable {
     // Summary Insights (from RuleEngine / AI Insight)
     let summaryTitle: String // e.g. "Kondisi Stabil", "Membaik +14%"
     let summaryBody: String // e.g. "Today's Overview summary text"
+    let insightOutput: LLMInsightOutput?
 
     let updatedAt: Date
 
@@ -346,6 +347,7 @@ struct HealthRecord: Codable, Identifiable {
             recentStepPoints: [3800, 4100, 4500, 3900, 4200, 4300, 4280],
             summaryTitle: "Kondisi Stabil",
             summaryBody: "Aktivitas dan istirahat hari ini terpantau baik dan selaras dengan pola 14 hari terakhir.",
+            insightOutput: nil,
             updatedAt: Date()
         )
     }
@@ -359,7 +361,8 @@ struct HealthRecord: Codable, Identifiable {
         overviewBody: String? = nil,
         activityStatusBadge: String? = nil,
         sleepStatusBadge: String? = nil,
-        heartStatusBadge: String? = nil
+        heartStatusBadge: String? = nil,
+        insightOutput: LLMInsightOutput? = nil
     ) -> HealthRecord {
         // 1. Heart Rate (Only regular Heart Rate)
         let hr = summary.latestHeartRate ?? summary.restingHeartRate
@@ -435,6 +438,7 @@ struct HealthRecord: Codable, Identifiable {
             recentStepPoints: stepPoints,
             summaryTitle: sumTitle,
             summaryBody: sumBody,
+            insightOutput: insightOutput,
             updatedAt: Date()
         )
     }

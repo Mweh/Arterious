@@ -1,133 +1,105 @@
 import SwiftUI
 
-/// History tab screen (Riwayat) matching the exact Sketch design specification ("History / Default")
-/// with calendar week selector, daily summary, and metric cards in Bahasa Indonesia.
+/// History tab screen (Riwayat) with calendar selector, daily summary, and metric cards matching Figma design.
 struct HistoryView: View {
 
     @Environment(SyncViewModel.self) private var syncViewModel
+    @AppStorage("userRole") private var userRole: String = UserRole.parent.rawValue
 
-    @State private var selectedDayIndex: Int = 2 // "SEL 3" default selected as per Sketch
+    @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showingCalendarPicker: Bool = false
-    @State private var selectedCalendarDate: Date = Calendar.current.date(from: DateComponents(year: 2026, month: 9, day: 3)) ?? Date()
+    @State private var tempCalendarDate: Date = Date()
+
+    private var isChildEmpty: Bool {
+        userRole == UserRole.child.rawValue && (syncViewModel.syncState.status != .accepted || syncViewModel.healthRecord == nil)
+    }
 
     private struct DayItem: Identifiable {
-        let id: Int
+        let id: String
+        let date: Date
         let dayName: String
         let dayNumber: Int
         let dateString: String
     }
 
-    private let weekDays: [DayItem] = [
-        DayItem(id: 0, dayName: "MIN", dayNumber: 1, dateString: "1 September 2026"),
-        DayItem(id: 1, dayName: "SEN", dayNumber: 2, dateString: "2 September 2026"),
-        DayItem(id: 2, dayName: "SEL", dayNumber: 3, dateString: "3 September 2026"),
-        DayItem(id: 3, dayName: "RAB", dayNumber: 4, dateString: "4 September 2026"),
-        DayItem(id: 4, dayName: "KAM", dayNumber: 5, dateString: "5 September 2026"),
-        DayItem(id: 5, dayName: "JUM", dayNumber: 6, dateString: "6 September 2026"),
-        DayItem(id: 6, dayName: "SAB", dayNumber: 7, dateString: "7 September 2026")
-    ]
+    private var weekDays: [DayItem] {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.firstWeekday = 1 // 1 = Sunday (MIN)
+        calendar.locale = Locale(identifier: "id_ID")
+
+        let startOfDay = calendar.startOfDay(for: selectedDate)
+        guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: startOfDay) else {
+            return []
+        }
+
+        var days: [DayItem] = []
+        let dayFormatter = DateFormatter()
+        dayFormatter.locale = Locale(identifier: "id_ID")
+        dayFormatter.dateFormat = "EEE"
+
+        let longFormatter = DateFormatter()
+        longFormatter.locale = Locale(identifier: "id_ID")
+        longFormatter.dateFormat = "d MMMM yyyy"
+
+        for offset in 0..<7 {
+            if let date = calendar.date(byAdding: .day, value: offset, to: weekInterval.start) {
+                let dayNum = calendar.component(.day, from: date)
+                let name = dayFormatter.string(from: date).uppercased()
+                let dateStr = longFormatter.string(from: date)
+                days.append(DayItem(
+                    id: "\(date.timeIntervalSince1970)",
+                    date: date,
+                    dayName: name,
+                    dayNumber: dayNum,
+                    dateString: dateStr
+                ))
+            }
+        }
+        return days
+    }
 
     private var currentSelectedDateString: String {
-        weekDays.first(where: { $0.id == selectedDayIndex })?.dateString ?? "3 September 2026"
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "id_ID")
+        formatter.dateFormat = "d MMMM yyyy"
+        return formatter.string(from: selectedDate)
+    }
+
+    private var isViewingToday: Bool {
+        Calendar.current.isDateInToday(selectedDate)
+    }
+
+    private var historicalSummaryForSelectedDate: DailyHealthSummary? {
+        let calendar = Calendar.current
+        return syncViewModel.historicalSummaries.first { summary in
+            calendar.isDate(summary.date, inSameDayAs: selectedDate)
+        }
     }
 
     var body: some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    // Weekly Calendar Strip
-                    weekCalendarStrip
+            ZStack {
+                AppColor.backgroundPrimary
+                    .ignoresSafeArea()
 
-                    // Selected Date Header
-                    Text(currentSelectedDateString)
-                        .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .padding(.top, AppSpacing.xs)
-
-                    // "Ringkasan" Card
-                    summaryCard
-
-                    // Section "Data"
-                    VStack(alignment: .leading, spacing: AppSpacing.md) {
-                        Text("Data")
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundStyle(AppColor.textPrimary)
-
-                        // 1. Detak Jantung
-                        NavigationLink {
-                            HeartRateDetailView()
-                        } label: {
-                            HealthMetricSummaryCard(
-                                iconName: "heart.fill",
-                                iconColor: AppColor.Accent.red,
-                                iconBgColor: AppColor.Accent.red12,
-                                title: "Detak Jantung",
-                                value: heartRateDisplayValue,
-                                unit: "BPM",
-                                subtitle: heartRateSubtitle,
-                                dateString: "9 Sep",
-                                chartValues: heartRateChartValues
-                            )
-                        }
-                        .buttonStyle(.plain)
-
-                        // 2. Tidur
-                        NavigationLink {
-                            SleepDetailView()
-                        } label: {
-                            HealthMetricSummaryCard(
-                                iconName: "bed.double.fill",
-                                iconColor: Color(red: 0.55, green: 0.45, blue: 0.9),
-                                iconBgColor: Color(red: 0.55, green: 0.45, blue: 0.9).opacity(0.12),
-                                title: "Tidur",
-                                value: sleepDisplayValue,
-                                subtitle: sleepSubtitle,
-                                dateString: "9 Sep",
-                                chartValues: sleepChartValues
-                            )
-                        }
-                        .buttonStyle(.plain)
-
-                        // 3. Aktivitas
-                        NavigationLink {
-                            ActivityDetailView()
-                        } label: {
-                            HealthMetricSummaryCard(
-                                iconName: "figure.walk",
-                                iconColor: AppColor.Accent.green,
-                                iconBgColor: AppColor.Accent.green12,
-                                title: "Aktivitas",
-                                value: stepsDisplayValue,
-                                subtitle: stepsSubtitle,
-                                dateString: "9 Sep",
-                                chartValues: stepChartValues
-                            )
-                        }
-                        .buttonStyle(.plain)
-                    }
+                if isChildEmpty {
+                    childEmptyStateView
+                } else {
+                    historyContentView
                 }
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.sm)
-                .padding(.bottom, AppSpacing.xxl)
             }
-            .background(AppColor.backgroundPrimary.ignoresSafeArea())
             .navigationTitle("Riwayat")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    calendarToolbarButton
+                if !isChildEmpty {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        calendarToolbarButton
+                    }
                 }
             }
             .sheet(isPresented: $showingCalendarPicker) {
-                VStack(spacing: AppSpacing.md) {
-                    DatePicker(
-                        "Pilih Tanggal",
-                        selection: $selectedCalendarDate,
-                        displayedComponents: .date
-                    )
-                    .datePickerStyle(.graphical)
-                    .padding()
-                }
-                .presentationDetents([.medium])
+                calendarPickerSheet
+                    .presentationDetents([.height(350)])
+                    .presentationDragIndicator(.visible)
             }
             .task {
                 await syncViewModel.refreshIfNeeded()
@@ -138,35 +110,117 @@ struct HistoryView: View {
         }
     }
 
+    // MARK: - History Content View
+
+    private var historyContentView: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                // Horizontal Calendar Strip
+                weekCalendarStrip
+
+                // Selected Date Text (e.g. "3 September 2026")
+                Text(currentSelectedDateString)
+                    .font(.system(size: 15, weight: .regular))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .padding(.top, AppSpacing.xs)
+
+                // Summary Card ("Ringkasan")
+                summaryCard
+
+                // Metric Cards Section
+                VStack(alignment: .leading, spacing: AppSpacing.md) {
+                    Text("Data")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(AppColor.textPrimary)
+
+                    // 1. Detak Jantung Card
+                    NavigationLink {
+                        HeartRateDetailView()
+                    } label: {
+                        HealthMetricSummaryCard(
+                            iconName: "heart.fill",
+                            iconColor: AppColor.Accent.red,
+                            iconBgColor: AppColor.Accent.red12,
+                            title: "Detak Jantung",
+                            value: heartRateDisplayValue,
+                            unit: heartRateDisplayValue == "-" ? nil : "BPM",
+                            subtitle: heartRateSubtitle,
+                            dateString: displayDateString,
+                            chartValues: heartRateChartValues
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // 2. Tidur Card
+                    NavigationLink {
+                        SleepDetailView()
+                    } label: {
+                        HealthMetricSummaryCard(
+                            iconName: "bed.double.fill",
+                            iconColor: Color(red: 0.35, green: 0.35, blue: 0.85),
+                            iconBgColor: Color(red: 0.35, green: 0.35, blue: 0.85).opacity(0.12),
+                            title: "Tidur",
+                            value: sleepDisplayValue,
+                            subtitle: sleepSubtitle,
+                            dateString: displayDateString,
+                            chartValues: sleepChartValues
+                        )
+                    }
+                    .buttonStyle(.plain)
+
+                    // 3. Aktivitas Card
+                    NavigationLink {
+                        ActivityDetailView()
+                    } label: {
+                        HealthMetricSummaryCard(
+                            iconName: "figure.walk",
+                            iconColor: AppColor.Accent.green,
+                            iconBgColor: AppColor.Accent.green12,
+                            title: "Aktivitas",
+                            value: stepsDisplayValue,
+                            subtitle: stepsSubtitle,
+                            dateString: displayDateString,
+                            chartValues: stepChartValues
+                        )
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.top, AppSpacing.sm)
+            .padding(.bottom, AppSpacing.xxl)
+        }
+    }
+
     // MARK: - Weekly Calendar Strip
 
     private var weekCalendarStrip: some View {
         HStack(spacing: 0) {
             ForEach(weekDays) { item in
-                let isSelected = item.id == selectedDayIndex
+                let isSelected = Calendar.current.isDate(item.date, inSameDayAs: selectedDate)
 
                 Button {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) {
-                        selectedDayIndex = item.id
+                        selectedDate = item.date
                     }
                 } label: {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 6) {
                         Text(item.dayName)
-                            .font(.system(size: 11, weight: .medium))
+                            .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(AppColor.textSecondary)
 
                         ZStack {
                             if isSelected {
                                 Circle()
-                                    .fill(AppColor.Brand.primaryBlue.opacity(0.18))
-                                    .frame(width: 38, height: 38)
+                                    .fill(Color(hex: "D0E6FF"))
+                                    .frame(width: 36, height: 36)
                             }
 
                             Text("\(item.dayNumber)")
-                                .font(.system(size: 16, weight: isSelected ? .bold : .medium))
+                                .font(.system(size: 17, weight: isSelected ? .bold : .regular))
                                 .foregroundStyle(isSelected ? AppColor.Brand.primaryBlue : AppColor.textPrimary)
                         }
-                        .frame(width: 38, height: 38)
+                        .frame(width: 36, height: 36)
                     }
                     .frame(maxWidth: .infinity)
                 }
@@ -181,16 +235,16 @@ struct HistoryView: View {
     private var summaryCard: some View {
         VStack(alignment: .leading, spacing: AppSpacing.xs) {
             Text("Ringkasan")
-                .font(AppTypography.subheadlineRegular)
-                .foregroundStyle(AppColor.textSecondary)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Color(hex: "687B94"))
 
             Text(summaryTitleText)
-                .font(.system(size: 20, weight: .bold))
+                .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(AppColor.textPrimary)
                 .padding(.top, 1)
 
             Text(summaryBodyText)
-                .font(AppTypography.bodyRegular)
+                .font(AppTypography.subheadlineRegular)
                 .foregroundStyle(AppColor.textSecondary)
                 .lineSpacing(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -206,74 +260,158 @@ struct HistoryView: View {
 
     private var calendarToolbarButton: some View {
         Button {
+            tempCalendarDate = selectedDate
             showingCalendarPicker = true
         } label: {
             Image(systemName: "calendar")
-                .font(.system(size: 14, weight: .medium))
+                .font(.system(size: 15, weight: .semibold))
                 .foregroundStyle(AppColor.textPrimary)
-                .frame(width: 34, height: 34)
-                .background(AppColor.backgroundSecondary)
+                .frame(width: 38, height: 38)
+                .background(Color.white)
                 .clipShape(Circle())
-                .shadow(color: Color.black.opacity(0.04), radius: 4, x: 0, y: 1)
+                .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
         }
+        .buttonStyle(.plain)
     }
 
-    // MARK: - Metric Formatted Values
+    // MARK: - Calendar Picker Bottom Sheet (Matching Image 2)
+
+    private var calendarPickerSheet: some View {
+        VStack(spacing: 0) {
+            Text("Pilih Tanggal")
+                .font(.system(size: 17, weight: .bold))
+                .foregroundStyle(AppColor.textPrimary)
+                .padding(.top, 20)
+                .padding(.bottom, 8)
+
+            DatePicker(
+                "",
+                selection: $tempCalendarDate,
+                displayedComponents: .date
+            )
+            .datePickerStyle(.wheel)
+            .labelsHidden()
+            .environment(\.locale, Locale(identifier: "id_ID"))
+            .frame(maxWidth: .infinity)
+
+            Spacer()
+
+            Button {
+                selectedDate = Calendar.current.startOfDay(for: tempCalendarDate)
+                showingCalendarPicker = false
+            } label: {
+                Text("Simpan")
+                    .font(AppTypography.buttonLabel)
+                    .foregroundStyle(Color.white)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 16)
+                    .background(AppColor.actionBlue)
+                    .clipShape(Capsule())
+            }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.bottom, AppSpacing.xl)
+        }
+        .background(Color.white)
+    }
+
+    // MARK: - Dynamic Metric Formatted Values
+
+    private var displayDateString: String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "id_ID")
+        formatter.dateFormat = "d MMM"
+        return formatter.string(from: selectedDate)
+    }
 
     private var heartRateDisplayValue: String {
-        if let hr = syncViewModel.healthRecord?.displayHeartRate, hr > 0 {
-            return "\(Int(hr))"
+        if isViewingToday {
+            if let hr = syncViewModel.healthRecord?.displayHeartRate {
+                return "\(Int(hr))"
+            }
+            return "72"
+        } else {
+            if let hr = historicalSummaryForSelectedDate?.latestHeartRate {
+                return "\(Int(hr))"
+            }
+            return "72"
         }
-        return "72"
     }
 
     private var heartRateSubtitle: String {
-        if let status = syncViewModel.healthRecord?.heartRateStatus, !status.isEmpty, status != "Belum ada data" {
-            return status
+        if isViewingToday {
+            return syncViewModel.healthRecord?.heartRateStatus ?? "Dalam rentang normal"
+        }
+        if let hr = historicalSummaryForSelectedDate?.latestHeartRate {
+            return hr < 55 ? "Cenderung Lambat" : (hr > 85 ? "Sedikit Meningkat" : "Dalam rentang normal")
         }
         return "Dalam rentang normal"
     }
 
     private var sleepDisplayValue: String {
-        if let s = syncViewModel.healthRecord?.sleepFormatted, s != "-" {
-            return s
+        if isViewingToday {
+            return syncViewModel.healthRecord?.sleepFormatted ?? "7j 40m"
+        }
+        if let s = historicalSummaryForSelectedDate?.sleepHours, s > 0 {
+            let hours = Int(s)
+            let mins = Int(((s - Double(hours)) * 60).rounded())
+            return "\(hours)j \(mins)m"
         }
         return "7j 40m"
     }
 
     private var sleepSubtitle: String {
-        if let status = syncViewModel.healthRecord?.sleepStatus, !status.isEmpty, status != "Belum ada data" {
-            return status
+        if isViewingToday {
+            return syncViewModel.healthRecord?.sleepStatus ?? "Kualitas tidur baik"
+        }
+        if let s = historicalSummaryForSelectedDate?.sleepHours, s > 0 {
+            return s >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih"
         }
         return "Kualitas tidur baik"
     }
 
     private var stepsDisplayValue: String {
-        if let st = syncViewModel.healthRecord?.stepFormatted, st != "-" {
-            return st
+        if isViewingToday {
+            return syncViewModel.healthRecord?.stepFormatted ?? "4.280"
+        }
+        if let st = historicalSummaryForSelectedDate?.stepCount {
+            let formatter = NumberFormatter()
+            formatter.numberStyle = .decimal
+            formatter.groupingSeparator = "."
+            return formatter.string(from: NSNumber(value: Int(st))) ?? "\(Int(st))"
         }
         return "4.280"
     }
 
     private var stepsSubtitle: String {
-        if let status = syncViewModel.healthRecord?.activityStatus, !status.isEmpty, status != "Belum ada data" {
-            return status
+        if isViewingToday {
+            return syncViewModel.healthRecord?.activityStatus ?? "Lebih baik dari biasanya"
+        }
+        if let st = historicalSummaryForSelectedDate?.stepCount {
+            return st >= 4000 ? "Lebih baik dari biasanya" : (st > 0 ? "Cenderung santai hari ini" : "Belum mulai beraktivitas")
         }
         return "Lebih baik dari biasanya"
     }
 
     private var summaryTitleText: String {
-        if let title = syncViewModel.healthRecord?.summaryTitle, !title.isEmpty, title != "Belum ada data" {
-            return title
+        if isViewingToday {
+            return syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil"
         }
-        return "Kondisi cukup stabil"
+        let hasData = (historicalSummaryForSelectedDate?.latestHeartRate != nil) ||
+                      (historicalSummaryForSelectedDate?.sleepHours != nil && historicalSummaryForSelectedDate!.sleepHours! > 0) ||
+                      (historicalSummaryForSelectedDate?.stepCount != nil)
+        return hasData ? (syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil") : "Kondisi cukup stabil"
     }
 
     private var summaryBodyText: String {
-        if let body = syncViewModel.healthRecord?.summaryBody, !body.isEmpty, !body.contains("belum tersedia") {
-            return body
+        if isViewingToday {
+            return syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
         }
-        return "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
+        let hasData = (historicalSummaryForSelectedDate?.latestHeartRate != nil) ||
+                      (historicalSummaryForSelectedDate?.sleepHours != nil && historicalSummaryForSelectedDate!.sleepHours! > 0) ||
+                      (historicalSummaryForSelectedDate?.stepCount != nil)
+        return hasData
+            ? (syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
+            : "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
     }
 
     private var heartRateChartValues: [CGFloat] {
@@ -282,7 +420,7 @@ struct HistoryView: View {
             let maxVal = pts.max() ?? 1
             return pts.map { CGFloat(maxVal > 0 ? $0 / maxVal : 0.5) }
         }
-        return [0.4, 0.7, 0.5, 0.9, 0.8, 0.6]
+        return [0.4, 0.6, 0.3, 0.9, 0.7, 1.0, 0.5]
     }
 
     private var sleepChartValues: [CGFloat] {
@@ -291,7 +429,7 @@ struct HistoryView: View {
             let maxVal = pts.max() ?? 1
             return pts.map { CGFloat(maxVal > 0 ? $0 / maxVal : 0.5) }
         }
-        return [0.3, 0.7, 0.4, 0.9, 0.8, 0.5]
+        return [0.3, 0.7, 0.4, 0.9, 0.8, 0.6, 0.5]
     }
 
     private var stepChartValues: [CGFloat] {
@@ -300,7 +438,31 @@ struct HistoryView: View {
             let maxVal = pts.max() ?? 1
             return pts.map { CGFloat(maxVal > 0 ? $0 / maxVal : 0.5) }
         }
-        return [0.4, 0.6, 0.5, 0.9, 0.8, 0.3]
+        return [0.4, 0.6, 0.5, 0.9, 0.8, 0.7, 0.3]
+    }
+
+    // MARK: - Child Empty State
+
+    private var childEmptyStateView: some View {
+        VStack(spacing: AppSpacing.sm) {
+            Spacer()
+                .frame(height: 140)
+
+            Text("Belum Ada Riwayat")
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color(.systemGray))
+                .multilineTextAlignment(.center)
+
+            Text("Hubungkan dengan akun orang tua di menu Beranda atau Akses untuk mulai memantau riwayat data kesehatan.")
+                .font(AppTypography.subheadlineRegular)
+                .foregroundStyle(Color(.systemGray2))
+                .multilineTextAlignment(.center)
+                .lineSpacing(3)
+                .padding(.horizontal, AppSpacing.xl)
+
+            Spacer()
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 

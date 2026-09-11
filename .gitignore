@@ -6,6 +6,7 @@ Arterious/Configuration/.env
 
 # AI Guidelines & Docs
 AGENTS.md
+.agents/
 docs/
 Arterious/docs/
 

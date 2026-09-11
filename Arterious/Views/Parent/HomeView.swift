@@ -68,10 +68,6 @@ struct HomeView: View {
                 ToolbarItem(placement: .topBarLeading) {
                     roleSwitcherMenu
                 }
-
-                ToolbarItem(placement: .topBarTrailing) {
-                    toggleModeButton
-                }
             }
             .sheet(isPresented: $showingShareSheet) {
                 ActivityViewController(items: [childInvitationMessage])

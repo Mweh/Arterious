@@ -7,7 +7,7 @@ struct ActivityDetailView: View {
     @Environment(SyncViewModel.self) private var syncViewModel
     @State private var selectedRange: TimeRangeOption = .week
 
-    private let activityBarColor = Color(hex: "F26430")
+    private let activityBarColor = Color(hex: "10B981")
 
     private struct DayActivityStep: Identifiable {
         let id = UUID()

@@ -12,7 +12,7 @@ struct SplashScreenView: View {
                 .ignoresSafeArea()
 
             VStack(spacing: AppSpacing.md) {
-                ArteriousLogoView(size: 96)
+                ArteriousLogoView()
                     .scaleEffect(isAnimating ? 1.0 : 0.9)
                     .opacity(isAnimating ? 1.0 : 0.0)
 

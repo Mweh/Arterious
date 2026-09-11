@@ -3,11 +3,10 @@ import SwiftUI
 /// Displays the Arterious brand logo using the official AppIcon asset from the Xcode Assets catalog.
 struct ArteriousLogoView: View {
 
-    var size: CGFloat = 64
     var cornerRadius: CGFloat? = nil
 
     var body: some View {
-        let radius = cornerRadius ?? (size * 0.22)
+        let radius = cornerRadius ?? (224 * 0.22)
 
         Group {
             if let uiImage = UIImage(named: "AppLogo") ?? UIImage(named: "AppIcon") ?? Bundle.main.appIcon {
@@ -19,7 +18,7 @@ struct ArteriousLogoView: View {
             }
         }
         .aspectRatio(contentMode: .fit)
-        .frame(width: size, height: size)
+        .frame(width: 224, height: 136)
         .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
         .shadow(color: Color.black.opacity(0.08), radius: 6, x: 0, y: 3)
     }
@@ -41,7 +40,7 @@ private extension Bundle {
 
 #Preview {
     VStack(spacing: 24) {
-        ArteriousLogoView(size: 96)
+        ArteriousLogoView()
         Text("Arterious")
             .font(.system(size: 28, weight: .bold))
     }

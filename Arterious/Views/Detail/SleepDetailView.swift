@@ -117,47 +117,73 @@ struct SleepDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                // Condition Summary
-                conditionHeader
+            VStack(spacing: 0) {
+                // MARK: - Upper Section (Pure White Canvas)
+                VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                    // Condition Summary
+                    conditionHeader
 
-                // Daily Sleep Score Card
-                dailyScoreSection
+                    // Daily Sleep Score Card
+                    dailyScoreSection
 
-                // Time Range Segmented Control
-                TimeRangePicker(selectedRange: $selectedRange)
+                    // Time Range Segmented Control
+                    TimeRangePicker(selectedRange: $selectedRange)
 
-                // Sleep Average Header
-                averageSleepHeader
+                    // Sleep Average Header
+                    averageSleepHeader
 
-                // Sleep Stages Stacked Bar Chart
-                sleepStagesChart
+                    // Sleep Stages Stacked Bar Chart
+                    sleepStagesChart
+                }
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.top, AppSpacing.md)
+                .padding(.bottom, AppSpacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white)
 
-                // Bottom Breakdown Rows
-                bottomBreakdownCards
+                // MARK: - Lower Section (Grouped Light Gray Background)
+                VStack(spacing: AppSpacing.md) {
+                    // Bottom Breakdown Rows
+                    bottomBreakdownCards
 
-                // Medical Disclaimer
-                MedicalDisclaimerView()
-                    .padding(.top, AppSpacing.sm)
+                    // Medical Disclaimer
+                    MedicalDisclaimerView()
+                        .padding(.top, AppSpacing.sm)
+                }
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.top, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.xxl)
+                .frame(maxWidth: .infinity)
+                .background(AppColor.backgroundPrimary)
             }
-            .padding(.horizontal, AppSpacing.lg)
-            .padding(.top, AppSpacing.sm)
-            .padding(.bottom, AppSpacing.xxl)
         }
-        .background(AppColor.backgroundPrimary.ignoresSafeArea(edges: .bottom))
+        .background {
+            VStack(spacing: 0) {
+                Color.white
+                    .frame(height: 550)
+                AppColor.backgroundPrimary
+            }
+            .ignoresSafeArea()
+        }
         .navigationBarBackButtonHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .toolbarBackground(Color.white, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(AppColor.actionBlue)
-                        .frame(width: 36, height: 36, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                 }
+                .buttonStyle(.plain)
             }
 
             ToolbarItem(placement: .principal) {

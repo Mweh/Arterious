@@ -78,44 +78,70 @@ struct ActivityDetailView: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                // Condition Header
-                conditionHeader
+            VStack(spacing: 0) {
+                // MARK: - Upper Section (Pure White Canvas)
+                VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                    // Condition Header
+                    conditionHeader
 
-                // Time Range Segmented Picker
-                TimeRangePicker(selectedRange: $selectedRange)
+                    // Time Range Segmented Picker
+                    TimeRangePicker(selectedRange: $selectedRange)
 
-                // Average Steps Header
-                averageHeader
+                    // Average Steps Header
+                    averageHeader
 
-                // Steps Bar Chart
-                activityChart
+                    // Steps Bar Chart
+                    activityChart
+                }
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.top, AppSpacing.md)
+                .padding(.bottom, AppSpacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.white)
 
-                // Bottom Summary Cards
-                bottomSummaryCards
+                // MARK: - Lower Section (Grouped Light Gray Background)
+                VStack(spacing: AppSpacing.md) {
+                    // Bottom Summary Cards
+                    bottomSummaryCards
 
-                // Medical Disclaimer
-                MedicalDisclaimerView()
-                    .padding(.top, AppSpacing.sm)
+                    // Medical Disclaimer
+                    MedicalDisclaimerView()
+                        .padding(.top, AppSpacing.sm)
+                }
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.top, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.xxl)
+                .frame(maxWidth: .infinity)
+                .background(AppColor.backgroundPrimary)
             }
-            .padding(.horizontal, AppSpacing.lg)
-            .padding(.top, AppSpacing.sm)
-            .padding(.bottom, AppSpacing.xxl)
         }
-        .background(AppColor.backgroundPrimary.ignoresSafeArea(edges: .bottom))
+        .background {
+            VStack(spacing: 0) {
+                Color.white
+                    .frame(height: 550)
+                AppColor.backgroundPrimary
+            }
+            .ignoresSafeArea()
+        }
         .navigationBarBackButtonHidden(true)
+        .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
+        .toolbarBackground(Color.white, for: .navigationBar)
+        .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 17, weight: .semibold))
-                        .foregroundStyle(AppColor.actionBlue)
-                        .frame(width: 36, height: 36, alignment: .leading)
-                        .contentShape(Rectangle())
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .frame(width: 36, height: 36)
+                        .background(Color.white)
+                        .clipShape(Circle())
+                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
                 }
+                .buttonStyle(.plain)
             }
 
             ToolbarItem(placement: .principal) {

@@ -58,7 +58,7 @@ struct AddAccessSheet: View {
                     HStack {
                         Spacer()
 
-                        Text("Add Access")
+                        Text("Tambah Akses")
                             .font(AppTypography.bodySemibold)
                             .foregroundStyle(AppColor.textPrimary)
 
@@ -169,7 +169,7 @@ struct AddAccessSheet: View {
                 .font(.system(size: 16))
                 .foregroundStyle(AppColor.textSecondary)
 
-            TextField("Enter Contact Name", text: $searchText)
+            TextField("Masukkan nama kontak", text: $searchText)
                 .font(AppTypography.bodyRegular)
                 .foregroundStyle(AppColor.textPrimary)
 

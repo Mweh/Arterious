@@ -7,12 +7,14 @@ struct HomeView: View {
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = true
     @AppStorage("userRole") private var userRole: String = UserRole.parent.rawValue
 
-    @State private var hasConnectedParent: Bool = true
-    @State private var selectedParentName: String = "Nama Ortu 1"
+    @State private var hasConnectedParent: Bool = false
+    @State private var selectedParentName: String = "Orang Tua 1"
     @State private var showingShareSheet: Bool = false
     @State private var showingManualPasteSheet: Bool = false
     @State private var showingParentSelectorSheet: Bool = false
     @State private var manualPastedText: String = ""
+
+    private let parentOptions = ["Orang Tua 1", "Orang Tua 2", "Ibu", "Ayah"]
 
     private var isActuallyConnected: Bool {
         if userRole == UserRole.parent.rawValue {
@@ -47,24 +49,19 @@ struct HomeView: View {
 
     var body: some View {
         NavigationStack {
-            ZStack {
-                AppColor.backgroundPrimary.ignoresSafeArea()
-
-                ScrollView {
-                    VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                        if !isActuallyConnected {
-                            // Empty state: Requesting parent to share data
-                            emptyStateCard
-                        } else {
-                            // Active parent wellness monitoring dashboard
-                            connectedDashboardContent
-                        }
+            ScrollView {
+                VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                    if !isActuallyConnected {
+                        emptyStateCard
+                    } else {
+                        connectedDashboardContent
                     }
-                    .padding(.horizontal, AppSpacing.lg)
-                    .padding(.top, AppSpacing.sm)
-                    .padding(.bottom, AppSpacing.xxl)
                 }
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.top, AppSpacing.sm)
+                .padding(.bottom, AppSpacing.xxl)
             }
+            .background(AppColor.backgroundPrimary.ignoresSafeArea())
             .refreshable {
                 await syncViewModel.refreshIfNeeded()
             }
@@ -72,7 +69,7 @@ struct HomeView: View {
                 await syncViewModel.refreshIfNeeded()
                 syncViewModel.checkClipboardForInvitation()
             }
-            .navigationTitle("Home")
+            .navigationTitle("Beranda")
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     roleSwitcherMenu
@@ -138,29 +135,33 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Empty State Card
+    // MARK: - Empty State Card (role-aware)
 
     private var emptyStateCard: some View {
-        VStack(spacing: AppSpacing.lg) {
-            HealthOrbitIllustrationView()
-                .padding(.top, AppSpacing.md)
+        let isChild = userRole == UserRole.child.rawValue
 
-            VStack(spacing: AppSpacing.xs) {
-                Text("Stay close, even from afar")
-                    .font(.system(size: 20, weight: .bold))
+        return VStack(spacing: AppSpacing.xxl) {
+            HealthOrbitIllustrationView()
+                .padding(.top, AppSpacing.xxl)
+
+            VStack(spacing: AppSpacing.sm) {
+                Text("Tetap dekat, meski berjauhan")
+                    .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
                     .multilineTextAlignment(.center)
 
-                Text("Monitor pola kesehatan dan aktivitas orang tua dari jarak jauh, agar Anda tahu kapan harus menyapa mereka.")
-                    .font(AppTypography.subheadlineRegular)
+                Text(isChild
+                    ? "Pantau perubahan pola kesehatan dan aktivitas orang tua dari jauh, agar kamu tahu kapan waktunya mengecek kabar mereka"
+                    : "Bagikan data kesehatanmu dengan anggota keluarga agar mereka bisa memantau kondisimu dari jauh"
+                )
+                    .font(.system(size: 12, weight: .regular))
                     .foregroundStyle(AppColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
-                    .padding(.horizontal, AppSpacing.sm)
             }
+            .padding(.horizontal, AppSpacing.xxl)
 
             VStack(spacing: AppSpacing.sm) {
-                // Button 1: Share sheet
                 Button {
                     showingShareSheet = true
                 } label: {
@@ -168,33 +169,18 @@ struct HomeView: View {
                         Image(systemName: "square.and.arrow.up")
                             .font(.system(size: 15, weight: .medium))
 
-                        Text("Bagikan Tautan")
+                        Text(isChild ? "Minta Kontak Membagikan Data" : "Kirim Undangan")
                             .font(AppTypography.buttonLabel)
                     }
                     .foregroundStyle(Color.white)
-                    .frame(maxWidth: .infinity)
+                    .padding(.horizontal, AppSpacing.lg)
                     .padding(.vertical, 14)
                     .background(AppColor.actionBlue)
                     .clipShape(Capsule())
                 }
-
-                // Button 2: Paste link from parent
-                Button {
-                    handlePasteFromParent()
-                } label: {
-                    HStack(spacing: AppSpacing.xs) {
-                        Image(systemName: "doc.on.clipboard")
-                            .font(.system(size: 14, weight: .medium))
-
-                        Text("Tempel Tautan dari Orang Tua")
-                            .font(AppTypography.captionRegular)
-                    }
-                    .foregroundStyle(AppColor.textSecondary)
-                    .padding(.vertical, 6)
-                }
             }
-            .padding(.horizontal, AppSpacing.md)
-            .padding(.bottom, AppSpacing.md)
+            .padding(.horizontal, AppSpacing.xxl)
+            .padding(.bottom, AppSpacing.xxl)
         }
         .frame(maxWidth: .infinity)
         .background(AppColor.backgroundSecondary)
@@ -254,7 +240,7 @@ struct HomeView: View {
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
 
-    // MARK: - Parent Selector Sheet (Matching Screenshot 2)
+    // MARK: - Parent Selector Sheet
 
     private var parentSelectorSheet: some View {
         VStack(spacing: 0) {
@@ -266,7 +252,6 @@ struct HomeView: View {
                 .padding(.bottom, AppSpacing.lg)
 
             VStack(spacing: 0) {
-                // Parent 1 (active)
                 Button {
                     selectedParentName = syncViewModel.parentName.isEmpty ? "Nama Ortu 1" : syncViewModel.parentName
                     showingParentSelectorSheet = false
@@ -288,7 +273,6 @@ struct HomeView: View {
 
                 Divider()
 
-                // Parent 2
                 Button {
                     selectedParentName = syncViewModel.secondaryParentName ?? "Nama Ortu 2"
                     showingParentSelectorSheet = false
@@ -348,58 +332,32 @@ struct HomeView: View {
                 Spacer()
             }
 
-            // "Today's Summary" Blue Tinted Card with direct access to Caregiver AI Insights
-            NavigationLink {
-                LLMInsightView()
-            } label: {
-                VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                    HStack {
-                        Text("Today's Summary")
-                            .font(AppTypography.subheadlineRegular)
-                            .foregroundStyle(AppColor.textSecondary)
+            // "Ringkasan Hari Ini" Blue Tinted Card
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                Text("Ringkasan Hari Ini")
+                    .font(AppTypography.subheadlineRegular)
+                    .foregroundStyle(AppColor.textSecondary)
 
-                        Spacer()
+                Text(syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil")
+                    .font(.system(size: 20, weight: .bold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .padding(.top, 1)
 
-                        HStack(spacing: 4) {
-                            Image(systemName: isUsingAIEngine ? "sparkles" : "doc.text.magnifyingglass")
-                                .font(.system(size: 13, weight: .semibold))
-                            Text(isUsingAIEngine ? "AI Insight" : "Health Insight")
-                                .font(.system(size: 12, weight: .semibold))
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
-                        }
-                        .foregroundStyle(isUsingAIEngine ? AppColor.actionBlue : .teal)
-                    }
-
-                    Text(syncViewModel.healthRecord?.summaryTitle ?? "Perubahan Pola Perlu Diperhatikan")
-                        .font(.system(size: 20, weight: .bold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .padding(.top, 1)
-
-                    HStack(alignment: .top, spacing: 6) {
-                        Image(systemName: isUsingAIEngine ? "sparkles" : "doc.text.magnifyingglass")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(isUsingAIEngine ? .purple : .teal)
-                            .padding(.top, 2)
-
-                        Text(syncViewModel.healthRecord?.summaryBody ?? "Data detak jantung, tidur, dan langkah belum tercatat di Apple Health hari ini.")
-                            .font(AppTypography.bodyRegular)
-                            .foregroundStyle(AppColor.textSecondary)
-                            .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
+                Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
+                    .font(AppTypography.bodyRegular)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
-                }
-                .padding(AppSpacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(AppColor.Accent.blue12)
-                .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
             }
-            .buttonStyle(.plain)
+            .padding(AppSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.Accent.blue12)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
 
-            // Section "Today's Data"
+            // Section "Data Hari Ini"
             VStack(alignment: .leading, spacing: AppSpacing.md) {
-                Text("Today's Data")
+                Text("Data Hari Ini")
                     .font(.system(size: 19, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
 

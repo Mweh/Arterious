@@ -151,18 +151,20 @@ struct ShareDataView: View {
                 .padding(.bottom, AppSpacing.xxl)
             }
 
-            // Bottom Action: Exactly 1 button "Bagikan Tautan"
+            // Bottom Action: "Bagikan Tautan"
             VStack {
                 Button(action: handleShare) {
                     HStack(spacing: AppSpacing.xs) {
                         if isPreparingShare {
-                            ProgressView().tint(.white)
+                            ProgressView()
+                                .tint(.white)
                         } else {
                             Image(systemName: "square.and.arrow.up")
-                                .font(.system(size: 16, weight: .semibold))
-                            Text("Bagikan Tautan")
-                                .font(AppTypography.buttonLabel)
+                                .font(.system(size: 15, weight: .medium))
                         }
+
+                        Text("Bagikan Tautan")
+                            .font(AppTypography.buttonLabel)
                     }
                     .foregroundStyle(Color.white)
                     .frame(maxWidth: .infinity)
@@ -171,28 +173,86 @@ struct ShareDataView: View {
                     .clipShape(Capsule())
                 }
                 .disabled(isPreparingShare)
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.bottom, AppSpacing.lg)
             }
-            .background(AppColor.backgroundPrimary)
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.bottom, AppSpacing.xl)
         }
     }
+
+    // MARK: - Step 2: Invitation Sent Confirmation
+
+    private var invitationSentContent: some View {
+        VStack(spacing: AppSpacing.lg) {
+            Spacer()
+
+            // Checkmark animation
+            ZStack {
+                Circle()
+                    .fill(AppColor.Accent.green.opacity(0.12))
+                    .frame(width: 100, height: 100)
+
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 60))
+                    .foregroundStyle(AppColor.Accent.green)
+            }
+            .padding(.bottom, AppSpacing.xl)
+
+            // Content Copy
+            VStack(alignment: .center, spacing: AppSpacing.sm) {
+                Text("Bagikan Data")
+                    .font(.system(size: 24, weight: .bold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .multilineTextAlignment(.center)
+
+                Text("Memberikan akses memungkinkan orang yang kamu pilih untuk melihat tren kesehatanmu secara berkala dan menerima pembaruan saat ada perubahan.")
+                    .font(AppTypography.body)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, AppSpacing.xl)
+            }
+
+            Spacer()
+
+            // Actions
+            VStack(spacing: AppSpacing.sm) {
+                AppButton(
+                    title: "Lanjut",
+                    isFullWidth: true,
+                    action: onConfirm
+                )
+
+                Button(action: onDismiss) {
+                    Text("Batal")
+                        .font(AppTypography.buttonLabel)
+                        .foregroundStyle(AppColor.textPrimary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, AppSpacing.md)
+                        .background(Color(.systemGray6))
+                        .clipShape(Capsule())
+                }
+            }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.bottom, AppSpacing.xl)
+        }
+    }
+
+    // MARK: - Topic Row Helper
 
     private func topicRow(icon: String, color: Color, title: String, subtitle: String) -> some View {
         HStack(spacing: AppSpacing.md) {
             ZStack {
-                Circle()
-                    .fill(color.opacity(0.14))
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(color.opacity(0.12))
                     .frame(width: 36, height: 36)
 
                 Image(systemName: icon)
-                    .font(.system(size: 16))
+                    .font(.system(size: 16, weight: .semibold))
                     .foregroundStyle(color)
             }
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(title)
-                    .font(AppTypography.bodySemibold)
+                    .font(.system(size: 15, weight: .semibold))
                     .foregroundStyle(AppColor.textPrimary)
 
                 Text(subtitle)
@@ -204,55 +264,6 @@ struct ShareDataView: View {
         }
         .padding(.horizontal, AppSpacing.md)
         .padding(.vertical, 12)
-    }
-
-    // MARK: - Step 2: "Undangan Berbagi Terkirim" (Only Checklist Icon, No Initials)
-
-    private var invitationSentContent: some View {
-        VStack(spacing: 0) {
-            Spacer()
-
-            // Big Blue Checkmark Icon Only (Clean & Professional)
-            ZStack {
-                Circle()
-                    .fill(AppColor.actionBlue.opacity(0.12))
-                    .frame(width: 96, height: 96)
-
-                Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 64))
-                    .foregroundStyle(AppColor.actionBlue)
-            }
-            .padding(.bottom, AppSpacing.xl)
-
-            // Title & Description in Indonesian
-            VStack(spacing: AppSpacing.sm) {
-                Text("Undangan Berbagi Terkirim")
-                    .font(.system(size: 24, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .multilineTextAlignment(.center)
-
-                Text("Tautan berbagi telah disiapkan. Anggota keluarga dapat membuka tautan ini di aplikasi Arterious mereka.")
-                    .font(AppTypography.body)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .multilineTextAlignment(.center)
-                    .padding(.horizontal, AppSpacing.xl)
-            }
-
-            Spacer()
-
-            // Bottom "Selesai" Button
-            Button(action: onConfirm) {
-                Text("Selesai")
-                    .font(AppTypography.buttonLabel)
-                    .foregroundStyle(Color.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 16)
-                    .background(AppColor.actionBlue)
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, AppSpacing.lg)
-            .padding(.bottom, AppSpacing.xl)
-        }
     }
 
     // MARK: - Sharing Actions
@@ -318,3 +329,4 @@ struct ShareDataView: View {
     )
     .environment(SyncViewModel())
 }
+

@@ -1,7 +1,7 @@
 import SwiftUI
 import CloudKit
 
-/// The "Akses" tab screen matching Figma designs with edit mode, delete confirmation modal, and personal details navigation.
+/// The "Akses" tab screen with edit mode, delete confirmation modal, and personal details navigation.
 struct AccessView: View {
 
     @Environment(SyncViewModel.self) private var syncViewModel
@@ -51,10 +51,8 @@ struct AccessView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: AppSpacing.lg) {
                         if !isConnected {
-                            // Profile / Empty State (Figma Screenshot 3 Left)
                             emptyStateView
                         } else {
-                            // Profile / Default & Edit Mode (Figma Screenshot 1)
                             connectedAccountsCard
                         }
                     }
@@ -63,7 +61,6 @@ struct AccessView: View {
                     .padding(.bottom, AppSpacing.xxl)
                 }
 
-                // Delete Confirmation Modal (Figma Screenshot 1 Right)
                 if showingDeleteConfirmationModal {
                     deleteConfirmationModal
                 }
@@ -152,7 +149,6 @@ struct AccessView: View {
     private var toolbarActionButtons: some View {
         if isConnected {
             if isEditMode {
-                // In Edit Mode: Checkmark (✓) button to finish editing
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         isEditMode = false
@@ -167,7 +163,6 @@ struct AccessView: View {
                 }
             } else {
                 HStack(spacing: AppSpacing.sm) {
-                    // Plus (+) button
                     Button {
                         handlePlusButtonTapped()
                     } label: {
@@ -179,7 +174,6 @@ struct AccessView: View {
                             .clipShape(Circle())
                     }
 
-                    // Edit (pencil) button
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             isEditMode = true
@@ -195,7 +189,6 @@ struct AccessView: View {
                 }
             }
         } else {
-            // When empty, show Plus (+) button
             Button {
                 handlePlusButtonTapped()
             } label: {
@@ -209,7 +202,7 @@ struct AccessView: View {
         }
     }
 
-    // MARK: - Profile / Empty State
+    // MARK: - Empty State
 
     private var emptyStateView: some View {
         VStack(spacing: AppSpacing.xs) {
@@ -229,14 +222,12 @@ struct AccessView: View {
         .padding(.top, 160)
     }
 
-    // MARK: - Connected Accounts Card (Matching Figma Screenshot 1)
+    // MARK: - Connected Accounts Card
 
     private var connectedAccountsCard: some View {
         VStack(spacing: 0) {
-            // Row 1: Active Connected Account
             accountRow(name: partnerDisplayName)
 
-            // Optional Row 2: Secondary Parent
             if let sec = syncViewModel.secondaryParentName {
                 Divider()
                     .padding(.horizontal, AppSpacing.lg)
@@ -252,7 +243,6 @@ struct AccessView: View {
     @ViewBuilder
     private func accountRow(name: String) -> some View {
         if isEditMode {
-            // Edit Mode: Tapping shows the Delete Confirmation Modal
             Button {
                 itemToDelete = name
                 withAnimation(.easeInOut(duration: 0.2)) {
@@ -279,7 +269,6 @@ struct AccessView: View {
             }
             .buttonStyle(.plain)
         } else {
-            // Normal Mode: Tapping navigates to "Rincian" (Figma Screenshot 2)
             NavigationLink {
                 PersonalDetailsView(name: name)
             } label: {
@@ -301,7 +290,7 @@ struct AccessView: View {
         }
     }
 
-    // MARK: - Delete Confirmation Modal (Figma Screenshot 1 Right)
+    // MARK: - Delete Confirmation Modal
 
     private var deleteConfirmationModal: some View {
         ZStack {
@@ -325,7 +314,6 @@ struct AccessView: View {
                     .padding(.bottom, AppSpacing.sm)
 
                 HStack(spacing: AppSpacing.md) {
-                    // Ya (Destructive delete)
                     Button {
                         Task {
                             await syncViewModel.disconnect()
@@ -344,7 +332,6 @@ struct AccessView: View {
                             .clipShape(Capsule())
                     }
 
-                    // Tidak (Cancel)
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) {
                             showingDeleteConfirmationModal = false
@@ -433,7 +420,7 @@ struct AccessView: View {
     }
 }
 
-// MARK: - Personal Details View (Figma Screenshot 2: "Rincian")
+// MARK: - Personal Details View ("Rincian")
 
 struct PersonalDetailsView: View {
     let name: String
@@ -449,7 +436,6 @@ struct PersonalDetailsView: View {
             AppColor.backgroundPrimary.ignoresSafeArea()
 
             VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                // Custom Back Button
                 Button {
                     dismiss()
                 } label: {
@@ -466,7 +452,6 @@ struct PersonalDetailsView: View {
                     .font(.system(size: 32, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
 
-                // Grouped Card
                 VStack(spacing: 0) {
                     detailRow(label: "Nama", value: name.isEmpty ? "Actifed" : name)
                     Divider().padding(.horizontal, AppSpacing.lg)

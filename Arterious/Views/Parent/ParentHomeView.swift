@@ -7,15 +7,15 @@ struct MainContainerView: View {
 
     var body: some View {
         TabView(selection: $selectedTab) {
-            Tab("Home", systemImage: "house.fill", value: .home) {
+            Tab("Beranda", systemImage: "house.fill", value: .home) {
                 HomeView()
             }
 
-            Tab("History", systemImage: "clock.arrow.circlepath", value: .history) {
+            Tab("Riwayat", systemImage: "clock.arrow.circlepath", value: .history) {
                 HistoryView()
             }
 
-            Tab("Access", systemImage: "link", value: .access) {
+            Tab("Akses", systemImage: "link", value: .access) {
                 AccessView()
             }
         }

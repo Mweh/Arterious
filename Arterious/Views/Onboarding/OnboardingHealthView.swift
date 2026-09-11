@@ -1,49 +1,6 @@
 import SwiftUI
 import UserNotifications
 
-/// Shape representing the top-rounded phone / sheet mockup from the Sketch design.
-/// It draws the left border, rounded top corners, top border, and right border, running straight down without a bottom border.
-struct TopRoundedPhoneFrame: Shape {
-    var cornerRadius: CGFloat = 28
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        // Start at bottom-left
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        // Straight up left side
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cornerRadius))
-        // Top-left rounded corner
-        path.addArc(
-            center: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius),
-            radius: cornerRadius,
-            startAngle: .degrees(180),
-            endAngle: .degrees(270),
-            clockwise: false
-        )
-        // Across top
-        path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY))
-        // Top-right rounded corner
-        path.addArc(
-            center: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY + cornerRadius),
-            radius: cornerRadius,
-            startAngle: .degrees(270),
-            endAngle: .degrees(0),
-            clockwise: false
-        )
-        // Straight down right side
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        return path
-    }
-}
-
-/// Third step of onboarding: Requesting HealthKit and Notifications permissions with realistic mockup illustration.
-/// Meticulously aligned to the Figma/Sketch inspector:
-/// - Top: 80pt from screen top
-/// - Horizontal padding: 16pt
-/// - Stack spacing: 32pt
-/// - Title Font: SF Pro 22 Bold
-/// - Subtitle: 6-line SF Pro Regular in #8E8E93
-/// - Mockup: centered phone frame extending directly down to the button
 struct OnboardingHealthView: View {
 
     let onComplete: () -> Void
@@ -51,47 +8,50 @@ struct OnboardingHealthView: View {
     @State private var isConnecting = false
     @State private var errorMessage: String?
 
-    // Color tokens matching the Sketch
+    // MARK: - Colors
     private let subtitleColor = Color(hex: "8E8E93")
-    private let frameBorderColor = Color(hex: "6C6C70")
+    private let frameBorderColor = Color(hex: "8A8A8E")
+    private let pillBackgroundColor = Color(hex: "E4E4E6")
+    private let rowContainerBg = Color(hex: "F8F8F8")
+    private let rowTextColor = Color(hex: "BFBFBF")
+    private let rowDetailColor = Color(hex: "C7C7CC")
 
     var body: some View {
         VStack(spacing: 0) {
 
-            // MARK: - Main Stack (Top: 80pt, Horizontal: 16pt, Spacing: 32pt)
-            VStack(alignment: .leading, spacing: 32) {
+            // MARK: - Header
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Hubungkan ke Health")
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(Color.black)
 
-                // Header (Title SF Pro 22 Bold + Subtitle)
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Hubungkan ke Health")
-                        .font(.system(size: 22, weight: .bold)) // SF Pro 22 Bold
-                        .foregroundStyle(Color.black)
-
-                    Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
-                        .font(.system(size: 15.5, weight: .regular)) // SF Pro Regular
-                        .foregroundStyle(subtitleColor)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                // Health Access Graphic Mockup (centered, extending down to button)
-                healthAccessMockup
+                Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
+                    .font(.system(size: 18, weight: .regular))
+                    .foregroundStyle(subtitleColor)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.top, 20) // 59pt safe area + 20pt = ~80pt from screen top as per Sketch
-            .padding(.horizontal, 16) // Exactly 16pt padding from Sketch inspector
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 24)
+            .padding(.top, 75)
+
+            Spacer(minLength: 24)
+
+            // MARK: - Health Access Graphic Mockup
+            healthAccessMockup
+
+            Spacer(minLength: 24)
 
             // Error Banner if needed
             if let errorMessage {
                 Text(errorMessage)
                     .font(AppTypography.captionRegular)
                     .foregroundStyle(AppColor.caution)
-                    .padding(.top, 4)
+                    .padding(.bottom, 4)
             }
 
             // MARK: - Bottom Area (Button + Disclaimer)
             VStack(spacing: 12) {
-                // Hubungkan Button (Full width with 16pt horizontal padding)
                 Button(action: requestPermissionsAndProceed) {
                     HStack(spacing: AppSpacing.xs) {
                         if isConnecting {
@@ -100,7 +60,7 @@ struct OnboardingHealthView: View {
                                 .scaleEffect(0.8)
                         }
                         Text("Hubungkan")
-                            .font(.system(size: 17, weight: .semibold)) // SF Pro 17 Semibold
+                            .font(.system(size: 17, weight: .semibold))
                     }
                     .foregroundStyle(.white)
                     .frame(maxWidth: .infinity)
@@ -110,114 +70,102 @@ struct OnboardingHealthView: View {
                 }
                 .disabled(isConnecting)
 
-                // Medical Disclaimer Footnote (3 lines, SF Pro 11.5 Regular, Black)
                 VStack(spacing: 2) {
                     Text("Data kamu tidak pernah meninggalkan perangkat ini.")
                     Text("Arterious bukan pengganti saran medis profesional. Selalu")
                     Text("konsultasikan dengan dokter.")
                 }
-                .font(.system(size: 11.5, weight: .regular))
+                .font(.system(size: 12.5, weight: .regular))
                 .foregroundStyle(Color.black)
                 .multilineTextAlignment(.center)
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 8)
-            .padding(.bottom, 12)
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
         }
-        .background(Color.white.ignoresSafeArea())
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.white)
     }
 
     // MARK: - Health Access Mockup
 
     private var healthAccessMockup: some View {
         VStack(spacing: 0) {
-            VStack(spacing: 8) {
-                // Apple Health App Icon
-                ZStack {
-                    RoundedRectangle(cornerRadius: 14)
-                        .fill(Color.white)
-                        .frame(width: 52, height: 52)
-                        .shadow(color: Color.black.opacity(0.12), radius: 8, x: 0, y: 3)
+            // Apple Health App Icon
+            Image("AppleHealthIcon")
+                .resizable()
+                .scaledToFit()
+                .frame(width: 52, height: 52)
+                .shadow(color: Color.black.opacity(0.10), radius: 6, x: 0, y: 3)
+                .padding(.top, 20)
 
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 26))
-                        .foregroundStyle(
-                            LinearGradient(
-                                colors: [Color(hex: "FF2D55"), Color(hex: "FF3B30")],
-                                startPoint: .top,
-                                endPoint: .bottom
-                            )
-                        )
-                }
-                .padding(.top, 16)
+            Text("Health")
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(Color.black)
+                .padding(.top, 4)
 
-                Text("Health")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color.black)
-
-                // "Turn On All" pill
+            // "Turn On All" pill (Left-aligned text)
+            HStack {
                 Text("Turn On All")
-                    .font(.system(size: 13, weight: .semibold))
+                    .font(.system(size: 14, weight: .regular))
                     .foregroundStyle(AppColor.Brand.primaryBlue)
-                    .padding(.horizontal, 16)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 36)
-                    .background(Color(hex: "E5E5EA"))
-                    .clipShape(Capsule())
-                    .padding(.horizontal, 16)
-                    .padding(.top, 4)
-
-                // Permissions List Preview
-                VStack(spacing: 0) {
-                    permissionRow(title: "Heart Rate")
-                    Divider().padding(.leading, 8)
-                    permissionRow(title: "HRV")
-                    Divider().padding(.leading, 8)
-                    permissionRow(title: "Sleep")
-                    Divider().padding(.leading, 8)
-                    permissionRow(title: "Activity")
-                }
-                .padding(.horizontal, 14)
-                .padding(.top, 6)
-
-                // White flexible body extending down towards the button
-                Spacer(minLength: 0)
+                Spacer()
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .background(Color.white)
-            .clipShape(
-                UnevenRoundedRectangle(
-                    topLeadingRadius: 28,
-                    bottomLeadingRadius: 0,
-                    bottomTrailingRadius: 0,
-                    topTrailingRadius: 28
-                )
+            .padding(.horizontal, 16)
+            .frame(maxWidth: .infinity)
+            .frame(height: 36)
+            .background(pillBackgroundColor)
+            .clipShape(Capsule())
+            .padding(.horizontal, 14)
+            .padding(.top, 14)
+
+            // Permissions List Preview Card
+            VStack(spacing: 0) {
+                permissionRow(title: "Heart Rate")
+                Divider().padding(.leading, 12)
+                permissionRow(title: "HRV")
+                Divider().padding(.leading, 12)
+                permissionRow(title: "Sleep")
+                Divider().padding(.leading, 12)
+                permissionRow(title: "Activity")
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 12)
+            .background(
+                TopRoundedRectangle(cornerRadius: 14)
+                    .fill(rowContainerBg)
             )
-            .overlay(
-                TopRoundedPhoneFrame(cornerRadius: 28)
-                    .stroke(frameBorderColor, lineWidth: 2)
-            )
+            .padding(.horizontal, 14)
+            .padding(.top, 16)
+
+            Spacer(minLength: 0)
         }
-        .frame(maxWidth: 295)
-        .frame(maxWidth: .infinity)
+        .frame(width: 280, height: 315)
+        .background(
+            TopRoundedRectangle(cornerRadius: 24)
+                .fill(Color.white)
+        )
+        .overlay(
+            OpenCardShape(cornerRadius: 24)
+                .stroke(frameBorderColor, lineWidth: 3)
+        )
     }
 
     private func permissionRow(title: String) -> some View {
         HStack {
             Text(title)
                 .font(.system(size: 13, weight: .regular))
-                .foregroundStyle(subtitleColor)
+                .foregroundStyle(rowTextColor)
 
             Spacer()
 
             HStack(spacing: 4) {
                 Text("Detail")
                     .font(.system(size: 13, weight: .regular))
-                    .foregroundStyle(Color(hex: "C7C7CC"))
+                    .foregroundStyle(rowDetailColor)
 
                 Image(systemName: "chevron.right")
                     .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(Color(hex: "C7C7CC"))
+                    .foregroundStyle(rowDetailColor)
             }
         }
         .padding(.vertical, 7)
@@ -252,6 +200,63 @@ struct OnboardingHealthView: View {
                 onComplete()
             }
         }
+    }
+}
+
+// MARK: - Shapes for Open-Bottom Card
+
+private struct OpenCardShape: Shape {
+    var cornerRadius: CGFloat = 24
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cornerRadius))
+        path.addArc(
+            center: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(270),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        return path
+    }
+}
+
+private struct TopRoundedRectangle: Shape {
+    var cornerRadius: CGFloat = 24
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
+        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + cornerRadius))
+        path.addArc(
+            center: CGPoint(x: rect.minX + cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(180),
+            endAngle: .degrees(270),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY))
+        path.addArc(
+            center: CGPoint(x: rect.maxX - cornerRadius, y: rect.minY + cornerRadius),
+            radius: cornerRadius,
+            startAngle: .degrees(270),
+            endAngle: .degrees(0),
+            clockwise: false
+        )
+        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
+        path.closeSubpath()
+        return path
     }
 }
 

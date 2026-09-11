@@ -1,17 +1,18 @@
 import Foundation
 import HealthKit
 
-@MainActor
-final class HealthKitManager {
+final class HealthKitManager: @unchecked Sendable {
     static let shared = HealthKitManager()
     
-    private let healthStore = HKHealthStore()
+    let healthStore = HKHealthStore()
     
+    // MARK: - Read Types
     private let readTypes: Set<HKObjectType> = {
-        var types: Set<HKObjectType> = []
+        var types = Set<HKObjectType>()
+        
         let quantityIdentifiers: [HKQuantityTypeIdentifier] = [
-            .restingHeartRate,
             .heartRate,
+            .restingHeartRate,
             .heartRateVariabilitySDNN,
             .stepCount,
             .appleMoveTime,
@@ -34,7 +35,14 @@ final class HealthKitManager {
             }
         }
         
-        types.insert(HKSeriesType.heartbeat())
+        types.insert(HKObjectType.workoutType())
+        if let bioSex = HKObjectType.characteristicType(forIdentifier: .biologicalSex) {
+            types.insert(bioSex)
+        }
+        if let dob = HKObjectType.characteristicType(forIdentifier: .dateOfBirth) {
+            types.insert(dob)
+        }
+        
         return types
     }()
     
@@ -49,19 +57,52 @@ final class HealthKitManager {
     
     func fetchTodaySummary() async -> DailyHealthSummary {
         guard isHealthKitAvailable else {
-            return DailyHealthSummary.placeholder
+            return DailyHealthSummary.empty
         }
         
         async let heartAndHRV = fetchHeartAndHRVMetrics()
         async let sleep = fetchSleepMetrics()
         async let activity = fetchActivityMetrics()
+        async let latestHRData = fetchLatestHeartRateWithTime()
+        async let workoutData = fetchRecentWorkout()
         
         let (heartData, sleepData, activityData) = await (heartAndHRV, sleep, activity)
+        let (liveHR, liveHRDate) = await latestHRData
+        let (isWorkoutActive, workoutName) = await workoutData
+        
+        var sleepDetails: SleepDetails? = nil
+        if let sDuration = sleepData.duration, sDuration > 0 {
+            let totalMins = sDuration * 60.0
+            let awakeMins = sleepData.awakeMinutes ?? 0
+            let timeInBedMins = max(totalMins, totalMins + awakeMins)
+            let eff = sleepData.efficiency ?? (timeInBedMins > 0 ? (totalMins / timeInBedMins) * 100.0 : 88.4)
+            
+            let episodes = sleepData.awakeEpisodes.isEmpty
+                ? (awakeMins >= 5 ? [AwakeEpisode(startTimeFormatted: "02:30", durationMinutes: Int(awakeMins))] : [])
+                : sleepData.awakeEpisodes
+            
+            sleepDetails = SleepDetails(
+                bedtime: sleepData.bedtime,
+                wakeTime: sleepData.wakeTime,
+                totalSleepMinutes: totalMins,
+                timeInBedMinutes: timeInBedMins,
+                sleepEfficiency: min(100.0, eff),
+                awakeMinutes: awakeMins,
+                awakeEpisodes: episodes,
+                remMinutes: sleepData.remMinutes,
+                coreMinutes: sleepData.coreMinutes,
+                deepMinutes: sleepData.deepMinutes
+            )
+        }
         
         return DailyHealthSummary(
             date: Date(),
-            latestHeartRate: heartData.latestHR,
+            latestHeartRate: liveHR ?? heartData.latestHR,
+            latestHeartRateDate: liveHRDate,
+            isWorkoutActive: isWorkoutActive,
+            recentWorkoutName: workoutName,
             restingHeartRate: heartData.restingHR,
+            minHeartRate24h: nil,
             meanHeartRate24h: heartData.meanHR24h,
             heartRateSD24h: heartData.sdHR24h,
             maxHeartRate24h: heartData.maxHR24h,
@@ -73,6 +114,11 @@ final class HealthKitManager {
             deepSleepPercentage: sleepData.deepPercent,
             remSleepPercentage: sleepData.remPercent,
             sleepBedtimeSDMinutes: sleepData.bedtimeSD,
+            deepSleepMinutes: sleepData.deepMinutes,
+            remSleepMinutes: sleepData.remMinutes,
+            coreSleepMinutes: sleepData.coreMinutes,
+            awakeSleepMinutes: sleepData.awakeMinutes,
+            sleepDetails: sleepDetails,
             stepCount: activityData.steps,
             activeMinutesToday: activityData.activeMins,
             exerciseMinutesWeek: activityData.exerciseMinsWeek,
@@ -83,7 +129,7 @@ final class HealthKitManager {
     
     func fetchHistoricalSummaries(days: Int = 14) async -> [DailyHealthSummary] {
         guard isHealthKitAvailable else {
-            return generateMockHistory(days: days)
+            return []
         }
         
         let calendar = Calendar.current
@@ -91,18 +137,114 @@ final class HealthKitManager {
         let today = calendar.startOfDay(for: Date())
         
         for dayOffset in (1...days).reversed() {
-            guard let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) else { continue }
-            let summary = await fetchSummary(for: date)
-            summaries.append(summary)
+            if let date = calendar.date(byAdding: .day, value: -dayOffset, to: today) {
+                let summary = await fetchSummary(for: date)
+                summaries.append(summary)
+            }
         }
         
-        let hasAnyData = summaries.contains { $0.stepCount != nil || $0.restingHeartRate != nil }
-        return hasAnyData ? summaries : generateMockHistory(days: days)
+        return summaries
     }
     
-    // MARK: - Private HealthKit Queries
+    // MARK: - Live Observation & Helpers for Rule Engine / LLM
     
-    private struct HeartAndHRVData {
+    func fetchLatestHeartRateWithTime() async -> (value: Double?, timestamp: Date?) {
+        guard isHealthKitAvailable,
+              let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            return (nil, nil)
+        }
+        
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let calendar = Calendar.current
+        let startOfDay = calendar.startOfDay(for: Date())
+        let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: Date(), options: [])
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: heartRateType,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: [sortDescriptor]
+            ) { _, samples, _ in
+                guard let sample = samples?.first as? HKQuantitySample else {
+                    continuation.resume(returning: (nil, nil))
+                    return
+                }
+                let unit = HKUnit.count().unitDivided(by: .minute())
+                let bpm = sample.quantity.doubleValue(for: unit)
+                continuation.resume(returning: (bpm, sample.endDate))
+            }
+            self.healthStore.execute(query)
+        }
+    }
+    
+    func fetchRecentWorkout() async -> (isActive: Bool, workoutName: String?) {
+        guard isHealthKitAvailable else { return (false, nil) }
+        
+        let workoutType = HKObjectType.workoutType()
+        let calendar = Calendar.current
+        let now = Date()
+        guard let twoHoursAgo = calendar.date(byAdding: .hour, value: -2, to: now) else {
+            return (false, nil)
+        }
+        
+        let predicate = HKQuery.predicateForSamples(withStart: twoHoursAgo, end: now, options: [])
+        let sortDescriptor = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        
+        return await withCheckedContinuation { continuation in
+            let query = HKSampleQuery(
+                sampleType: workoutType,
+                predicate: predicate,
+                limit: 1,
+                sortDescriptors: [sortDescriptor]
+            ) { _, samples, _ in
+                guard let workout = samples?.first as? HKWorkout else {
+                    continuation.resume(returning: (false, nil))
+                    return
+                }
+                let isRecent = abs(workout.endDate.timeIntervalSince(now)) < 900 || workout.endDate >= now
+                let name = self.formatWorkoutType(workout.workoutActivityType)
+                continuation.resume(returning: (isRecent, name))
+            }
+            self.healthStore.execute(query)
+        }
+    }
+    
+    nonisolated private func formatWorkoutType(_ type: HKWorkoutActivityType) -> String {
+        switch type {
+        case .walking: return "Jalan Santai / Kaki"
+        case .running: return "Lari"
+        case .cycling: return "Bersepeda"
+        case .traditionalStrengthTraining, .functionalStrengthTraining: return "Latihan Kekuatan"
+        case .yoga, .mindAndBody: return "Yoga / Relaksasi"
+        case .swimming: return "Berenang"
+        default: return "Olahraga Fisik"
+        }
+    }
+    
+    func startHeartRateObserver(onUpdate: @escaping @Sendable () -> Void) -> HKQuery? {
+        guard isHealthKitAvailable,
+              let heartRateType = HKQuantityType.quantityType(forIdentifier: .heartRate) else {
+            return nil
+        }
+        
+        let query = HKObserverQuery(sampleType: heartRateType, predicate: nil) { _, completionHandler, error in
+            defer { completionHandler() }
+            if error == nil {
+                onUpdate()
+            }
+        }
+        healthStore.execute(query)
+        return query
+    }
+    
+    func stopHeartRateObserver(_ query: HKQuery) {
+        healthStore.stop(query)
+    }
+
+    // MARK: - Private Metrics Extraction
+    
+    private struct HeartMetricsData {
         var latestHR: Double?
         var restingHR: Double?
         var meanHR24h: Double?
@@ -113,58 +255,50 @@ final class HealthKitManager {
         var hrvDrop: Double?
     }
     
-    private func fetchHeartAndHRVMetrics() async -> HeartAndHRVData {
-        var data = HeartAndHRVData()
-        let now = Date()
+    private func fetchHeartAndHRVMetrics() async -> HeartMetricsData {
+        var data = HeartMetricsData()
         let calendar = Calendar.current
-        let start24h = calendar.date(byAdding: .hour, value: -24, to: now)!
-        let start7d = calendar.date(byAdding: .day, value: -7, to: now)!
-        let start14d = calendar.date(byAdding: .day, value: -14, to: now)!
+        let now = Date()
+        let startOfDay = calendar.startOfDay(for: now)
+        let twentyFourHoursAgo = now.addingTimeInterval(-24 * 3600)
+        let fourteenDaysAgo = calendar.date(byAdding: .day, value: -14, to: startOfDay) ?? startOfDay
         
-        // 1. Resting HR
-        if let rhrType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) {
-            data.restingHR = await fetchLatestQuantitySample(for: rhrType, unit: HKUnit.count().unitDivided(by: .minute()))
-        }
+        let bpmUnit = HKUnit.count().unitDivided(by: .minute())
+        let msUnit = HKUnit.secondUnit(with: .milli)
         
-        // 2, 3, 4. Heart Rate 24h (Latest, Mean, SD, Max)
         if let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
-            data.latestHR = await fetchLatestQuantitySample(for: hrType, unit: HKUnit.count().unitDivided(by: .minute()))
+            data.latestHR = await fetchLatestQuantitySample(for: hrType, unit: bpmUnit)
             
-            var hrSamples = await fetchQuantitySamples(for: hrType, start: start24h, end: now)
-            if hrSamples.isEmpty {
-                hrSamples = await fetchQuantitySamples(for: hrType, start: start7d, end: now)
-            }
-            let hrValues = hrSamples.map { $0.quantity.doubleValue(for: HKUnit.count().unitDivided(by: .minute())) }
-            if !hrValues.isEmpty {
-                let mean = hrValues.reduce(0, +) / Double(hrValues.count)
+            let samples24h = await fetchQuantitySamples(for: hrType, start: twentyFourHoursAgo, end: now)
+            if !samples24h.isEmpty {
+                let values = samples24h.map { $0.quantity.doubleValue(for: bpmUnit) }
+                let mean = values.reduce(0, +) / Double(values.count)
                 data.meanHR24h = mean
-                data.maxHR24h = hrValues.max()
-                if hrValues.count > 1 {
-                    let variance = hrValues.reduce(0) { $0 + pow($1 - mean, 2) } / Double(hrValues.count - 1)
-                    data.sdHR24h = sqrt(variance)
-                } else {
-                    data.sdHR24h = 0.0
-                }
+                
+                let variance = values.reduce(0) { $0 + pow($1 - mean, 2) } / Double(values.count)
+                data.sdHR24h = sqrt(variance)
+                data.maxHR24h = values.max()
             }
         }
         
-        // 5, 7. HRV SDNN (14-day mean & Drop from Baseline)
+        if let restingType = HKQuantityType.quantityType(forIdentifier: .restingHeartRate) {
+            data.restingHR = await fetchLatestQuantitySample(for: restingType, unit: bpmUnit)
+        }
+        
         if let hrvType = HKQuantityType.quantityType(forIdentifier: .heartRateVariabilitySDNN) {
-            let hrvSamples = await fetchQuantitySamples(for: hrvType, start: start14d, end: now)
-            let hrvValues = hrvSamples.map { $0.quantity.doubleValue(for: .secondUnit(with: .milli)) }
-            if !hrvValues.isEmpty {
-                let mean14d = hrvValues.reduce(0, +) / Double(hrvValues.count)
+            let hrvSamples14d = await fetchQuantitySamples(for: hrvType, start: fourteenDaysAgo, end: now)
+            if !hrvSamples14d.isEmpty {
+                let values = hrvSamples14d.map { $0.quantity.doubleValue(for: msUnit) }
+                let mean14d = values.reduce(0, +) / Double(values.count)
                 data.hrvSDNN14d = mean14d
-                if let latest = hrvValues.last {
-                    data.hrvDrop = latest - mean14d
+                
+                let hrvSamplesToday = await fetchQuantitySamples(for: hrvType, start: startOfDay, end: now)
+                if let latestToday = hrvSamplesToday.last?.quantity.doubleValue(for: msUnit) {
+                    data.hrvDrop = mean14d - latestToday
                 }
-            } else if let latest = await fetchLatestQuantitySample(for: hrvType, unit: .secondUnit(with: .milli)) {
-                data.hrvSDNN14d = latest
-                data.hrvDrop = 0.0
             }
         }
         
-        // 6. HRV RMSSD (Short-Term from Beat-to-Beat series)
         let calculatedRMSSD = await fetchRMSSDFromHeartbeatSeries()
         if let rmssd = calculatedRMSSD {
             data.hrvRMSSD = rmssd
@@ -234,19 +368,33 @@ final class HealthKitManager {
         var deepPercent: Double?
         var remPercent: Double?
         var bedtimeSD: Double?
+        var deepMinutes: Double?
+        var remMinutes: Double?
+        var coreMinutes: Double?
+        var awakeMinutes: Double?
+        var bedtime: Date?
+        var wakeTime: Date?
+        var awakeEpisodes: [AwakeEpisode] = []
     }
     
+    private func fetchRecentSleepSamples(limit: Int = 300) async -> [HKCategorySample] {
+        guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return [] }
+        return await withCheckedContinuation { continuation in
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: sleepType, predicate: nil, limit: limit, sortDescriptors: [sort]) { _, samples, _ in
+                let result = (samples as? [HKCategorySample]) ?? []
+                continuation.resume(returning: result)
+            }
+            self.healthStore.execute(query)
+        }
+    }
+
     private func fetchSleepMetrics() async -> SleepData {
         var data = SleepData()
-        guard let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) else { return data }
-        
-        let now = Date()
-        let calendar = Calendar.current
-        let start14d = calendar.date(byAdding: .day, value: -14, to: now)!
-        
-        let samples = await fetchCategorySamples(for: sleepType, start: start14d, end: now)
+        let samples = await fetchRecentSleepSamples()
         guard !samples.isEmpty else { return data }
         
+        let calendar = Calendar.current
         var sleepSessions: [[HKCategorySample]] = []
         let sortedSamples = samples.sorted(by: { $0.startDate < $1.startDate })
         var currentSession: [HKCategorySample] = []
@@ -265,34 +413,64 @@ final class HealthKitManager {
         }
         if !currentSession.isEmpty { sleepSessions.append(currentSession) }
         
-        if let latestSession = sleepSessions.last {
+        if let latestSession = sleepSessions.last,
+           let sessionEnd = latestSession.last?.endDate {
+            // Cutoff: sleep session must have ended within the last 28 hours to be considered today's / last night's sleep
+            let cutoff = calendar.date(byAdding: .hour, value: -28, to: Date()) ?? Date().addingTimeInterval(-28 * 3600)
+            guard sessionEnd >= cutoff else {
+                // Sleep is older than last night -> no sleep data recorded yet for today
+                return data
+            }
+            
             var inBedDuration: TimeInterval = 0
             var totalAsleepDuration: TimeInterval = 0
             var deepDuration: TimeInterval = 0
             var remDuration: TimeInterval = 0
+            var coreDuration: TimeInterval = 0
+            var awakeDuration: TimeInterval = 0
+            
+            data.bedtime = latestSession.first?.startDate
+            data.wakeTime = latestSession.last?.endDate
+            
+            let timeFormatter = DateFormatter()
+            timeFormatter.dateFormat = "HH:mm"
+            var episodes: [AwakeEpisode] = []
             
             for sample in latestSession {
                 let duration = sample.endDate.timeIntervalSince(sample.startDate)
                 let val = HKCategoryValueSleepAnalysis(rawValue: sample.value)
                 if val == .inBed {
                     inBedDuration += duration
+                } else if val == .awake {
+                    awakeDuration += duration
+                    let mins = Int(duration / 60)
+                    if mins >= 1 {
+                        episodes.append(AwakeEpisode(startTimeFormatted: timeFormatter.string(from: sample.startDate), durationMinutes: mins))
+                    }
                 } else {
                     if val == .asleepUnspecified || val == .asleepCore || val == .asleepDeep || val == .asleepREM {
                         totalAsleepDuration += duration
                     }
                     if val == .asleepDeep { deepDuration += duration }
                     if val == .asleepREM { remDuration += duration }
+                    if val == .asleepCore { coreDuration += duration }
                 }
             }
             if inBedDuration == 0, let first = latestSession.first, let last = latestSession.last {
                 inBedDuration = last.endDate.timeIntervalSince(first.startDate)
             }
-            data.duration = totalAsleepDuration / 3600.0
-            if inBedDuration > 0 { data.efficiency = min(100.0, (totalAsleepDuration / inBedDuration) * 100.0) }
+            let effectiveDuration = totalAsleepDuration > 0 ? totalAsleepDuration : inBedDuration
+            data.duration = effectiveDuration / 3600.0
+            if inBedDuration > 0 { data.efficiency = min(100.0, (effectiveDuration / inBedDuration) * 100.0) }
             if totalAsleepDuration > 0 {
                 data.deepPercent = (deepDuration / totalAsleepDuration) * 100.0
                 data.remPercent = (remDuration / totalAsleepDuration) * 100.0
             }
+            data.deepMinutes = deepDuration > 0 ? deepDuration / 60.0 : nil
+            data.remMinutes = remDuration > 0 ? remDuration / 60.0 : nil
+            data.coreMinutes = coreDuration > 0 ? coreDuration / 60.0 : nil
+            data.awakeMinutes = awakeDuration > 0 ? awakeDuration / 60.0 : nil
+            data.awakeEpisodes = episodes
         }
         
         var bedtimeMinutes: [Double] = []
@@ -330,24 +508,18 @@ final class HealthKitManager {
         let calendar = Calendar.current
         let now = Date()
         let startOfDay = calendar.startOfDay(for: now)
-        let startOfWeek = calendar.date(byAdding: .day, value: -7, to: now)!
+        let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: startOfDay) ?? startOfDay
         
         if let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
             data.steps = await fetchCumulativeSum(for: stepType, start: startOfDay, end: now, unit: .count())
         }
         
-        if let moveTimeType = HKQuantityType.quantityType(forIdentifier: .appleMoveTime) {
-            var activeMins = await fetchCumulativeSum(for: moveTimeType, start: startOfDay, end: now, unit: .minute())
-            if activeMins == nil || activeMins == 0 {
-                if let exerciseType = HKQuantityType.quantityType(forIdentifier: .appleExerciseTime) {
-                    activeMins = await fetchCumulativeSum(for: exerciseType, start: startOfDay, end: now, unit: .minute())
-                }
-            }
-            data.activeMins = activeMins
+        if let moveType = HKQuantityType.quantityType(forIdentifier: .appleMoveTime) {
+            data.activeMins = await fetchCumulativeSum(for: moveType, start: startOfDay, end: now, unit: .minute())
         }
         
         if let exerciseType = HKQuantityType.quantityType(forIdentifier: .appleExerciseTime) {
-            data.exerciseMinsWeek = await fetchCumulativeSum(for: exerciseType, start: startOfWeek, end: now, unit: .minute())
+            data.exerciseMinsWeek = await fetchCumulativeSum(for: exerciseType, start: sevenDaysAgo, end: now, unit: .minute())
         }
         
         if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
@@ -365,9 +537,7 @@ final class HealthKitManager {
     private func fetchSummary(for date: Date) async -> DailyHealthSummary {
         let calendar = Calendar.current
         let startOfDay = calendar.startOfDay(for: date)
-        guard let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) else {
-            return DailyHealthSummary(date: date)
-        }
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay)!
         let dayPredicate = HKQuery.predicateForSamples(withStart: startOfDay, end: endOfDay, options: [])
         
         var stepCount: Double?
@@ -378,6 +548,25 @@ final class HealthKitManager {
                 }
                 self.healthStore.execute(query)
             }
+        }
+        
+        var hrAvg: Double?
+        var hrMin: Double?
+        var hrMax: Double?
+        if let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) {
+            let hrStats = await withCheckedContinuation { continuation in
+                let query = HKStatisticsQuery(quantityType: hrType, quantitySamplePredicate: dayPredicate, options: [.discreteAverage, .discreteMin, .discreteMax]) { _, stats, _ in
+                    let unit = HKUnit.count().unitDivided(by: .minute())
+                    let avg = stats?.averageQuantity()?.doubleValue(for: unit)
+                    let min = stats?.minimumQuantity()?.doubleValue(for: unit)
+                    let max = stats?.maximumQuantity()?.doubleValue(for: unit)
+                    continuation.resume(returning: (avg, min, max))
+                }
+                self.healthStore.execute(query)
+            }
+            hrAvg = hrStats.0
+            hrMin = hrStats.1
+            hrMax = hrStats.2
         }
         
         var restingHR: Double?
@@ -391,17 +580,99 @@ final class HealthKitManager {
             }
         }
         
+        var sleepHours: Double?
+        var deepMins: Double?
+        var remMins: Double?
+        var coreMins: Double?
+        var awakeMins: Double?
+        var sleepDetails: SleepDetails?
+        if let sleepType = HKCategoryType.categoryType(forIdentifier: .sleepAnalysis) {
+            let startSleep = calendar.date(byAdding: .hour, value: -6, to: startOfDay)!
+            let endSleep = calendar.date(byAdding: .hour, value: 18, to: startOfDay)!
+            let samples = await fetchCategorySamples(for: sleepType, start: startSleep, end: endSleep)
+            var totalAsleep: TimeInterval = 0
+            var inBed: TimeInterval = 0
+            var deep: TimeInterval = 0
+            var rem: TimeInterval = 0
+            var core: TimeInterval = 0
+            var awake: TimeInterval = 0
+            for sample in samples {
+                let duration = sample.endDate.timeIntervalSince(sample.startDate)
+                let val = HKCategoryValueSleepAnalysis(rawValue: sample.value)
+                if val == .inBed {
+                    inBed += duration
+                } else if val == .awake {
+                    awake += duration
+                } else if val == .asleepUnspecified || val == .asleepCore || val == .asleepDeep || val == .asleepREM {
+                    totalAsleep += duration
+                    if val == .asleepDeep { deep += duration }
+                    if val == .asleepREM { rem += duration }
+                    if val == .asleepCore { core += duration }
+                }
+            }
+            let effective = totalAsleep > 0 ? totalAsleep : inBed
+            if effective > 0 {
+                sleepHours = effective / 3600.0
+            }
+            deepMins = deep > 0 ? deep / 60.0 : nil
+            remMins = rem > 0 ? rem / 60.0 : nil
+            coreMins = core > 0 ? core / 60.0 : nil
+            awakeMins = awake > 0 ? awake / 60.0 : nil
+            
+            var histDetails: SleepDetails? = nil
+            if effective > 0 {
+                let totalMins = effective / 60.0
+                let awakeTotalMins = awake / 60.0
+                let timeInBedMins = max(totalMins, inBed > 0 ? inBed / 60.0 : totalMins + awakeTotalMins)
+                let eff = (totalMins / max(1, timeInBedMins)) * 100.0
+                let sortedSamples = samples.sorted(by: { $0.startDate < $1.startDate })
+                
+                let timeFormatter = DateFormatter()
+                timeFormatter.dateFormat = "HH:mm"
+                let histAwakeEpisodes = sortedSamples.compactMap { s -> AwakeEpisode? in
+                    guard HKCategoryValueSleepAnalysis(rawValue: s.value) == .awake else { return nil }
+                    let d = Int(s.endDate.timeIntervalSince(s.startDate) / 60)
+                    guard d >= 1 else { return nil }
+                    return AwakeEpisode(startTimeFormatted: timeFormatter.string(from: s.startDate), durationMinutes: d)
+                }
+                
+                histDetails = SleepDetails(
+                    bedtime: sortedSamples.first?.startDate,
+                    wakeTime: sortedSamples.last?.endDate,
+                    totalSleepMinutes: totalMins,
+                    timeInBedMinutes: timeInBedMins,
+                    sleepEfficiency: min(100.0, eff),
+                    awakeMinutes: awakeTotalMins,
+                    awakeEpisodes: histAwakeEpisodes,
+                    remMinutes: remMins,
+                    coreMinutes: coreMins,
+                    deepMinutes: deepMins
+                )
+            }
+            sleepDetails = histDetails
+        }
+        
         return DailyHealthSummary(
             date: date,
+            latestHeartRate: hrAvg ?? restingHR,
             restingHeartRate: restingHR,
+            minHeartRate24h: hrMin,
+            maxHeartRate24h: hrMax,
+            sleepHours: sleepHours,
+            deepSleepMinutes: deepMins,
+            remSleepMinutes: remMins,
+            coreSleepMinutes: coreMins,
+            awakeSleepMinutes: awakeMins,
+            sleepDetails: sleepDetails,
             stepCount: stepCount
         )
     }
     
     // MARK: - Query Helpers
+    
     private func fetchLatestQuantitySample(for type: HKQuantityType, unit: HKUnit) async -> Double? {
         return await withCheckedContinuation { continuation in
-            let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: false)
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
             let query = HKSampleQuery(sampleType: type, predicate: nil, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
                 guard let sample = samples?.first as? HKQuantitySample else {
                     continuation.resume(returning: nil)
@@ -457,19 +728,25 @@ final class HealthKitManager {
             healthStore.execute(query)
         }
     }
-    
-    private func generateMockHistory(days: Int) -> [DailyHealthSummary] {
-        let calendar = Calendar.current
-        let today = calendar.startOfDay(for: Date())
-        return (1...days).reversed().map { offset in
-            let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
-            return DailyHealthSummary(
-                date: date,
-                latestHeartRate: Double.random(in: 68...75),
-                restingHeartRate: Double.random(in: 60...66),
-                sleepHours: Double.random(in: 6.5...8.0),
-                stepCount: Double.random(in: 3500...6000)
-            )
+
+    // MARK: - User Profile (Gender & Age)
+
+    func fetchUserProfile() -> (gender: String, age: Int?) {
+        guard isHealthKitAvailable else { return ("-", nil) }
+        var genderStr = "-"
+        if let sex = try? healthStore.biologicalSex() {
+            switch sex.biologicalSex {
+            case .male: genderStr = "Laki-Laki"
+            case .female: genderStr = "Perempuan"
+            case .other: genderStr = "Lainnya"
+            default: break
+            }
         }
+        var ageVal: Int? = nil
+        if let dob = try? healthStore.dateOfBirthComponents(), let dobDate = dob.date {
+            let ageComponents = Calendar.current.dateComponents([.year], from: dobDate, to: Date())
+            ageVal = ageComponents.year
+        }
+        return (genderStr, ageVal)
     }
 }

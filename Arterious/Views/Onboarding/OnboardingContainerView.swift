@@ -3,6 +3,7 @@ import SwiftUI
 /// Container managing the 3-step onboarding flow for Arterious.
 struct OnboardingContainerView: View {
 
+    @Environment(SyncViewModel.self) private var syncViewModel
     @AppStorage("hasCompletedOnboarding") private var hasCompletedOnboarding: Bool = false
     @AppStorage("userRole") private var storedUserRole: String = UserRole.parent.rawValue
 
@@ -73,6 +74,10 @@ struct OnboardingContainerView: View {
 
     private func completeOnboarding() {
         storedUserRole = selectedRole.rawValue
+        UserDefaults.standard.set(selectedRole.rawValue, forKey: "userRole")
+        Task {
+            await syncViewModel.switchRole(to: selectedRole == .parent ? .parent : .child)
+        }
         withAnimation(.easeInOut(duration: 0.35)) {
             hasCompletedOnboarding = true
             onFinish?()

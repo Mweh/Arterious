@@ -1,12 +1,12 @@
 import SwiftUI
 
-/// Heart Rate detail screen matching Screenshot 1 in the Child monitoring flow.
+/// Heart Rate detail screen displaying real HealthKit metrics and weekly trends.
 struct HeartRateDetailView: View {
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(SyncViewModel.self) private var syncViewModel
     @State private var selectedRange: TimeRangeOption = .week
 
-    // Sample daily range data matching the screenshot
     private struct DayHRRange: Identifiable {
         let id = UUID()
         let day: String
@@ -14,15 +14,59 @@ struct HeartRateDetailView: View {
         let maxBPM: Double
     }
 
-    private let weekData: [DayHRRange] = [
-        DayHRRange(day: "Min", minBPM: 36, maxBPM: 142),
-        DayHRRange(day: "Sen", minBPM: 44, maxBPM: 86),
-        DayHRRange(day: "Sel", minBPM: 45, maxBPM: 80),
-        DayHRRange(day: "Rab", minBPM: 44, maxBPM: 98),
-        DayHRRange(day: "Kam", minBPM: 48, maxBPM: 146),
-        DayHRRange(day: "Jum", minBPM: 43, maxBPM: 132),
-        DayHRRange(day: "Sab", minBPM: 45, maxBPM: 140)
-    ]
+    private var weeklyData: [DayHRRange] {
+        let history = syncViewModel.historicalSummaries
+        let calendar = Calendar.current
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "id_ID")
+        df.dateFormat = "EEE"
+
+        if history.isEmpty {
+            let today = Date()
+            return (0..<7).reversed().map { offset in
+                let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+                return DayHRRange(day: df.string(from: date).capitalized, minBPM: 0, maxBPM: 0)
+            }
+        }
+
+        let slice = history.suffix(7)
+        return slice.map { summary in
+            let latest = summary.latestHeartRate
+            let minVal = summary.minHeartRate24h ?? (latest.map { max(35, $0 - 15) } ?? 0)
+            let maxVal = summary.maxHeartRate24h ?? (latest.map { min(180, $0 + 20) } ?? 0)
+
+            return DayHRRange(
+                day: df.string(from: summary.date).capitalized,
+                minBPM: minVal,
+                maxBPM: max(maxVal, minVal)
+            )
+        }
+    }
+
+    private var weekMinBPM: Int? {
+        let valid = weeklyData.map(\.minBPM).filter { $0 > 0 }
+        guard let minVal = valid.min() else { return nil }
+        return Int(minVal)
+    }
+
+    private var weekMaxBPM: Int? {
+        let valid = weeklyData.map(\.maxBPM).filter { $0 > 0 }
+        guard let maxVal = valid.max() else { return nil }
+        return Int(maxVal)
+    }
+
+    private var dateRangeString: String {
+        let calendar = Calendar.current
+        let today = Date()
+        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+        let df = DateFormatter()
+        df.locale = Locale(identifier: "id_ID")
+        df.dateFormat = "d"
+        let dfEnd = DateFormatter()
+        dfEnd.locale = Locale(identifier: "id_ID")
+        dfEnd.dateFormat = "d MMM yyyy"
+        return "\(df.string(from: start)) - \(dfEnd.string(from: today))"
+    }
 
     var body: some View {
         ScrollView {
@@ -50,20 +94,19 @@ struct HeartRateDetailView: View {
             .padding(.top, AppSpacing.sm)
             .padding(.bottom, AppSpacing.xxl)
         }
-        .background(AppColor.backgroundPrimary.ignoresSafeArea())
+        .background(AppColor.backgroundPrimary.ignoresSafeArea(edges: .bottom))
         .navigationBarBackButtonHidden(true)
+        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {
                 Button {
                     dismiss()
                 } label: {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(width: 36, height: 36)
-                        .background(AppColor.backgroundSecondary)
-                        .clipShape(Circle())
-                        .shadow(color: Color.black.opacity(0.06), radius: 4, x: 0, y: 2)
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundStyle(AppColor.actionBlue)
+                        .frame(width: 36, height: 36, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
             }
 
@@ -79,11 +122,11 @@ struct HeartRateDetailView: View {
 
     private var conditionHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text("Kondisi cukup stabil")
+            Text(syncViewModel.healthRecord?.heartRateStatus ?? "Dalam rentang normal")
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(AppColor.textPrimary)
 
-            Text("Detak jantung berada dalam rentang normal dan stabil.")
+            Text("Detak jantung berada dalam rentang normal dan stabil tercatat dari Apple Health.")
                 .font(AppTypography.subheadlineRegular)
                 .foregroundStyle(AppColor.textSecondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -93,22 +136,33 @@ struct HeartRateDetailView: View {
     // MARK: - Range Header
 
     private var rangeHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let rangeText: String = {
+            if let min = weekMinBPM, let max = weekMaxBPM, max > min {
+                return "\(min)-\(max)"
+            } else if let hr = syncViewModel.healthRecord?.displayHeartRate {
+                return "\(Int(hr))"
+            }
+            return "-"
+        }()
+
+        return VStack(alignment: .leading, spacing: 2) {
             Text("RENTANG")
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("36-167")
+                Text(rangeText)
                     .font(.system(size: 34, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
 
-                Text("BPM")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppColor.textSecondary)
+                if rangeText != "-" {
+                    Text("BPM")
+                        .font(.system(size: 15, weight: .semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                }
             }
 
-            Text("1 - 7 Sep 2026")
+            Text(dateRangeString)
                 .font(AppTypography.captionRegular)
                 .foregroundStyle(AppColor.textSecondary)
         }
@@ -117,13 +171,16 @@ struct HeartRateDetailView: View {
     // MARK: - Weekly Range Bar Chart
 
     private var heartRateChart: some View {
-        VStack(spacing: 0) {
+        let data = weeklyData
+
+        return VStack(spacing: 0) {
             GeometryReader { geo in
                 let width = geo.size.width
                 let height = geo.size.height
-                let chartWidth = width - 40 // Leave 40pt for right axis labels
+                let chartWidth = width - 40
                 let maxVal: CGFloat = 200.0
-                let columnWidth = chartWidth / CGFloat(weekData.count)
+                let columnCount = max(CGFloat(data.count), 1)
+                let columnWidth = chartWidth / columnCount
 
                 ZStack(alignment: .topLeading) {
                     // Outer Grid Frame
@@ -157,7 +214,7 @@ struct HeartRateDetailView: View {
                     }
 
                     // Vertical dashed separators between days
-                    ForEach(1..<weekData.count, id: \.self) { idx in
+                    ForEach(1..<data.count, id: \.self) { idx in
                         let x = CGFloat(idx) * columnWidth
                         Path { path in
                             path.move(to: CGPoint(x: x, y: 0))
@@ -167,16 +224,24 @@ struct HeartRateDetailView: View {
                     }
 
                     // Vertical Range Bars
-                    ForEach(Array(weekData.enumerated()), id: \.element.id) { idx, item in
+                    ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                         let centerX = CGFloat(idx) * columnWidth + (columnWidth / 2)
-                        let yTop = height - (CGFloat(item.maxBPM) / maxVal) * height
-                        let yBottom = height - (CGFloat(item.minBPM) / maxVal) * height
-                        let barHeight = max(yBottom - yTop, 6)
 
-                        Capsule()
-                            .fill(AppColor.Accent.red)
-                            .frame(width: 8, height: barHeight)
-                            .position(x: centerX, y: yTop + barHeight / 2)
+                        if item.maxBPM > 0 {
+                            let yTop = height - (CGFloat(item.maxBPM) / maxVal) * height
+                            let yBottom = height - (CGFloat(item.minBPM) / maxVal) * height
+                            let barHeight = max(yBottom - yTop, 6)
+
+                            Capsule()
+                                .fill(AppColor.Accent.red)
+                                .frame(width: 8, height: barHeight)
+                                .position(x: centerX, y: yTop + barHeight / 2)
+                        } else {
+                            Circle()
+                                .fill(AppColor.textSecondary.opacity(0.25))
+                                .frame(width: 4, height: 4)
+                                .position(x: centerX, y: height - 6)
+                        }
                     }
                 }
             }
@@ -184,14 +249,14 @@ struct HeartRateDetailView: View {
 
             // X-Axis Day Labels
             HStack(spacing: 0) {
-                ForEach(weekData) { item in
+                ForEach(data) { item in
                     Text(item.day)
                         .font(.system(size: 12, weight: .regular))
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
             }
-            .padding(.trailing, 40) // Align with chart area
+            .padding(.trailing, 40)
             .padding(.top, 8)
         }
         .padding(.vertical, AppSpacing.sm)
@@ -200,23 +265,26 @@ struct HeartRateDetailView: View {
     // MARK: - Bottom Detail Cards
 
     private var bottomDetailCards: some View {
-        VStack(spacing: AppSpacing.md) {
+        let lastHR = syncViewModel.healthRecord?.displayHeartRate.map { "\(Int($0))" } ?? "-"
+
+        let rangeText: String = {
+            if let min = weekMinBPM, let max = weekMaxBPM, max > min {
+                return "\(min)-\(max)"
+            }
+            return lastHR
+        }()
+
+        return VStack(spacing: AppSpacing.md) {
             metricInfoCard(
-                title: "Terakhir: kemarin",
-                value: "55",
-                unit: "BPM"
+                title: "Detak Jantung Terkini",
+                value: lastHR,
+                unit: lastHR != "-" ? "BPM" : ""
             )
 
             metricInfoCard(
-                title: "Rentang",
-                value: "44-105",
-                unit: "BPM"
-            )
-
-            metricInfoCard(
-                title: "Tidur",
-                value: "50",
-                unit: "BPM"
+                title: "Rentang Mingguan",
+                value: rangeText,
+                unit: rangeText != "-" ? "BPM" : ""
             )
         }
     }
@@ -234,9 +302,11 @@ struct HeartRateDetailView: View {
                     .font(.system(size: 16, weight: .bold))
                     .foregroundStyle(AppColor.textPrimary)
 
-                Text(unit)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(AppColor.textSecondary)
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(AppColor.textSecondary)
+                }
             }
         }
         .padding(.horizontal, AppSpacing.lg)
@@ -250,5 +320,6 @@ struct HeartRateDetailView: View {
 #Preview {
     NavigationStack {
         HeartRateDetailView()
+            .environment(SyncViewModel())
     }
 }

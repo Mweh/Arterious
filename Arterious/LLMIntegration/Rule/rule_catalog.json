@@ -1,0 +1,354 @@
+{
+  "_meta": {
+    "description": "Katalog Master Rule-Based Early Caution & Action Mapping — Sesuai PRD Bab 7, 8, 9, 12, dan 13",
+    "version": "1.0",
+    "source": "PRD_Rule_Based_Early_Caution_State_Machine.md",
+    "note": "Rule engine adalah sumber kebenaran (Source of Truth). Jika rule HIT, action dan fakta dari rule tersebut otomatis masuk ke prompt LLM."
+  },
+  "rules": [
+    {
+      "rule_id": "S1",
+      "domain": "sleep",
+      "name": "SLEEP_SLIGHTLY_SHORT",
+      "condition": "Total sleep 6–<7 jam",
+      "daily_condition": "MINOR_DEVIATION",
+      "severity": 1,
+      "concern_outcome": "OBSERVATION",
+      "allowed_actions": [
+        "Pantau waktu istirahat malam ini"
+      ]
+    },
+    {
+      "rule_id": "S2",
+      "domain": "sleep",
+      "name": "SLEEP_SHORT",
+      "condition": "Total sleep <6 jam",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "WORSENED",
+      "allowed_actions": [
+        "Tanyakan apakah ada gangguan tidur semalam"
+      ]
+    },
+    {
+      "rule_id": "S3",
+      "domain": "sleep",
+      "name": "SLEEP_VERY_SHORT",
+      "condition": "Total sleep <=5 jam",
+      "daily_condition": "WORSENED",
+      "severity": 3,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Hubungi orang tua untuk mengecek rasa lelah atau kantuk berlebih",
+        "Sarankan waktu istirahat lebih awal hari ini"
+      ]
+    },
+    {
+      "rule_id": "S7",
+      "domain": "sleep",
+      "name": "SLEEP_EFFICIENCY_LOW",
+      "condition": "Sleep efficiency 75–<80%",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "OBSERVATION",
+      "allowed_actions": [
+        "Tanyakan apakah sering terbangun di tengah malam"
+      ]
+    },
+    {
+      "rule_id": "S8",
+      "domain": "sleep",
+      "name": "SLEEP_EFFICIENCY_VERY_LOW",
+      "condition": "Sleep efficiency <75%",
+      "daily_condition": "WORSENED",
+      "severity": 3,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Cek apakah ada rasa tidak nyaman, nyeri, atau sering buang air kecil di malam hari"
+      ]
+    },
+    {
+      "rule_id": "S13",
+      "domain": "sleep",
+      "name": "BEDTIME_SHIFT_LARGE",
+      "condition": "Bedtime deviation >60–120 menit dari baseline",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "OBSERVATION",
+      "allowed_actions": [
+        "Cek apakah ada perubahan rutinitas atau aktivitas di malam hari"
+      ]
+    },
+    {
+      "rule_id": "S17",
+      "domain": "sleep",
+      "name": "SLEEP_SHORT_PATTERN",
+      "condition": "Total sleep <6 jam muncul >=2 malam berturut-turut atau >=3 malam/7 hari",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Tanyakan apakah sulit tidur, sering terbangun, atau ada gangguan kenyamanan di malam hari",
+        "Sarankan menjaga jadwal tidur yang lebih konsisten"
+      ]
+    },
+    {
+      "rule_id": "S20",
+      "domain": "sleep",
+      "name": "SLEEP_FRAGMENTATION_PATTERN",
+      "condition": "Sleep efficiency <75% muncul >=2 malam/7 hari",
+      "daily_condition": "WORSENED",
+      "severity": 3,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Tanyakan keluhan kenyamanan tidur dan apakah sering terbangun",
+        "Periksa suasana kamar tidur agar lebih tenang dan redup"
+      ]
+    },
+    {
+      "rule_id": "A1",
+      "domain": "activity",
+      "name": "ACTIVITY_ON_TRACK",
+      "condition": "Steps >=85% baseline pada checkpoint/final",
+      "daily_condition": "ON_TRACK",
+      "severity": 0,
+      "concern_outcome": "NONE",
+      "allowed_actions": [
+        "Apresiasi aktivitas yang tetap terjaga baik"
+      ]
+    },
+    {
+      "rule_id": "A2",
+      "domain": "activity",
+      "name": "ACTIVITY_MINOR_DROP",
+      "condition": "Steps 70–<85% baseline pada akhir hari",
+      "daily_condition": "MINOR_DEVIATION",
+      "severity": 1,
+      "concern_outcome": "OBSERVATION",
+      "allowed_actions": [
+        "Pantau tren aktivitas harian berikutnya"
+      ]
+    },
+    {
+      "rule_id": "A3",
+      "domain": "activity",
+      "name": "ACTIVITY_MODERATE_DROP",
+      "condition": "Steps 50–<70% baseline pada akhir hari",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "OBSERVATION",
+      "allowed_actions": [
+        "Tanyakan apakah ada kelelahan atau aktivitas di luar rumah yang berkurang"
+      ]
+    },
+    {
+      "rule_id": "A4",
+      "domain": "activity",
+      "name": "ACTIVITY_HEAVY_DROP",
+      "condition": "Steps <50% baseline pada akhir hari (>=2 hari berturut)",
+      "daily_condition": "WORSENED",
+      "severity": 3,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Tanyakan apakah tubuh terasa lemas atau ada hambatan fisik untuk berjalan",
+        "Ajak mengobrol santai untuk memantau semangat beraktivitas"
+      ]
+    },
+    {
+      "rule_id": "A8",
+      "domain": "activity",
+      "name": "ACTIVITY_PERSISTENT_DROP",
+      "condition": "Steps turun >=30% dari baseline selama >=3 hari berturut-turut",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Tanyakan apakah ada keluhan lemas, nyeri sendi, atau rasa lelah saat berjalan",
+        "Cek apakah rutinitas harian terganggu dalam beberapa hari ini"
+      ]
+    },
+    {
+      "rule_id": "A11",
+      "domain": "activity",
+      "name": "WALKING_SPEED_DROP",
+      "condition": "Walking speed turun >=15% vs baseline selama >=3 hari",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Perhatikan apakah langkah berjalan terasa lebih lambat atau kurang stabil",
+        "Pastikan area berjalan di rumah bebas dari rintangan tersandung"
+      ]
+    },
+    {
+      "rule_id": "A12",
+      "domain": "safety",
+      "name": "WALKING_STEADINESS_LOW",
+      "condition": "walking_steadiness_event = true",
+      "daily_condition": "ACUTE_EVENT",
+      "severity": 4,
+      "concern_outcome": "ESCALATED_CONCERN",
+      "allowed_actions": [
+        "Cek risiko jatuh dan pastikan alas kaki tidak licin",
+        "Dampingi saat berjalan di tangga atau permukaan tidak rata"
+      ]
+    },
+    {
+      "rule_id": "A13",
+      "domain": "safety",
+      "name": "FALL_DETECTED",
+      "condition": "fall_event = true",
+      "daily_condition": "ACUTE_EVENT",
+      "severity": 5,
+      "concern_outcome": "URGENT_OVERRIDE",
+      "allowed_actions": [
+        "Hubungi orang tua atau orang di rumah SEGERA",
+        "Pastikan ada bantuan langsung jika terjadi benturan atau cedera"
+      ]
+    },
+    {
+      "rule_id": "H1",
+      "domain": "heart",
+      "name": "RHR_ELEVATED_MILD",
+      "condition": "Resting HR naik 5–<10 bpm dari baseline",
+      "daily_condition": "MINOR_DEVIATION",
+      "severity": 1,
+      "concern_outcome": "OBSERVATION",
+      "allowed_actions": [
+        "Pantau kecenderungan denyut jantung istirahat dalam 2 hari ke depan"
+      ]
+    },
+    {
+      "rule_id": "H2",
+      "domain": "heart",
+      "name": "RHR_ELEVATED_PERSISTENT",
+      "condition": "Resting HR naik >=10 bpm dari baseline selama >=2-3 hari berturut-turut",
+      "daily_condition": "WORSENED",
+      "severity": 2,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Hubungi Ibu hari ini untuk menanyakan kabar",
+        "Tanyakan keluhan seperti lemas, pusing, nyeri dada, sesak, atau demam",
+        "Ingatkan pengukuran tekanan darah dengan tensimeter bila tersedia"
+      ]
+    },
+    {
+      "rule_id": "H3",
+      "domain": "heart",
+      "name": "RHR_ELEVATED_CRITICAL",
+      "condition": "Resting HR naik >=20 bpm dari baseline setelah quality check",
+      "daily_condition": "WORSENED",
+      "severity": 4,
+      "concern_outcome": "ESCALATED_CONCERN",
+      "allowed_actions": [
+        "Hubungi segera untuk memastikan kondisi fisik",
+        "Periksa suhu tubuh dan keluhan demam atau infeksi",
+        "Pertimbangkan konsultasi ke dokter bila disertai sesak atau berdebar"
+      ]
+    },
+    {
+      "rule_id": "H4",
+      "domain": "heart",
+      "name": "HRV_DROP",
+      "condition": "HRV turun >=20% dari baseline selama >=3 hari",
+      "daily_condition": "MINOR_DEVIATION",
+      "severity": 1,
+      "concern_outcome": "OBSERVATION",
+      "allowed_actions": [
+        "Perhatikan tanda-tanda kelelahan fisik atau beban pikiran",
+        "Dorong istirahat cukup untuk mendukung pemulihan tubuh"
+      ]
+    },
+    {
+      "rule_id": "H5",
+      "domain": "heart",
+      "name": "HEART_STRESS_COMBINED",
+      "condition": "HRV turun >=30% + Resting HR naik >=10 bpm selama >=2 hari",
+      "daily_condition": "WORSENED",
+      "severity": 3,
+      "concern_outcome": "NEW_CONCERN",
+      "allowed_actions": [
+        "Tanyakan apakah tubuh terasa sangat letih atau kurang fit",
+        "Pastikan asupan cairan cukup dan hindari aktivitas berlebih"
+      ]
+    },
+    {
+      "rule_id": "H6",
+      "domain": "heart",
+      "name": "MULTI_DOMAIN_RECOVERY_STRAIN",
+      "condition": "Resting HR naik >=10 bpm + HRV turun >=20% + sleep worsened selama >=2 hari",
+      "daily_condition": "WORSENED",
+      "severity": 4,
+      "concern_outcome": "ESCALATED_CONCERN",
+      "allowed_actions": [
+        "Lakukan check-in segera hari ini",
+        "Tanyakan keluhan seperti lemas, pusing saat bangun, atau sesak napas",
+        "Ingatkan pengukuran tekanan darah dan istirahat yang cukup"
+      ]
+    },
+    {
+      "rule_id": "H9",
+      "domain": "safety",
+      "name": "APPLE_HIGH_HR_ALERT",
+      "condition": "high_hr_event = true (Apple Watch alert)",
+      "daily_condition": "ACUTE_EVENT",
+      "severity": 5,
+      "concern_outcome": "URGENT_OVERRIDE",
+      "allowed_actions": [
+        "Periksa kondisi secepatnya dan pastikan sedang duduk/istirahat",
+        "Bila berlanjut atau disertai keluhan nyeri/sesak, cari pertolongan medis segera"
+      ]
+    },
+    {
+      "rule_id": "H10",
+      "domain": "safety",
+      "name": "APPLE_LOW_HR_ALERT",
+      "condition": "low_hr_event = true (Apple Watch alert)",
+      "daily_condition": "ACUTE_EVENT",
+      "severity": 5,
+      "concern_outcome": "URGENT_OVERRIDE",
+      "allowed_actions": [
+        "Hubungi untuk memastikan kesadaran dan keluhan pusing melayang",
+        "Segera cari bantuan medis jika orang tua lemas atau pingsan"
+      ]
+    },
+    {
+      "rule_id": "H11",
+      "domain": "safety",
+      "name": "APPLE_IRREGULAR_RHYTHM",
+      "condition": "irregular_rhythm_event = true (Apple Watch alert)",
+      "daily_condition": "ACUTE_EVENT",
+      "severity": 5,
+      "concern_outcome": "URGENT_OVERRIDE",
+      "allowed_actions": [
+        "Notifikasi ritme jantung tidak teratur terdeteksi oleh jam tangan",
+        "Sarankan konsultasi ke dokter spesialis jantung atau faskes terdekat"
+      ]
+    }
+  ],
+  "overall_status_actions": {
+    "ATTENTION": [
+      "Pantau malam dan hari berikutnya di dashboard"
+    ],
+    "CAUTION": [
+      "Hubungi orang tua hari ini",
+      "Tanyakan keluhan seperti lemas, pusing, nyeri, sesak, atau demam",
+      "Ingatkan pengukuran tekanan darah dengan tensimeter bila tersedia"
+    ],
+    "WARNING": [
+      "Lakukan check-in segera hari ini",
+      "Pastikan kondisi fisik dan pengukuran tekanan darah",
+      "Pertimbangkan konsultasi ke fasilitas kesehatan bila keluhan berlanjut"
+    ],
+    "URGENT": [
+      "Gunakan protokol darurat, jangan tunda bantuan medis"
+    ]
+  },
+  "prohibited_content": [
+    "Diagnosis penyakit spesifik (misal: gagal jantung, insomnia kronis, hipertensi stadium 2)",
+    "Pernyataan penyebab pasti kejadian",
+    "Perubahan dosis atau jadwal obat",
+    "Menyebut angka atau metrik baru di luar input yang diberikan",
+    "Saran aktivitas atau olahraga berat"
+  ]
+}

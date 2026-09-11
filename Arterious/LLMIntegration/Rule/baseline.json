@@ -1,0 +1,41 @@
+{
+  "_meta": {
+    "description": "Baseline profile personal — sesuai PRD §6.2",
+    "source": "Dihitung dari median 14 hari data valid",
+    "user_id": "PARENT_001",
+    "note": "Baseline ini STABIL (FAVORABLE_BASELINE). Digunakan sebagai pembanding untuk deteksi perubahan."
+  },
+  "baseline_id": "base_parent_001_2026w37",
+  "user_id": "PARENT_001",
+  "period_days": 14,
+  "valid_days": 12,
+  "baseline_class": "FAVORABLE_BASELINE",
+  "computed_at": "2026-09-03T08:00:00+07:00",
+  "sleep": {
+    "median_total_sleep_minutes": 395,
+    "median_bedtime": "22:45",
+    "median_wake_time": "06:10",
+    "median_sleep_efficiency_pct": 88.4,
+    "median_awake_minutes": 50,
+    "median_rem_minutes": 88,
+    "median_core_minutes": 238,
+    "median_deep_minutes": 70,
+    "bedtime_sd_minutes": 22,
+    "sleep_duration_sd_minutes": 12
+  },
+  "activity": {
+    "median_steps_daily": 2850,
+    "median_steps_at_1200": 710,
+    "median_steps_at_1800": 2450,
+    "median_exercise_minutes": 24,
+    "median_walking_speed_mps": 0.83,
+    "median_walking_distance_km": 1.88
+  },
+  "heart": {
+    "median_resting_hr_bpm": 67,
+    "resting_hr_iqr_bpm": 3,
+    "median_hrv_sdnn_ms": 29,
+    "median_walking_hr_avg_bpm": 89,
+    "median_respiratory_rate": 15.5
+  }
+}

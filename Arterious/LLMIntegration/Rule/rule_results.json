@@ -1,0 +1,108 @@
+{
+  "_meta": {
+    "description": "Hasil evaluasi rule engine — sesuai PRD Bab 7, 8, 9, dan 10",
+    "source": "Rule engine membandingkan data 3 hari terakhir (sleep, activity, heart) terhadap baseline",
+    "user_id": "PARENT_001",
+    "evaluation_date": "2026-09-06",
+    "pipeline": "raw_records → baseline.json → rule_catalog.json → rule_results.json → prompt.json"
+  },
+  "sleep_evaluation": {
+    "domain": "sleep",
+    "daily_condition": "WORSENED",
+    "absolute_status": "BELOW_GENERAL_REFERENCE",
+    "relative_status": "WORSENED",
+    "triggered_rules": [
+      {
+        "rule_id": "S17",
+        "name": "SLEEP_SHORT_PATTERN",
+        "condition": "Total sleep <6 jam selama 3 malam berturut-turut (280, 250, 220 menit — baseline 395 menit)",
+        "met_on_dates": ["2026-09-04", "2026-09-05", "2026-09-06"],
+        "severity": 2,
+        "derived_action": "Tanyakan apakah sulit tidur, sering terbangun, atau ada gangguan kenyamanan di malam hari"
+      },
+      {
+        "rule_id": "S20",
+        "name": "SLEEP_FRAGMENTATION_PATTERN",
+        "condition": "Sleep efficiency turun ke 69.8% pada malam terakhir (baseline 88.4%)",
+        "met_on_dates": ["2026-09-05", "2026-09-06"],
+        "severity": 2,
+        "derived_action": "Periksa apakah sering terbangun di malam hari dan pastikan kamar tidur tenang"
+      },
+      {
+        "rule_id": "S13",
+        "name": "BEDTIME_SHIFT_LARGE",
+        "condition": "Bedtime bergeser lebih dari 2 jam dari baseline (01:00 vs 22:45)",
+        "met_on_dates": ["2026-09-04", "2026-09-05", "2026-09-06"],
+        "severity": 2,
+        "derived_action": "Cek apakah ada perubahan rutinitas atau aktivitas di malam hari"
+      }
+    ],
+    "concern_outcome": "NEW_CONCERN",
+    "max_severity": 2
+  },
+  "activity_evaluation": {
+    "domain": "activity",
+    "daily_condition": "WORSENED",
+    "absolute_status": "BELOW_GENERAL_REFERENCE",
+    "relative_status": "WORSENED",
+    "triggered_rules": [
+      {
+        "rule_id": "A8",
+        "name": "ACTIVITY_PERSISTENT_DROP",
+        "condition": "Langkah harian turun >=30% dari baseline selama 3 hari (850 langkah vs baseline 2.850)",
+        "met_on_dates": ["2026-09-04", "2026-09-05", "2026-09-06"],
+        "severity": 2,
+        "derived_action": "Tanyakan apakah ada keluhan lemas, nyeri sendi, atau rasa lelah saat berjalan"
+      },
+      {
+        "rule_id": "A11",
+        "name": "WALKING_SPEED_DROP",
+        "condition": "Kecepatan berjalan turun 18.1% vs baseline selama 2 hari",
+        "met_on_dates": ["2026-09-05", "2026-09-06"],
+        "severity": 2,
+        "derived_action": "Perhatikan apakah langkah terasa lebih berat atau kurang stabil"
+      }
+    ],
+    "concern_outcome": "NEW_CONCERN",
+    "max_severity": 2
+  },
+  "heart_evaluation": {
+    "domain": "heart",
+    "daily_condition": "WORSENED",
+    "absolute_status": "ABOVE_BASELINE",
+    "relative_status": "WORSENED",
+    "triggered_rules": [
+      {
+        "rule_id": "H2",
+        "name": "RHR_ELEVATED_PERSISTENT",
+        "condition": "Resting HR naik 12 bpm dari baseline (67 → 79 bpm) selama 2 hari berturut-turut",
+        "met_on_dates": ["2026-09-05", "2026-09-06"],
+        "severity": 2,
+        "derived_action": "Hubungi Ibu hari ini; tanyakan lemas, pusing, nyeri dada, atau sesak; ingatkan ukur tensi bila ada"
+      },
+      {
+        "rule_id": "H4",
+        "name": "HRV_DROP",
+        "condition": "HRV turun 37.9% dari baseline (29 → 18 ms) selama 3 hari",
+        "met_on_dates": ["2026-09-04", "2026-09-05", "2026-09-06"],
+        "severity": 1,
+        "derived_action": "Perhatikan tanda-tanda kelelahan fisik atau kurang pemulihan tubuh"
+      },
+      {
+        "rule_id": "H6",
+        "name": "MULTI_DOMAIN_RECOVERY_STRAIN",
+        "condition": "Resting HR naik >=10 bpm + HRV turun >=20% + sleep worsened selama 2 hari berturut-turut",
+        "met_on_dates": ["2026-09-05", "2026-09-06"],
+        "severity": 4,
+        "derived_action": "Lakukan check-in segera hari ini; pantau keluhan fisik dan pastikan istirahat cukup"
+      }
+    ],
+    "concern_outcome": "ESCALATED_CONCERN",
+    "max_severity": 4
+  },
+  "overall_care_status": "CAUTION",
+  "overall_concern_state": "NEW_CONCERN",
+  "multi_domain_flag": true,
+  "domains_affected": ["sleep", "activity", "heart"],
+  "hit_rule_ids": ["S17", "S20", "S13", "A8", "A11", "H2", "H4", "H6"]
+}

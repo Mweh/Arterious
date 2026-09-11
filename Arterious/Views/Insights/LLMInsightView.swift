@@ -118,8 +118,8 @@ struct LLMInsightView: View {
             if isChild {
                 await syncViewModel.fetchSharedParentSnapshot()
             } else {
-                await syncViewModel.loadParentLocalHealthData(forceGemini: true)
-                await localViewModel.loadAndGenerateInsight(forceRefresh: true)
+                await syncViewModel.loadParentLocalHealthData(forceGemini: false)
+                await localViewModel.loadAndGenerateInsight(forceRefresh: false)
             }
         }
         .task {
@@ -147,8 +147,6 @@ struct LLMInsightView: View {
                     .lineLimit(1)
                 
                 Spacer(minLength: 4)
-                
-                statusBadgeView(status: overview.conditionStatus, label: overview.statusLabel)
             }
             
             Text(overviewHeadline(overview.conditionStatus))
@@ -235,9 +233,7 @@ struct LLMInsightView: View {
                     .foregroundStyle(.primary)
                     .lineLimit(1)
                 
-                Spacer(minLength: 4)
-                
-                deltaBadge(metricInsight.deltaPercentage, status: metricInsight.status)
+                Spacer()
             }
             
             // Numbers Comparison Row
@@ -266,22 +262,6 @@ struct LLMInsightView: View {
                     Text(metricInsight.baselineValue)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                
-                Divider()
-                    .frame(height: 28)
-                
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Selisih")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                    Text(deltaText(metricInsight.deltaPercentage, status: metricInsight.status))
-                        .font(.subheadline.weight(.bold))
-                        .foregroundStyle(deltaColor(metricInsight.deltaPercentage, status: metricInsight.status))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
                 }
@@ -365,110 +345,8 @@ struct LLMInsightView: View {
     
     // MARK: - UI Helpers
     
-    private func statusBadgeView(status: String, label: String) -> some View {
-        let (bgColor, fgColor, icon) = statusAppearance(status)
-        return HStack(spacing: 4) {
-            Image(systemName: icon)
-                .font(.caption2)
-            Text(label)
-                .font(.caption.weight(.bold))
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-        }
-        .foregroundStyle(fgColor)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 5)
-        .background(bgColor)
-        .clipShape(Capsule())
-    }
-    
-    private func statusAppearance(_ status: String) -> (bg: Color, fg: Color, icon: String) {
-        switch status.uppercased() {
-        case "IMPROVED":
-            return (Color.green.opacity(0.15), Color.green, "arrow.up.right.circle.fill")
-        case "DECLINED":
-            return (Color.red.opacity(0.15), Color.red, "arrow.down.right.circle.fill")
-        default:
-            return (Color.blue.opacity(0.15), Color.blue, "checkmark.circle.fill")
-        }
-    }
-    
     private func overviewHeadline(_ status: String) -> String {
         RuleEngine.overviewHeadline(for: status)
-    }
-    
-    private func deltaBadge(_ delta: Double, status: String) -> some View {
-        let displayStatus = cleanStatusText(status)
-        let color = badgeColor(delta: delta, status: displayStatus)
-        return Text(displayStatus)
-            .font(.caption2.weight(.bold))
-            .foregroundStyle(color)
-            .lineLimit(1)
-            .minimumScaleFactor(0.75)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 3)
-            .background(color.opacity(0.12))
-            .clipShape(Capsule())
-    }
-    
-    private func cleanStatusText(_ status: String) -> String {
-        guard let regex = try? NSRegularExpression(pattern: "\\s*[-+]?\\d+([.,]\\d+)?%\\s*", options: .caseInsensitive) else {
-            return status
-        }
-        let cleaned = regex.stringByReplacingMatches(in: status, range: NSRange(location: 0, length: status.utf16.count), withTemplate: "")
-        return cleaned.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-    
-    private func badgeColor(delta: Double, status: String) -> Color {
-        let lower = status.lowercased()
-        if lower.contains("belum") || lower.contains("tidak") {
-            return .secondary
-        }
-        if lower.contains("sedang") || lower.contains("stabil") || lower.contains("normal") {
-            return .blue
-        }
-        if lower.contains("menurun") {
-            return .red
-        }
-        if lower.contains("meningkat") || lower.contains("rileks") {
-            return .green
-        }
-        return deltaColor(delta, status: status)
-    }
-    
-    private func deltaText(_ delta: Double, status: String) -> String {
-        let lower = status.lowercased()
-        if lower.contains("sedang") || lower.contains("berjalan") {
-            return "On-Track"
-        }
-        if lower.contains("belum") {
-            return "—"
-        }
-        let sign = delta > 0 ? "+" : ""
-        return "\(sign)\(String(format: "%.1f", delta))%"
-    }
-    
-    private func deltaColor(_ delta: Double, status: String = "") -> Color {
-        let lower = status.lowercased()
-        if lower.contains("belum") {
-            return .secondary
-        }
-        if lower.contains("sedang") || lower.contains("berjalan") || lower.contains("stabil") || lower.contains("normal") {
-            return .blue
-        }
-        if lower.contains("menurun") {
-            return .red
-        }
-        if lower.contains("meningkat") || lower.contains("rileks") {
-            return .green
-        }
-        if abs(delta) < 10.0 {
-            return .blue
-        } else if delta < 0 {
-            return .red
-        } else {
-            return .green
-        }
     }
 }
 

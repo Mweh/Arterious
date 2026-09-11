@@ -34,13 +34,7 @@ struct AccessView: View {
     private var childInvitationMessage: String {
         let childName = !syncViewModel.userDisplayName.isEmpty ? syncViewModel.userDisplayName : (UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name)
         let encodedName = childName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? childName
-        return """
-        Halo! Mari terhubung di aplikasi Arterious.
-        1. Buka tautan ini di iPhone:
-        arterious://ask-parent?name=\(encodedName)
-
-        2. Atau buka Arterious dan masuk sebagai Orang Tua untuk mulai membagikan data kesehatan.
-        """
+        return "arterious://ask-parent?name=\(encodedName)"
     }
 
     var body: some View {

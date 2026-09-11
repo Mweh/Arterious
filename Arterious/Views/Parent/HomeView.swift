@@ -38,13 +38,7 @@ struct HomeView: View {
     private var childInvitationMessage: String {
         let childName = !syncViewModel.userDisplayName.isEmpty ? syncViewModel.userDisplayName : (UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name)
         let encodedName = childName.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? childName
-        return """
-        Halo! Mari terhubung di aplikasi Arterious.
-        1. Buka tautan ini di iPhone:
-        arterious://ask-parent?name=\(encodedName)
-
-        2. Atau buka Arterious dan masuk sebagai Orang Tua untuk mulai membagikan data kesehatan.
-        """
+        return "arterious://ask-parent?name=\(encodedName)"
     }
 
     var body: some View {
@@ -332,28 +326,47 @@ struct HomeView: View {
                 Spacer()
             }
 
-            // "Ringkasan Hari Ini" Blue Tinted Card
-            VStack(alignment: .leading, spacing: AppSpacing.xs) {
-                Text("Ringkasan Hari Ini")
-                    .font(AppTypography.subheadlineRegular)
-                    .foregroundStyle(AppColor.textSecondary)
+            // "Ringkasan Hari Ini" Blue Tinted Card with direct access to Caregiver AI Insights
+            NavigationLink {
+                LLMInsightView()
+            } label: {
+                VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                    HStack {
+                        Text("Ringkasan Hari Ini")
+                            .font(AppTypography.subheadlineRegular)
+                            .foregroundStyle(AppColor.textSecondary)
 
-                Text(syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil")
-                    .font(.system(size: 20, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .padding(.top, 1)
+                        Spacer()
 
-                Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
-                    .font(AppTypography.bodyRegular)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 2)
+                        HStack(spacing: 4) {
+                            Image(systemName: "sparkles")
+                                .font(.system(size: 13, weight: .semibold))
+                            Text("Insight AI")
+                                .font(.system(size: 12, weight: .semibold))
+                            Image(systemName: "chevron.right")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(AppColor.actionBlue)
+                    }
+
+                    Text(syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil")
+                        .font(.system(size: 20, weight: .bold))
+                        .foregroundStyle(AppColor.textPrimary)
+                        .padding(.top, 1)
+
+                    Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
+                        .font(AppTypography.bodyRegular)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 2)
+                }
+                .padding(AppSpacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(AppColor.Accent.blue12)
+                .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
             }
-            .padding(AppSpacing.lg)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColor.Accent.blue12)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
+            .buttonStyle(.plain)
 
             // Section "Data Hari Ini"
             VStack(alignment: .leading, spacing: AppSpacing.md) {

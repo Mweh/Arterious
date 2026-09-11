@@ -72,6 +72,7 @@ final class SyncViewModel {
     @ObservationIgnored private var periodicRefreshTimer: Timer?
     @ObservationIgnored private var heartRateObserverQuery: HKQuery?
     @ObservationIgnored private var isProcessingInvite: Bool = false
+    @ObservationIgnored private var hasExecutedInitialAICall: Bool = false
 
     /// Real user name for display and invites (defaults to CloudKit name, clean device name, or saved name)
     var userDisplayName: String {
@@ -204,11 +205,12 @@ final class SyncViewModel {
         self.baseline = overview.baseline
 
         // Cek apakah perlu memanggil Gemini API:
-        // Hanya panggil jika ada trigger berbahaya, atau 1x per hari, atau force refresh manual.
+        // Hanya panggil 1x saat aplikasi awal dijalankan, atau jika force Gemini diminta secara eksplisit.
         var overviewSummaryText = overview.statusBadge
         let shouldCallAI = shouldCallGeminiAPI(for: overview, forceRefresh: forceGemini)
 
         if shouldCallAI {
+            self.hasExecutedInitialAICall = true
             do {
                 let (output, _) = try await GeminiService.shared.generateInsight(input: promptInput)
                 let cleaned = RuleEngine.shared.sanitizeInsightOutput(output, overview: overview)
@@ -663,13 +665,6 @@ final class SyncViewModel {
         var overviewSummaryText = overview.statusBadge
         if let existingOutput = self.insightOutput {
             overviewSummaryText = existingOutput.todayOverview.summary
-        } else if shouldCallGeminiAPI(for: overview, forceRefresh: false) {
-            if let (output, _) = try? await GeminiService.shared.generateInsight(input: promptInput) {
-                let cleaned = RuleEngine.shared.sanitizeInsightOutput(output, overview: overview)
-                self.insightOutput = cleaned
-                self.lastGeminiCallDate = Date()
-                overviewSummaryText = cleaned.todayOverview.summary
-            }
         } else {
             let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "Ibu" : pName)
             self.insightOutput = fallback
@@ -1117,19 +1112,13 @@ final class SyncViewModel {
         guard APIConfig.isConfigured else { return false }
         if forceRefresh { return true }
 
-        // 1. Kondisi / trigger berbahaya (misal: penurunan pola atau detak jantung abnormal)
-        let isDangerousTrigger = overview.conditionStatus == "DECLINED" ||
-                                 overview.heart.status.localizedCaseInsensitiveContains("Perhatian") ||
-                                 overview.heart.status.localizedCaseInsensitiveContains("Meningkat")
-        if isDangerousTrigger {
+        // Hanya panggil 1x saat pertama kali aplikasi dijalankan (initial run)
+        if !hasExecutedInitialAICall {
             return true
         }
 
-        // 2. Jika kondisi normal/stabil, batasi hanya sekali per hari
-        guard let lastDate = lastGeminiCallDate else {
-            return true
-        }
-        return !Calendar.current.isDateInToday(lastDate)
+        // Pada setiap refresh berikutnya (pull to refresh, background timer, dsb), jangan hit API
+        return false
     }
 
     // MARK: - User-Friendly Error Formatter

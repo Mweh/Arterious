@@ -52,6 +52,7 @@ final class LLMInsightViewModel {
     private let geminiService: GeminiService
     @ObservationIgnored private var heartRateObserverQuery: HKQuery?
     @ObservationIgnored private var refreshTimer: Timer?
+    @ObservationIgnored private var hasExecutedInitialAICall: Bool = false
     
     // MARK: - Initialization
     
@@ -101,9 +102,10 @@ final class LLMInsightViewModel {
         self.evaluatedOverview = overview
         self.baseline14Days = overview.baseline
         
-        // 3. Panggil Gemini API hanya jika ada trigger berbahaya atau belum ada insight hari ini
+        // 3. Panggil Gemini API hanya 1x saat awal aplikasi dijalankan, atau forceRefresh manual
         let shouldCallAI = shouldCallGeminiAPI(for: overview, forceRefresh: forceRefresh)
         if shouldCallAI && APIConfig.isConfigured {
+            self.hasExecutedInitialAICall = true
             do {
                 let (output, _) = try await geminiService.generateInsight(input: promptInput)
                 self.insightOutput = sanitizeInsightOutput(output, overview: overview)
@@ -323,18 +325,12 @@ final class LLMInsightViewModel {
         guard APIConfig.isConfigured else { return false }
         if forceRefresh { return true }
         
-        // 1. Kondisi / trigger berbahaya (misal: penurunan pola atau detak jantung abnormal saat santai)
-        let isDangerousTrigger = overview.conditionStatus == "DECLINED" ||
-                                 overview.heart.status.localizedCaseInsensitiveContains("Perhatian") ||
-                                 overview.heart.status.localizedCaseInsensitiveContains("Meningkat")
-        if isDangerousTrigger {
+        // Hanya panggil 1x saat pertama kali aplikasi dijalankan (initial run)
+        if !hasExecutedInitialAICall {
             return true
         }
         
-        // 2. Selebihnya batasi hanya sekali per hari
-        guard let lastDate = UserDefaults.standard.object(forKey: "arterious.lastGeminiCallDate") as? Date else {
-            return true
-        }
-        return !Calendar.current.isDateInToday(lastDate)
+        // Pada setiap refresh berikutnya, jangan hit API
+        return false
     }
 }

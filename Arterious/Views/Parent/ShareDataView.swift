@@ -269,12 +269,7 @@ struct ShareDataView: View {
     // MARK: - Sharing Actions
 
     private func constructInvitationMessage(code: String, rawURL: String) -> String {
-        return """
-        Halo! Buka tautan satu kali ini di iPhone untuk memantau data kesehatanku di Arterious:
-        \(rawURL)
-
-        (Kode Undangan: \(code))
-        """
+        return rawURL
     }
 
     private func handleShare() {

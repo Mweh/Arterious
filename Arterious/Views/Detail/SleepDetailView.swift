@@ -202,11 +202,18 @@ struct SleepDetailView: View {
                 .font(.system(size: 22, weight: .bold))
                 .foregroundStyle(AppColor.textPrimary)
 
-            Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur dan waktu istirahat tercatat secara berkala dari Apple Health.")
-                .font(AppTypography.subheadlineRegular)
-                .foregroundStyle(AppColor.textSecondary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppColor.actionBlue)
+                    .padding(.top, 2)
+
+                Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur dan waktu istirahat tercatat secara berkala dari Apple Health.")
+                    .font(AppTypography.subheadlineRegular)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
     }
 

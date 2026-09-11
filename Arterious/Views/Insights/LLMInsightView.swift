@@ -109,7 +109,7 @@ struct LLMInsightView: View {
                     } label: {
                         Image(systemName: isFallback ? "arrow.clockwise" : "sparkles")
                             .font(.headline)
-                            .foregroundStyle(isFallback ? .teal : .purple)
+                            .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
                     }
                 }
             }
@@ -157,7 +157,7 @@ struct LLMInsightView: View {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
                     .font(.subheadline)
-                    .foregroundStyle(isFallback ? .teal : .purple)
+                    .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
                     .padding(.top, 2)
                 
                 Text(overview.summary)
@@ -276,7 +276,7 @@ struct LLMInsightView: View {
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
                     .font(.caption2)
-                    .foregroundStyle(isFallback ? .teal : .purple)
+                    .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
                     .padding(.top, 2)
                 
                 Text(metricInsight.insight)
@@ -298,7 +298,7 @@ struct LLMInsightView: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(spacing: 6) {
                 Image(systemName: isFallback ? "list.bullet.clipboard" : "sparkles")
-                    .foregroundStyle(isFallback ? .teal : .purple)
+                    .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
                 Text(isFallback ? "Rekomendasi Tindakan (Rule-Based)" : "Rekomendasi Tindakan Caregiver")
                     .font(.headline)
                     .foregroundStyle(.primary)

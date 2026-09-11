@@ -243,12 +243,19 @@ struct HistoryView: View {
                 .foregroundStyle(AppColor.textPrimary)
                 .padding(.top, 1)
 
-            Text(summaryBodyText)
-                .font(AppTypography.subheadlineRegular)
-                .foregroundStyle(AppColor.textSecondary)
-                .lineSpacing(3)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2)
+            HStack(alignment: .top, spacing: 6) {
+                Image(systemName: "sparkles")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(AppColor.actionBlue)
+                    .padding(.top, 2)
+
+                Text(summaryBodyText)
+                    .font(AppTypography.subheadlineRegular)
+                    .foregroundStyle(AppColor.textSecondary)
+                    .lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 2)
         }
         .padding(AppSpacing.lg)
         .frame(maxWidth: .infinity, alignment: .leading)

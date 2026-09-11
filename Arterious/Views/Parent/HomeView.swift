@@ -350,12 +350,19 @@ struct HomeView: View {
                         .foregroundStyle(AppColor.textPrimary)
                         .padding(.top, 1)
 
-                    Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
-                        .font(AppTypography.bodyRegular)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 2)
+                    HStack(alignment: .top, spacing: 6) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundStyle(AppColor.actionBlue)
+                            .padding(.top, 2)
+
+                        Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
+                            .font(AppTypography.bodyRegular)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 2)
                 }
                 .padding(AppSpacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)

@@ -323,98 +323,130 @@ struct HistoryView: View {
         return formatter.string(from: selectedDate)
     }
 
+    private var hasDataForSelectedDate: Bool {
+        if isViewingToday {
+            let hrValid = (syncViewModel.healthRecord?.displayHeartRate.flatMap { $0 } ?? 0) > 0
+            let sleepValid = (syncViewModel.healthRecord?.sleepFormatted != nil && syncViewModel.healthRecord?.sleepFormatted != "-")
+            let stepsValid = (syncViewModel.healthRecord?.stepCount.flatMap { $0 } ?? 0) > 0
+            return hrValid || sleepValid || stepsValid
+        } else {
+            let hrValid = (historicalSummaryForSelectedDate?.latestHeartRate ?? 0) > 0
+            let sleepValid = (historicalSummaryForSelectedDate?.sleepHours ?? 0) > 0
+            let stepsValid = (historicalSummaryForSelectedDate?.stepCount ?? 0) > 0
+            return hrValid || sleepValid || stepsValid
+        }
+    }
+
     private var heartRateDisplayValue: String {
         if isViewingToday {
-            if let hr = syncViewModel.healthRecord?.displayHeartRate {
+            if let hr = syncViewModel.healthRecord?.displayHeartRate.flatMap({ $0 }), hr > 0 {
                 return "\(Int(hr))"
             }
-            return "72"
+            return "-"
         } else {
-            if let hr = historicalSummaryForSelectedDate?.latestHeartRate {
+            if let hr = historicalSummaryForSelectedDate?.latestHeartRate, hr > 0 {
                 return "\(Int(hr))"
             }
-            return "72"
+            return "-"
         }
     }
 
     private var heartRateSubtitle: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.heartRateStatus ?? "Dalam rentang normal"
+            if let hr = syncViewModel.healthRecord?.displayHeartRate.flatMap({ $0 }), hr > 0 {
+                return syncViewModel.healthRecord?.heartRateStatus ?? "Dalam rentang normal"
+            }
+            return "Belum ada data"
         }
-        if let hr = historicalSummaryForSelectedDate?.latestHeartRate {
+        if let hr = historicalSummaryForSelectedDate?.latestHeartRate, hr > 0 {
             return hr < 55 ? "Cenderung Lambat" : (hr > 85 ? "Sedikit Meningkat" : "Dalam rentang normal")
         }
-        return "Dalam rentang normal"
+        return "Belum ada data"
     }
 
     private var sleepDisplayValue: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.sleepFormatted ?? "7j 40m"
+            if let s = syncViewModel.healthRecord?.sleepFormatted, s != "-" {
+                return s
+            }
+            return "-"
         }
         if let s = historicalSummaryForSelectedDate?.sleepHours, s > 0 {
             let hours = Int(s)
             let mins = Int(((s - Double(hours)) * 60).rounded())
             return "\(hours)j \(mins)m"
         }
-        return "7j 40m"
+        return "-"
     }
 
     private var sleepSubtitle: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.sleepStatus ?? "Kualitas tidur baik"
+            if let s = syncViewModel.healthRecord?.sleepFormatted, s != "-" {
+                return syncViewModel.healthRecord?.sleepStatus ?? "Kualitas tidur baik"
+            }
+            return "Belum ada data"
         }
         if let s = historicalSummaryForSelectedDate?.sleepHours, s > 0 {
             return s >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih"
         }
-        return "Kualitas tidur baik"
+        return "Belum ada data"
     }
 
     private var stepsDisplayValue: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.stepFormatted ?? "4.280"
+            if let st = syncViewModel.healthRecord?.stepFormatted, st != "-" {
+                return st
+            }
+            return "-"
         }
-        if let st = historicalSummaryForSelectedDate?.stepCount {
+        if let st = historicalSummaryForSelectedDate?.stepCount, st > 0 {
             let formatter = NumberFormatter()
             formatter.numberStyle = .decimal
             formatter.groupingSeparator = "."
             return formatter.string(from: NSNumber(value: Int(st))) ?? "\(Int(st))"
         }
-        return "4.280"
+        return "-"
     }
 
     private var stepsSubtitle: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.activityStatus ?? "Lebih baik dari biasanya"
+            if let st = syncViewModel.healthRecord?.stepFormatted, st != "-" {
+                return syncViewModel.healthRecord?.activityStatus ?? "Lebih baik dari biasanya"
+            }
+            return "Belum ada data"
         }
-        if let st = historicalSummaryForSelectedDate?.stepCount {
+        if let st = historicalSummaryForSelectedDate?.stepCount, st > 0 {
             return st >= 4000 ? "Lebih baik dari biasanya" : (st > 0 ? "Cenderung santai hari ini" : "Belum mulai beraktivitas")
         }
-        return "Lebih baik dari biasanya"
+        return "Belum ada data"
     }
 
     private var summaryTitleText: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil"
+            if hasDataForSelectedDate {
+                return syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil"
+            }
+            return "Belum ada data"
         }
-        let hasData = (historicalSummaryForSelectedDate?.latestHeartRate != nil) ||
-                      (historicalSummaryForSelectedDate?.sleepHours != nil && historicalSummaryForSelectedDate!.sleepHours! > 0) ||
-                      (historicalSummaryForSelectedDate?.stepCount != nil)
-        return hasData ? (syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil") : "Kondisi cukup stabil"
+        return hasDataForSelectedDate ? (syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil") : "Belum ada data"
     }
 
     private var summaryBodyText: String {
         if isViewingToday {
-            return syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
+            if hasDataForSelectedDate {
+                return syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
+            }
+            return "Data detak jantung, tidur, dan langkah belum tersedia di Apple Health hari ini."
         }
-        let hasData = (historicalSummaryForSelectedDate?.latestHeartRate != nil) ||
-                      (historicalSummaryForSelectedDate?.sleepHours != nil && historicalSummaryForSelectedDate!.sleepHours! > 0) ||
-                      (historicalSummaryForSelectedDate?.stepCount != nil)
-        return hasData
+        return hasDataForSelectedDate
             ? (syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
-            : "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
+            : "Data detak jantung, tidur, dan langkah tidak tercatat pada tanggal ini."
     }
 
     private var heartRateChartValues: [CGFloat] {
+        guard hasDataForSelectedDate else {
+            return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
+        }
         let pts = syncViewModel.healthRecord?.recentHeartRatePoints ?? []
         if pts.count >= 3 {
             let maxVal = pts.max() ?? 1
@@ -424,6 +456,9 @@ struct HistoryView: View {
     }
 
     private var sleepChartValues: [CGFloat] {
+        guard hasDataForSelectedDate else {
+            return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
+        }
         let pts = syncViewModel.healthRecord?.recentSleepPoints ?? []
         if pts.count >= 3 {
             let maxVal = pts.max() ?? 1
@@ -433,6 +468,9 @@ struct HistoryView: View {
     }
 
     private var stepChartValues: [CGFloat] {
+        guard hasDataForSelectedDate else {
+            return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
+        }
         let pts = syncViewModel.healthRecord?.recentStepPoints ?? []
         if pts.count >= 3 {
             let maxVal = pts.max() ?? 1

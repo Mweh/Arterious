@@ -179,7 +179,7 @@ struct LLMInsightView: View {
         domainCard(
             title: "Aktivitas Fisik",
             systemImage: "figure.walk",
-            iconColor: .orange,
+            iconColor: .green,
             metricInsight: insight,
             metricUnit: ""
         )

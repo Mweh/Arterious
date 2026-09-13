@@ -68,17 +68,9 @@ struct OnboardingWelcomeView: View {
             Spacer()
 
             // MARK: - Lanjut Button
-            Button(action: onContinue) {
-                Text("Lanjut")
-                    .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(AppColor.Brand.primaryBlue)
-                    .clipShape(Capsule())
-            }
-            .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
-            .padding(.bottom, AppSpacing.xl)
+            AppButton(title: "Lanjut", isFullWidth: true, action: onContinue)
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.bottom, AppSpacing.xl)
         }
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
     }
@@ -98,10 +90,9 @@ struct OnboardingWelcomeView: View {
                     .foregroundStyle(AppColor.textPrimary)
 
                 Text(item.subtitle)
-                    .font(AppTypography.footnoteRegular) // SF Pro 13 Regular
+                    .font(AppTypography.footnoteRegular)
                     .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(2) // Line height 18
-                    .fixedSize(horizontal: false, vertical: true)
+                    .lineSpacing(2)
             }
 
             Spacer(minLength: 0)

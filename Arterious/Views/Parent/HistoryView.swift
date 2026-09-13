@@ -87,8 +87,12 @@ struct HistoryView: View {
                 }
             }
             .background(AppColor.backgroundPrimary.ignoresSafeArea())
-            .toolbar(.hidden, for: .navigationBar)
-            .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
+            .navigationTitle("Riwayat")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    calendarToolbarButton
+                }
+            }
             .navigationDestination(for: DetailDestination.self) { destination in
                 switch destination {
                 case .heartRate: HeartRateDetailView()
@@ -114,20 +118,14 @@ struct HistoryView: View {
     private var historyContentView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                HStack {
-                    Text("Riwayat")
-                        .font(.largeTitle.weight(.bold))
-                        .foregroundStyle(AppColor.textPrimary)
-                    Spacer()
-                    calendarToolbarButton
-                }
+
                 
                 // Horizontal Calendar Strip
                 weekCalendarStrip
                 
                 // Selected Date Text (e.g. "3 September 2026")
                 Text(currentSelectedDateString)
-                    .font(.system(size: 15, weight: .regular))
+                    .font(AppTypography.subheadlineBold)
                     .foregroundStyle(AppColor.textPrimary)
                     .padding(.top, AppSpacing.xs)
                 
@@ -137,7 +135,7 @@ struct HistoryView: View {
                 // Metric Cards Section
                 VStack(alignment: .leading, spacing: AppSpacing.md) {
                     Text("Data")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(AppTypography.title3Bold)
                         .foregroundStyle(AppColor.textPrimary)
                     
                     // 1. Detak Jantung Card
@@ -248,23 +246,23 @@ struct HistoryView: View {
 
                     HStack(spacing: 4) {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 13, weight: .semibold))
+                            .font(AppTypography.footnoteRegular.weight(.semibold))
                         Text("Insight AI")
-                            .font(.system(size: 12, weight: .semibold))
+                            .font(AppTypography.captionRegular.weight(.semibold))
                         Image(systemName: "chevron.right")
-                            .font(.system(size: 11, weight: .semibold))
+                            .font(AppTypography.captionRegular.weight(.semibold))
                     }
                     .foregroundStyle(AppColor.actionBlue)
                 }
                 
                 Text(summaryTitleText)
-                    .font(.system(size: 22, weight: .bold))
+                    .font(AppTypography.title2Bold)
                     .foregroundStyle(AppColor.textPrimary)
                     .padding(.top, 1)
                 
                 HStack(alignment: .top, spacing: 6) {
                     Image(systemName: "sparkles")
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(AppTypography.subheadlineBold)
                         .foregroundStyle(AppColor.actionBlue)
                         .padding(.top, 2)
                 

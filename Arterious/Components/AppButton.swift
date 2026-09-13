@@ -30,7 +30,7 @@ struct AppButton: View {
             HStack(spacing: AppSpacing.xs) {
                 if isLoading {
                     ProgressView()
-                        .tint(foregroundColor)
+                        .tint(style == .primary ? .white : AppColor.accent)
                         .scaleEffect(0.8)
                 } else if let icon {
                     Image(systemName: icon)
@@ -39,34 +39,33 @@ struct AppButton: View {
                 Text(title)
             }
             .font(AppTypography.buttonLabel)
-            .foregroundStyle(foregroundColor)
             .frame(maxWidth: isFullWidth ? .infinity : nil)
             .padding(.horizontal, AppSpacing.lg)
             .padding(.vertical, isFullWidth ? AppSpacing.md : AppSpacing.sm + 2)
-            .background(background)
-            .clipShape(Capsule())
         }
+        .buttonStyle(AppButtonStyle(style: style))
         .disabled(isLoading)
     }
+}
 
-    @ViewBuilder
-    private var background: some View {
-        switch style {
-        case .primary:
-            Capsule().fill(AppColor.accent)
-        case .secondary:
-            Capsule()
-                .stroke(AppColor.accent, lineWidth: 1.5)
-        }
-    }
+/// Native SwiftUI ButtonStyle for Arterious buttons
+struct AppButtonStyle: ButtonStyle {
+    var style: AppButton.Style
 
-    private var foregroundColor: Color {
-        switch style {
-        case .primary:
-            return .white
-        case .secondary:
-            return AppColor.accent
-        }
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .foregroundStyle(style == .primary ? .white : AppColor.accent)
+            .background(
+                Capsule()
+                    .fill(style == .primary ? AppColor.accent : Color.clear)
+            )
+            .overlay(
+                Capsule()
+                    .stroke(AppColor.accent, lineWidth: style == .secondary ? 1.5 : 0)
+            )
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: configuration.isPressed)
     }
 }
 

@@ -43,7 +43,6 @@ struct EmptyStateView: View {
                     .font(AppTypography.subheadline)
                     .foregroundStyle(AppColor.textSecondary)
                     .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
             }
 
             if let actionTitle, let action {

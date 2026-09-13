@@ -239,12 +239,12 @@ struct SleepDetailView: View {
     private var conditionHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(syncViewModel.healthRecord?.summaryTitle ?? (syncViewModel.healthRecord?.sleepStatus ?? "Pola Istirahat Terpantau"))
-                .font(.system(size: 22, weight: .bold))
+                .font(AppTypography.title2Bold)
                 .foregroundStyle(AppColor.textPrimary)
 
             HStack(alignment: .top, spacing: 6) {
                 Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .semibold))
+                    .font(AppTypography.subheadlineBold)
                     .foregroundStyle(AppColor.actionBlue)
                     .padding(.top, 2)
 
@@ -252,7 +252,6 @@ struct SleepDetailView: View {
                     .font(AppTypography.subheadlineRegular)
                     .foregroundStyle(AppColor.textSecondary)
                     .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
@@ -271,7 +270,7 @@ struct SleepDetailView: View {
 
         return VStack(alignment: .leading, spacing: AppSpacing.sm) {
             Text(todayDateHeader)
-                .font(.system(size: 18, weight: .bold))
+                .font(AppTypography.headline)
                 .foregroundStyle(AppColor.textPrimary)
 
             DonutProgressGaugeView(
@@ -295,30 +294,30 @@ struct SleepDetailView: View {
 
         return VStack(alignment: .leading, spacing: 2) {
             Text("RERATA WAKTU TIDUR")
-                .font(.system(size: 13, weight: .semibold))
+                .font(AppTypography.footnoteRegular.weight(.semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 if averageSleepHours > 0 {
                     Text("\(avgH)")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(AppTypography.largeTitleBold)
                         .foregroundStyle(AppColor.textPrimary)
 
                     Text("jam")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(AppTypography.calloutBold)
                         .foregroundStyle(AppColor.textSecondary)
                         .padding(.trailing, 6)
 
                     Text("\(avgM)")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(AppTypography.largeTitleBold)
                         .foregroundStyle(AppColor.textPrimary)
 
                     Text("mnt")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(AppTypography.calloutBold)
                         .foregroundStyle(AppColor.textSecondary)
                 } else {
                     Text("-")
-                        .font(.system(size: 34, weight: .bold))
+                        .font(AppTypography.largeTitleBold)
                         .foregroundStyle(AppColor.textPrimary)
                 }
             }
@@ -372,7 +371,7 @@ struct SleepDetailView: View {
                         .stroke(Color.black.opacity(0.18), lineWidth: 1)
 
                         Text(mark.label)
-                            .font(.system(size: 10, weight: .regular))
+                            .font(AppTypography.caption2)
                             .foregroundStyle(AppColor.textSecondary)
                             .position(x: chartWidth + 22, y: max(yPos, 6))
                     }
@@ -437,7 +436,7 @@ struct SleepDetailView: View {
             HStack(spacing: 0) {
                 ForEach(data) { item in
                     Text(item.day)
-                        .font(.system(size: 11, weight: .regular))
+                        .font(AppTypography.caption2)
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
@@ -504,19 +503,19 @@ struct SleepDetailView: View {
                 .frame(width: 10, height: 10)
 
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(AppTypography.subheadlineBold)
                 .foregroundStyle(AppColor.textPrimary)
 
             Spacer()
 
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(AppTypography.calloutBold)
                     .foregroundStyle(AppColor.textPrimary)
 
                 if !unit.isEmpty {
                     Text(unit)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppTypography.footnoteRegular.weight(.semibold))
                         .foregroundStyle(AppColor.textSecondary)
                 }
             }

@@ -5,66 +5,66 @@ enum AppTypography {
 
     // MARK: - Figma: LargeTitle
 
-    /// LargeTitle/Bold — Size: 34, Weight: Bold, Line Height: 41
-    static let largeTitleBold: Font = .system(size: 34, weight: .bold)
+    /// LargeTitle/Bold
+    static let largeTitleBold: Font = .largeTitle.weight(.bold)
 
-    /// LargeTitle/Regular — Size: 34, Weight: Regular, Line Height: 41
-    static let largeTitleRegular: Font = .system(size: 34, weight: .regular)
+    /// LargeTitle/Regular
+    static let largeTitleRegular: Font = .largeTitle.weight(.regular)
 
     // MARK: - Figma: Title 1
 
-    /// Title1/Regular — Size: 28, Weight: Regular, Line Height: 34
-    static let title1Regular: Font = .system(size: 28, weight: .regular)
+    /// Title1/Regular
+    static let title1Regular: Font = .title.weight(.regular)
 
     // MARK: - Figma: Title 2
 
-    /// Title2/Bold — Size: 22, Weight: Bold, Line Height: 26
-    static let title2Bold: Font = .system(size: 22, weight: .bold)
+    /// Title2/Bold
+    static let title2Bold: Font = .title2.weight(.bold)
 
-    /// Title2/Regular — Size: 22, Weight: Regular, Line Height: 26
-    static let title2Regular: Font = .system(size: 22, weight: .regular)
+    /// Title2/Regular
+    static let title2Regular: Font = .title2.weight(.regular)
 
     // MARK: - Figma: Title 3
 
-    /// Title3/Bold — Size: 20, Weight: Bold, Line Height: 25
-    static let title3Bold: Font = .system(size: 20, weight: .bold)
+    /// Title3/Bold
+    static let title3Bold: Font = .title3.weight(.bold)
 
-    /// Title3/Regular — Size: 20, Weight: Regular, Line Height: 25
-    static let title3Regular: Font = .system(size: 20, weight: .regular)
+    /// Title3/Regular
+    static let title3Regular: Font = .title3.weight(.regular)
 
     // MARK: - Figma: Body
 
-    /// Body/Semibold — Size: 17, Weight: Semibold, Line Height: 22
-    static let bodySemibold: Font = .system(size: 17, weight: .semibold)
+    /// Body/Semibold
+    static let bodySemibold: Font = .body.weight(.semibold)
 
-    /// Body/Medium — Size: 17, Weight: Medium, Line Height: 22
-    static let bodyMedium: Font = .system(size: 17, weight: .medium)
+    /// Body/Medium
+    static let bodyMedium: Font = .body.weight(.medium)
 
-    /// Body/Regular — Size: 17, Weight: Regular, Line Height: 22
-    static let bodyRegular: Font = .system(size: 17, weight: .regular)
+    /// Body/Regular
+    static let bodyRegular: Font = .body.weight(.regular)
 
     // MARK: - Figma: Callout
 
-    /// Callout/Bold — Size: 16, Weight: Bold, Line Height: 21
-    static let calloutBold: Font = .system(size: 16, weight: .bold)
+    /// Callout/Bold
+    static let calloutBold: Font = .callout.weight(.bold)
 
     // MARK: - Figma: Subheadline
 
-    /// Subheadline/Bold — Size: 15, Weight: Bold, Line Height: 20
-    static let subheadlineBold: Font = .system(size: 15, weight: .bold)
+    /// Subheadline/Bold
+    static let subheadlineBold: Font = .subheadline.weight(.bold)
 
-    /// Subheadline/Regular — Size: 15, Weight: Regular, Line Height: 20
-    static let subheadlineRegular: Font = .system(size: 15, weight: .regular)
+    /// Subheadline/Regular
+    static let subheadlineRegular: Font = .subheadline.weight(.regular)
 
     // MARK: - Figma: Footnote
 
-    /// Footnote/Regular — Size: 13, Weight: Regular, Line Height: 18
-    static let footnoteRegular: Font = .system(size: 13, weight: .regular)
+    /// Footnote/Regular
+    static let footnoteRegular: Font = .footnote.weight(.regular)
 
     // MARK: - Figma: Caption
 
-    /// Caption/Regular — Size: 12, Weight: Regular, Line Height: 16
-    static let captionRegular: Font = .system(size: 12, weight: .regular)
+    /// Caption/Regular
+    static let captionRegular: Font = .caption.weight(.regular)
 
     // MARK: - Semantic Aliases (For Codebase Usability & Backwards Compatibility)
 
@@ -89,8 +89,8 @@ enum AppTypography {
     /// Smallest labels / comparison deltas (Caption/Regular)
     static let caption2: Font = captionRegular
 
-    /// Rounded metric value display (e.g., "72 BPM")
-    static let metricValue: Font = .system(size: 22, weight: .bold, design: .rounded)
+    /// Rounded metric value display (Dynamic Type capable)
+    static let metricValue: Font = .system(.title2, design: .rounded, weight: .bold)
 
     /// Standard button label (Body/Semibold)
     static let buttonLabel: Font = bodySemibold

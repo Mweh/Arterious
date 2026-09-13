@@ -189,13 +189,12 @@ struct HeartRateDetailView: View {
     private var conditionHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(syncViewModel.healthRecord?.heartRateStatus ?? "Kondisi cukup stabil")
-                .font(.system(size: 24, weight: .bold))
+                .font(AppTypography.title2Bold)
                 .foregroundStyle(AppColor.textPrimary)
 
             Text("Detak jantung berada dalam rentang normal dan stabil.")
                 .font(AppTypography.subheadlineRegular)
                 .foregroundStyle(AppColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -204,17 +203,17 @@ struct HeartRateDetailView: View {
     private var rangeHeader: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text("RENTANG")
-                .font(.system(size: 13, weight: .semibold))
+                .font(AppTypography.footnoteRegular.weight(.semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text("\(currentMinBPM)-\(currentMaxBPM)")
-                    .font(.system(size: 34, weight: .bold))
+                    .font(AppTypography.largeTitleBold)
                     .foregroundStyle(AppColor.textPrimary)
                     .contentTransition(.numericText())
 
                 Text("BPM")
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(AppTypography.subheadlineBold)
                     .foregroundStyle(AppColor.textSecondary)
             }
 
@@ -264,7 +263,7 @@ struct HeartRateDetailView: View {
 
                         // Y-Axis label on right
                         Text(mark.label)
-                            .font(.system(size: 11, weight: .regular))
+                            .font(AppTypography.caption2)
                             .foregroundStyle(AppColor.textSecondary)
                             .position(x: chartWidth + 18, y: max(yPos, 8))
                     }
@@ -308,7 +307,7 @@ struct HeartRateDetailView: View {
             HStack(spacing: 0) {
                 ForEach(data) { item in
                     Text(item.label)
-                        .font(.system(size: data.count > 7 ? 10 : 12, weight: .regular))
+                        .font(data.count > 7 ? AppTypography.caption2 : AppTypography.captionRegular)
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
@@ -366,19 +365,19 @@ struct HeartRateDetailView: View {
     private func metricInfoCard(title: String, value: String, unit: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(AppTypography.subheadlineBold)
                 .foregroundStyle(AppColor.textPrimary)
 
             Spacer()
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(value)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(AppTypography.calloutBold)
                     .foregroundStyle(AppColor.textPrimary)
 
                 if !unit.isEmpty {
                     Text(unit)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppTypography.footnoteRegular.weight(.semibold))
                         .foregroundStyle(AppColor.textSecondary)
                 }
             }

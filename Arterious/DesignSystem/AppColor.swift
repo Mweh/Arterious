@@ -13,11 +13,11 @@ enum AppColor {
     // MARK: - Figma: Background
 
     enum Background {
-        /// Background/Primary/Gray25 — HEX: #F2F2F7 (100%)
-        static let primaryGray25 = Color(hex: "F2F2F7")
+        /// Background/Primary — Adapts to Light/Dark Mode (e.g. F2F2F7 in Light)
+        static let primaryGray25 = Color(.systemGroupedBackground)
 
-        /// Background/Secondary/White — HEX: #FFFFFF (100%)
-        static let secondaryWhite = Color(hex: "FFFFFF")
+        /// Background/Secondary — Adapts to Light/Dark Mode (e.g. White in Light)
+        static let secondaryWhite = Color(.secondarySystemGroupedBackground)
     }
 
     // MARK: - Figma: AccentColor (Semantic)
@@ -42,18 +42,18 @@ enum AppColor {
     // MARK: - Figma: Gray
 
     enum Gray {
-        /// Gray/Main/Gray100 — HEX: #000000 (100%)
-        static let gray100 = Color(hex: "000000")
+        /// Primary Text — Adapts to Light/Dark Mode
+        static let gray100 = Color.primary
 
-        /// Gray/Main/Gray50 — HEX: #3C3C43 (100%)
-        static let gray50 = Color(hex: "3C3C43")
+        /// Secondary Text — Adapts to Light/Dark Mode
+        static let gray50 = Color.secondary
     }
 
     // MARK: - Figma: Separator
 
     enum Separator {
-        /// Separator/Main/Gray12 — HEX: #000000 (12%)
-        static let gray12 = Color(hex: "000000", opacity: 0.12)
+        /// Standard Native Separator
+        static let gray12 = Color(.separator)
     }
 
     // MARK: - Semantic Aliases (For Codebase Usability & Compatibility)

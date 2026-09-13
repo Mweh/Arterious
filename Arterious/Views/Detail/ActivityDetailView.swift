@@ -202,13 +202,12 @@ struct ActivityDetailView: View {
     private var conditionHeader: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(syncViewModel.healthRecord?.activityStatus ?? "Cenderung santai hari ini")
-                .font(.system(size: 22, weight: .bold))
+                .font(AppTypography.title2Bold)
                 .foregroundStyle(AppColor.textPrimary)
 
             Text("Aktivitas harian dan jumlah langkah tercatat secara akurat dari Apple Health.")
                 .font(AppTypography.subheadlineRegular)
                 .foregroundStyle(AppColor.textSecondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -219,17 +218,17 @@ struct ActivityDetailView: View {
 
         return VStack(alignment: .leading, spacing: 2) {
             Text("RERATA")
-                .font(.system(size: 13, weight: .semibold))
+                .font(AppTypography.footnoteRegular.weight(.semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(avg > 0 ? formatNumber(avg) : "-")
-                    .font(.system(size: 34, weight: .bold))
+                    .font(AppTypography.largeTitleBold)
                     .foregroundStyle(AppColor.textPrimary)
 
                 if avg > 0 {
                     Text("langkah")
-                        .font(.system(size: 16, weight: .medium))
+                        .font(AppTypography.calloutBold)
                         .foregroundStyle(AppColor.textSecondary)
                 }
             }
@@ -274,7 +273,7 @@ struct ActivityDetailView: View {
                         .stroke(Color.black.opacity(0.18), lineWidth: 1)
 
                         Text(val > 0 ? "\(val)" : "0")
-                            .font(.system(size: 10, weight: .regular))
+                            .font(AppTypography.caption2)
                             .foregroundStyle(AppColor.textSecondary)
                             .position(x: chartWidth + 22, y: max(yPos, 8))
                     }
@@ -316,7 +315,7 @@ struct ActivityDetailView: View {
             HStack(spacing: 0) {
                 ForEach(data) { item in
                     Text(item.day)
-                        .font(.system(size: 12, weight: .regular))
+                        .font(AppTypography.captionRegular)
                         .foregroundStyle(AppColor.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
@@ -360,19 +359,19 @@ struct ActivityDetailView: View {
     private func metricInfoCard(title: String, value: String, unit: String) -> some View {
         HStack {
             Text(title)
-                .font(.system(size: 15, weight: .semibold))
+                .font(AppTypography.subheadlineBold)
                 .foregroundStyle(AppColor.textPrimary)
 
             Spacer()
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
                 Text(value)
-                    .font(.system(size: 16, weight: .bold))
+                    .font(AppTypography.calloutBold)
                     .foregroundStyle(AppColor.textPrimary)
 
                 if !unit.isEmpty {
                     Text(unit)
-                        .font(.system(size: 13, weight: .semibold))
+                        .font(AppTypography.footnoteRegular.weight(.semibold))
                         .foregroundStyle(AppColor.textSecondary)
                 }
             }

@@ -46,13 +46,7 @@ struct HomeView: View {
         NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    HStack {
-                        Text("Beranda")
-                            .font(.largeTitle.weight(.bold))
-                            .foregroundStyle(AppColor.textPrimary)
-                        Spacer()
-                        roleSwitcherMenu
-                    }
+
 
                     if !isActuallyConnected {
                         emptyStateCard
@@ -72,7 +66,12 @@ struct HomeView: View {
                 await syncViewModel.refreshIfNeeded()
                 syncViewModel.checkClipboardForInvitation()
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Beranda")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    roleSwitcherMenu
+                }
+            }
             .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
             .navigationDestination(for: DetailDestination.self) { destination in
                 switch destination {
@@ -150,7 +149,7 @@ struct HomeView: View {
 
             VStack(spacing: AppSpacing.sm) {
                 Text("Tetap dekat, meski berjauhan")
-                    .font(.system(size: 16, weight: .bold))
+                    .font(AppTypography.calloutBold)
                     .foregroundStyle(AppColor.textPrimary)
                     .multilineTextAlignment(.center)
 
@@ -158,7 +157,7 @@ struct HomeView: View {
                     ? "Pantau perubahan pola kesehatan dan aktivitas orang tua dari jauh, agar kamu tahu kapan waktunya mengecek kabar mereka"
                     : "Bagikan data kesehatanmu dengan anggota keluarga agar mereka bisa memantau kondisimu dari jauh"
                 )
-                    .font(.system(size: 12, weight: .regular))
+                    .font(AppTypography.captionRegular)
                     .foregroundStyle(AppColor.textSecondary)
                     .multilineTextAlignment(.center)
                     .lineSpacing(2)
@@ -166,21 +165,12 @@ struct HomeView: View {
             .padding(.horizontal, AppSpacing.xxl)
 
             VStack(spacing: AppSpacing.sm) {
-                Button {
+                AppButton(
+                    title: isChild ? "Minta Kontak Membagikan Data" : "Kirim Undangan",
+                    icon: "square.and.arrow.up",
+                    isFullWidth: true
+                ) {
                     showingShareSheet = true
-                } label: {
-                    HStack(spacing: AppSpacing.xs) {
-                        Image(systemName: "square.and.arrow.up")
-                            .font(.system(size: 15, weight: .medium))
-
-                        Text(isChild ? "Minta Kontak Membagikan Data" : "Kirim Undangan")
-                            .font(AppTypography.buttonLabel)
-                    }
-                    .foregroundStyle(Color.white)
-                    .padding(.horizontal, AppSpacing.lg)
-                    .padding(.vertical, 14)
-                    .background(AppColor.actionBlue)
-                    .clipShape(Capsule())
                 }
             }
             .padding(.horizontal, AppSpacing.xxl)
@@ -321,23 +311,23 @@ struct HomeView: View {
 
                         HStack(spacing: 4) {
                             Image(systemName: "sparkles")
-                                .font(.system(size: 13, weight: .semibold))
+                                .font(AppTypography.footnoteRegular.weight(.semibold))
                             Text("Insight AI")
-                                .font(.system(size: 12, weight: .semibold))
+                                .font(AppTypography.captionRegular.weight(.semibold))
                             Image(systemName: "chevron.right")
-                                .font(.system(size: 11, weight: .semibold))
+                                .font(AppTypography.captionRegular.weight(.semibold))
                         }
                         .foregroundStyle(AppColor.actionBlue)
                     }
 
                     Text(syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(AppTypography.title3Bold)
                         .foregroundStyle(AppColor.textPrimary)
                         .padding(.top, 1)
 
                     HStack(alignment: .top, spacing: 6) {
                         Image(systemName: "sparkles")
-                            .font(.system(size: 14, weight: .semibold))
+                            .font(AppTypography.subheadlineBold)
                             .foregroundStyle(AppColor.actionBlue)
                             .padding(.top, 2)
 

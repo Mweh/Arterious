@@ -14,7 +14,6 @@ struct MedicalDisclaimerView: View {
                 .font(AppTypography.captionRegular)
                 .foregroundStyle(AppColor.textSecondary.opacity(0.8))
                 .lineSpacing(2)
-                .fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, AppSpacing.lg)
         .padding(.vertical, AppSpacing.md)

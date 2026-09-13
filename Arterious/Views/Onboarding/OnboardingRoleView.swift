@@ -15,14 +15,13 @@ struct OnboardingRoleView: View {
             VStack(alignment: .leading, spacing: 8) {
                 Text("Mulai dengan\nperan Anda")
                     .font(AppTypography.largeTitleBold) // SF Pro 34 Bold
-                    .foregroundStyle(Color.black)
+                    .foregroundStyle(AppColor.textPrimary)
                     .lineSpacing(4) // Line height 41
 
                 Text("Pilih peran yang paling sesuai agar\nkami dapat memberikan\npengalaman terbaik untuk Anda.")
                     .font(AppTypography.bodyRegular) // SF Pro 17 Regular
-                    .foregroundStyle(subtitleColor)
+                    .foregroundStyle(AppColor.textSecondary)
                     .lineSpacing(3) // Line height 22
-                    .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
             }
             .padding(.top, 20) // ~80pt from screen top with safe area
@@ -50,16 +49,8 @@ struct OnboardingRoleView: View {
             Spacer()
 
             // MARK: - Lanjut Button
-            Button(action: onContinue) {
-                Text("Lanjut")
-                    .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(AppColor.Brand.primaryBlue)
-                    .clipShape(Capsule())
-            }
-            .padding(.bottom, AppSpacing.xl)
+            AppButton(title: "Lanjut", isFullWidth: true, action: onContinue)
+                .padding(.bottom, AppSpacing.xl)
         }
         .padding(.horizontal, 16) // Exactly 16pt padding matching Sketch
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
@@ -102,25 +93,24 @@ struct OnboardingRoleView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(role.title)
                         .font(AppTypography.bodySemibold) // SF Pro 17 Semibold
-                        .foregroundStyle(Color.black)
+                        .foregroundStyle(AppColor.textPrimary)
 
                     Text(descriptionText)
                         .font(AppTypography.subheadlineRegular) // SF Pro 15 Regular
-                        .foregroundStyle(subtitleColor)
+                        .foregroundStyle(AppColor.textSecondary)
                         .multilineTextAlignment(.leading)
                         .lineSpacing(2) // Line height 20
-                        .fixedSize(horizontal: false, vertical: true)
                 }
 
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 18)
             .padding(.vertical, 20)
-            .background(Color.white)
+            .background(AppColor.backgroundSecondary)
             .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
             .overlay(
                 RoundedRectangle(cornerRadius: AppRadius.r24)
-                    .stroke(Color.black.opacity(0.04), lineWidth: 1)
+                    .stroke(AppColor.textPrimary.opacity(0.04), lineWidth: 1)
             )
             .shadow(
                 color: Color.black.opacity(0.03),

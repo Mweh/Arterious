@@ -45,13 +45,7 @@ struct AccessView: View {
 
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                        HStack {
-                            Text("Akses")
-                                .font(.largeTitle.weight(.bold))
-                                .foregroundStyle(AppColor.textPrimary)
-                            Spacer()
-                            toolbarActionButtons
-                        }
+
 
                         if !isConnected {
                             emptyStateView
@@ -68,7 +62,12 @@ struct AccessView: View {
                     deleteConfirmationModal
                 }
             }
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationTitle("Akses")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    toolbarActionButtons
+                }
+            }
             .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
             .navigationDestination(for: DetailDestination.self) { destination in
                 switch destination {
@@ -162,12 +161,7 @@ struct AccessView: View {
                         isEditMode = false
                     }
                 } label: {
-                    Image(systemName: "checkmark")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(width: 36, height: 36)
-                        .background(Color(.systemGray6))
-                        .clipShape(Circle())
+                    Text("Selesai").bold()
                 }
             } else {
                 HStack(spacing: AppSpacing.sm) {
@@ -175,11 +169,6 @@ struct AccessView: View {
                         handlePlusButtonTapped()
                     } label: {
                         Image(systemName: "plus")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(AppColor.textPrimary)
-                            .frame(width: 36, height: 36)
-                            .background(Color(.systemGray6))
-                            .clipShape(Circle())
                     }
 
                     Button {
@@ -188,11 +177,6 @@ struct AccessView: View {
                         }
                     } label: {
                         Image(systemName: "pencil")
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(AppColor.textPrimary)
-                            .frame(width: 36, height: 36)
-                            .background(Color(.systemGray6))
-                            .clipShape(Circle())
                     }
                 }
             }
@@ -201,11 +185,6 @@ struct AccessView: View {
                 handlePlusButtonTapped()
             } label: {
                 Image(systemName: "plus")
-                    .font(.system(size: 15, weight: .semibold))
-                    .foregroundStyle(AppColor.textPrimary)
-                    .frame(width: 36, height: 36)
-                    .background(Color(.systemGray6))
-                    .clipShape(Circle())
             }
         }
     }

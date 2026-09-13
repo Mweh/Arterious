@@ -22,14 +22,13 @@ struct OnboardingHealthView: View {
             // MARK: - Header
             VStack(alignment: .leading, spacing: 8) {
                 Text("Hubungkan ke Health")
-                    .font(.system(size: 22, weight: .bold))
-                    .foregroundStyle(Color.black)
+                    .font(AppTypography.title1Regular.weight(.bold))
+                    .foregroundStyle(AppColor.textPrimary)
 
                 Text("Arterious membutuhkan izin akses\ndata kesehatan agar dapat\nberfungsi dengan optimal. Tenang\nsaja, data kesehatanmu hanya\ndisimpan secara lokal di perangkat\ndan tidak akan pernah diunggah.")
-                    .font(.system(size: 18, weight: .regular))
-                    .foregroundStyle(subtitleColor)
+                    .font(AppTypography.bodyRegular)
+                    .foregroundStyle(AppColor.textSecondary)
                     .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
@@ -52,38 +51,27 @@ struct OnboardingHealthView: View {
 
             // MARK: - Bottom Area (Button + Disclaimer)
             VStack(spacing: 12) {
-                Button(action: requestPermissionsAndProceed) {
-                    HStack(spacing: AppSpacing.xs) {
-                        if isConnecting {
-                            ProgressView()
-                                .tint(.white)
-                                .scaleEffect(0.8)
-                        }
-                        Text("Hubungkan")
-                            .font(.system(size: 17, weight: .semibold))
-                    }
-                    .foregroundStyle(.white)
-                    .frame(maxWidth: .infinity)
-                    .frame(height: 52)
-                    .background(AppColor.Brand.primaryBlue)
-                    .clipShape(Capsule())
-                }
-                .disabled(isConnecting)
+                AppButton(
+                    title: "Hubungkan",
+                    isLoading: isConnecting,
+                    isFullWidth: true,
+                    action: requestPermissionsAndProceed
+                )
 
                 VStack(spacing: 2) {
                     Text("Data kamu tidak pernah meninggalkan perangkat ini.")
                     Text("Arterious bukan pengganti saran medis profesional. Selalu")
                     Text("konsultasikan dengan dokter.")
                 }
-                .font(.system(size: 12.5, weight: .regular))
-                .foregroundStyle(Color.black)
+                .font(AppTypography.captionRegular)
+                .foregroundStyle(AppColor.textPrimary)
                 .multilineTextAlignment(.center)
             }
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color.white)
+        .background(AppColor.backgroundPrimary)
     }
 
     // MARK: - Health Access Mockup
@@ -99,8 +87,8 @@ struct OnboardingHealthView: View {
                 .padding(.top, 20)
 
             Text("Health")
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(Color.black)
+                .font(AppTypography.footnoteRegular.weight(.bold))
+                .foregroundStyle(AppColor.textPrimary)
                 .padding(.top, 4)
 
             // "Turn On All" pill (Left-aligned text)
@@ -142,7 +130,7 @@ struct OnboardingHealthView: View {
         .frame(width: 280, height: 315)
         .background(
             TopRoundedRectangle(cornerRadius: 24)
-                .fill(Color.white)
+                .fill(AppColor.backgroundSecondary)
         )
         .overlay(
             OpenCardShape(cornerRadius: 24)

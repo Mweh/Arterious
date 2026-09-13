@@ -78,28 +78,23 @@ struct HistoryView: View {
     
     var body: some View {
         NavigationStack {
-            ZStack {
-                AppColor.backgroundPrimary
-                    .ignoresSafeArea()
-                
+            Group {
                 if isChildEmpty {
                     childEmptyStateView
                 } else {
                     historyContentView
                 }
             }
-        }
-        .toolbar(.hidden, for: .navigationBar)
-        .sheet(isPresented: $showingCalendarPicker) {
-            calendarPickerSheet
-                .presentationDetents([.height(350)])
-                .presentationDragIndicator(.visible)
-        }
-        .task {
-            await syncViewModel.refreshIfNeeded()
-        }
-        .refreshable {
-            await syncViewModel.refreshIfNeeded()
+            .background(AppColor.backgroundPrimary.ignoresSafeArea())
+            .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showingCalendarPicker) {
+                calendarPickerSheet
+                    .presentationDetents([.height(350)])
+                    .presentationDragIndicator(.visible)
+            }
+            .task {
+                await syncViewModel.refreshIfNeeded()
+            }
         }
     }
     
@@ -190,6 +185,9 @@ struct HistoryView: View {
             .padding(.horizontal, AppSpacing.lg)
             .padding(.top, AppSpacing.sm)
             .padding(.bottom, AppSpacing.xxl)
+        }
+        .refreshable {
+            await syncViewModel.refreshIfNeeded()
         }
     }
     

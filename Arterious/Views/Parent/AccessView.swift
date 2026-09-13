@@ -431,24 +431,8 @@ struct PersonalDetailsView: View {
     var body: some View {
         ZStack {
             AppColor.backgroundPrimary.ignoresSafeArea()
-
+            
             VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(width: 40, height: 40)
-                        .background(Color(.systemGray6))
-                        .clipShape(Circle())
-                }
-                .padding(.top, AppSpacing.sm)
-
-                Text("Rincian")
-                    .font(.system(size: 32, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-
                 VStack(spacing: 0) {
                     detailRow(label: "Nama", value: name.isEmpty ? "Actifed" : name)
                     Divider().padding(.horizontal, AppSpacing.lg)
@@ -459,12 +443,13 @@ struct PersonalDetailsView: View {
                 .background(AppColor.backgroundSecondary)
                 .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
                 .shadow(color: Color.black.opacity(0.03), radius: 8, x: 0, y: 2)
-
+                
                 Spacer()
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.top, AppSpacing.xl)
             }
-            .padding(.horizontal, AppSpacing.lg)
+            .navigationTitle("Rincian")
         }
-        .navigationBarBackButtonHidden(true)
     }
 
     private func detailRow(label: String, value: String) -> some View {

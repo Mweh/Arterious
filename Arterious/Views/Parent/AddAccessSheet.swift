@@ -54,30 +54,7 @@ struct AddAccessSheet: View {
         NavigationStack {
             ZStack(alignment: .bottom) {
                 VStack(spacing: 0) {
-                    // Custom Navigation Bar
-                    HStack {
-                        Spacer()
 
-                        Text("Tambah Akses")
-                            .font(AppTypography.bodySemibold)
-                            .foregroundStyle(AppColor.textPrimary)
-
-                        Spacer()
-
-                        Button {
-                            dismiss()
-                        } label: {
-                            Image(systemName: "xmark")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(AppColor.textPrimary)
-                                .frame(width: 32, height: 32)
-                                .background(Color(.systemGray6))
-                                .clipShape(Circle())
-                        }
-                    }
-                    .padding(.horizontal, AppSpacing.lg)
-                    .padding(.top, AppSpacing.sm)
-                    .padding(.bottom, AppSpacing.md)
 
                     // Contacts List
                     ScrollView {
@@ -99,6 +76,15 @@ struct AddAccessSheet: View {
                     .padding(.bottom, AppSpacing.md)
             }
             .background(AppColor.backgroundSecondary.ignoresSafeArea())
+            .navigationTitle("Tambah Akses")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Tutup") {
+                        dismiss()
+                    }
+                }
+            }
             .task {
                 await loadDeviceContacts()
             }

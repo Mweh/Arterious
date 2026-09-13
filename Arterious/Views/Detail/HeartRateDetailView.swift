@@ -180,33 +180,9 @@ struct HeartRateDetailView: View {
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedRange)
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
-        .navigationBarBackButtonHidden(true)
+        .navigationTitle("Detak Jantung")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
-        .toolbarBackground(AppColor.backgroundPrimary, for: .navigationBar)
-        .toolbarBackground(.visible, for: .navigationBar)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    dismiss()
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(AppColor.textPrimary)
-                        .frame(width: 36, height: 36)
-                        .background(Color.white)
-                        .clipShape(Circle())
-                        .shadow(color: Color.black.opacity(0.08), radius: 4, x: 0, y: 2)
-                }
-                .buttonStyle(.plain)
-            }
-
-            ToolbarItem(placement: .principal) {
-                Text("Detak Jantung")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-            }
-        }
     }
 
     // MARK: - Condition Header

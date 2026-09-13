@@ -452,7 +452,7 @@ Overall status dihitung dari severity tertinggi, kombinasi domain, dan urgent ov
   "task": "generate_caregiver_insight",
   "language": "id-ID",
   "audience": "anak/caregiver lansia",
-  "parent_display_name": "Ibu",
+  "parent_display_name": "anda",
   "overall_status": "CAUTION",
   "concern_state": "NEW_CONCERN",
   "report_period": "3 hari terakhir",
@@ -485,9 +485,9 @@ Overall status dihitung dari severity tertinggi, kombinasi domain, dan urgent ov
 ```json
 {
   "title": "Perubahan pola perlu diperhatikan",
-  "summary": "Dalam tiga hari terakhir, tidur Ibu lebih pendek dari pola biasanya, aktivitas harian berkurang, dan denyut saat istirahat meningkat. Perubahan ini dapat terjadi saat tubuh kurang pulih atau sedang tidak enak badan, tetapi tidak menunjukkan penyebab pasti.",
+  "summary": "Dalam tiga hari terakhir, tidur anda lebih pendek dari pola biasanya, aktivitas harian berkurang, dan denyut saat istirahat meningkat. Perubahan ini dapat terjadi saat tubuh kurang pulih atau sedang tidak enak badan, tetapi tidak menunjukkan penyebab pasti.",
   "recommended_actions": [
-    "Hubungi Ibu hari ini dan tanyakan keluhan.",
+    "Hubungi anda hari ini dan tanyakan keluhan.",
     "Jika tersedia, bantu ukur tekanan darah dengan tensimeter."
   ],
   "urgency": "CAUTION"

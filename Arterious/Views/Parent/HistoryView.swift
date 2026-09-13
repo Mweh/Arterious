@@ -510,14 +510,7 @@ struct HistoryView: View {
     
     private var childEmptyStateView: some View {
         VStack(spacing: AppSpacing.sm) {
-            HStack {
-                Text("Riwayat")
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(AppColor.textPrimary)
-                Spacer()
-            }
-            .padding(.horizontal, AppSpacing.lg)
-            .padding(.top, AppSpacing.sm)
+
             
             Spacer()
                 .frame(height: 140)

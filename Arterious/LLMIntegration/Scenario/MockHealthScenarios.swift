@@ -335,7 +335,7 @@ enum MockDataLoader {
     /// Menjamin bahwa allowed_actions, facts, dan triggered_rules_summary
     /// murni berasal dari rule engine yang aktif (H1, H2, S17, A8, dll.)
     static func assemblePromptFromHitRules(
-        parentDisplayName: String = "Ibu",
+        parentDisplayName: String = "anda",
         reportPeriod: String = "3 hari terakhir"
     ) -> LLMInsightInput? {
         guard let evaluation = loadRuleResults(),

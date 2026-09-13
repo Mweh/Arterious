@@ -36,7 +36,7 @@ struct LLMInsightView: View {
     
     private var parentDisplayName: String {
         let name = syncViewModel.parentName
-        return (name.isEmpty || name == "Nama Ortu 1" || name == "Saya") ? "Ibu" : name
+        return (name.isEmpty || name == "Nama Ortu 1" || name == "Saya") ? "anda" : name
     }
     
     private var isCurrentlyLoading: Bool {
@@ -104,28 +104,6 @@ struct LLMInsightView: View {
         }
         .navigationTitle("Insight Kesehatan \(parentDisplayName)")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                if isChild ? syncViewModel.isLoading : (localViewModel.isLoading || syncViewModel.isLoading) {
-                    ProgressView()
-                } else {
-                    Button {
-                        Task {
-                            if isChild {
-                                await syncViewModel.fetchSharedParentSnapshot()
-                            } else {
-                                await syncViewModel.loadParentLocalHealthData(forceGemini: true)
-                                await localViewModel.loadAndGenerateInsight(forceRefresh: true)
-                            }
-                        }
-                    } label: {
-                        Image(systemName: isFallback ? "arrow.clockwise" : "sparkles")
-                            .font(.headline)
-                            .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
-                    }
-                }
-            }
-        }
         .refreshable {
             if isChild {
                 await syncViewModel.fetchSharedParentSnapshot()

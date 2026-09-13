@@ -36,7 +36,7 @@ final class LLMInsightViewModel {
     var isUsingLocalRuleFallback: Bool = false
     
     /// Nama orang tua yang dipantau
-    var parentName: String = "Ibu"
+    var parentName: String = "anda"
     
     // MARK: - Real-time Heart Rate State
     

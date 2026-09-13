@@ -284,7 +284,7 @@ final class RuleEngine {
     func evaluate(
         today: DailyHealthSummary,
         history: [DailyHealthSummary],
-        parentDisplayName: String = "Ibu"
+        parentDisplayName: String = "anda"
     ) -> (overview: EvaluatedHealthOverview, input: LLMInsightInput) {
         
         // 1. Hitung Nilai Baseline 14 Hari
@@ -978,7 +978,7 @@ final class RuleEngine {
     
     // MARK: - Local Fallback Generator
     
-    func makeLocalFallbackInsight(from overview: EvaluatedHealthOverview, parentName: String = "Ibu") -> LLMInsightOutput {
+    func makeLocalFallbackInsight(from overview: EvaluatedHealthOverview, parentName: String = "anda") -> LLMInsightOutput {
         let overviewSummary: String
         switch overview.conditionStatus {
         case "DECLINED":

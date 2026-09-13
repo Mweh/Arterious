@@ -78,7 +78,7 @@
         "condition": "Resting HR naik 12 bpm dari baseline (67 → 79 bpm) selama 2 hari berturut-turut",
         "met_on_dates": ["2026-09-05", "2026-09-06"],
         "severity": 2,
-        "derived_action": "Hubungi Ibu hari ini; tanyakan lemas, pusing, nyeri dada, atau sesak; ingatkan ukur tensi bila ada"
+        "derived_action": "Hubungi anda hari ini; tanyakan lemas, pusing, nyeri dada, atau sesak; ingatkan ukur tensi bila ada"
       },
       {
         "rule_id": "H4",

@@ -199,7 +199,7 @@ final class SyncViewModel {
         let (overview, promptInput) = RuleEngine.shared.evaluate(
             today: summary,
             history: history,
-            parentDisplayName: pName == "Saya" ? "Ibu" : pName
+            parentDisplayName: pName == "Saya" ? "anda" : pName
         )
         self.evaluatedOverview = overview
         self.baseline = overview.baseline
@@ -221,7 +221,7 @@ final class SyncViewModel {
             } catch {
                 print("⚠️ [SyncViewModel] Gemini error, using rule fallback: \(error)")
                 self.isUsingLocalRuleFallback = true
-                let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "Ibu" : pName)
+                let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "anda" : pName)
                 self.insightOutput = fallback
                 overviewSummaryText = fallback.todayOverview.summary
             }
@@ -230,7 +230,7 @@ final class SyncViewModel {
             overviewSummaryText = existing.todayOverview.summary
         } else {
             self.isUsingLocalRuleFallback = true
-            let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "Ibu" : pName)
+            let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "anda" : pName)
             self.insightOutput = fallback
             overviewSummaryText = fallback.todayOverview.summary
         }
@@ -657,7 +657,7 @@ final class SyncViewModel {
         let (overview, promptInput) = RuleEngine.shared.evaluate(
             today: summary,
             history: history,
-            parentDisplayName: pName == "Saya" ? "Ibu" : pName
+            parentDisplayName: pName == "Saya" ? "anda" : pName
         )
         self.evaluatedOverview = overview
         self.baseline = overview.baseline
@@ -666,7 +666,7 @@ final class SyncViewModel {
         if let existingOutput = self.insightOutput {
             overviewSummaryText = existingOutput.todayOverview.summary
         } else {
-            let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "Ibu" : pName)
+            let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "anda" : pName)
             self.insightOutput = fallback
             overviewSummaryText = fallback.todayOverview.summary
         }
@@ -845,7 +845,7 @@ final class SyncViewModel {
             statusUpper = "STABLE"
         }
         
-        let pName = (record.parentName.isEmpty || record.parentName == "Nama Ortu 1" || record.parentName == "Parent") ? "Ibu" : record.parentName
+        let pName = (record.parentName.isEmpty || record.parentName == "Nama Ortu 1" || record.parentName == "Parent") ? "anda" : record.parentName
         
         // Activity domain
         let steps = record.stepCount ?? 0
@@ -1176,7 +1176,7 @@ final class SyncViewModel {
             case .serviceUnavailable, .requestRateLimited, .zoneBusy:
                 let retrySec = (nsError.userInfo[CKErrorRetryAfterKey] as? NSNumber)?.intValue ?? 60
                 let minutes = max(1, Int(ceil(Double(retrySec) / 60.0)))
-                return "Server iCloud sedang sibuk atau dibatasi sementara oleh Apple. Silakan coba kembali dalam \(minutes) menit."
+                return "Server iCloud sedang sandak atau dibatasi sementara oleh Apple. Silakan coba kembali dalam \(minutes) menit."
             case .notAuthenticated:
                 return "Akun iCloud belum aktif. Silakan masuk ke Apple ID di Pengaturan iPhone Anda."
             case .networkFailure, .networkUnavailable:
@@ -1190,7 +1190,7 @@ final class SyncViewModel {
 
         let desc = error.localizedDescription
         if desc.localizedCaseInsensitiveContains("throttled") || desc.localizedCaseInsensitiveContains("503") {
-            return "Server iCloud sedang sibuk. Silakan coba kembali dalam beberapa menit."
+            return "Server iCloud sedang sandak. Silakan coba kembali dalam beberapa menit."
         }
         return desc
     }

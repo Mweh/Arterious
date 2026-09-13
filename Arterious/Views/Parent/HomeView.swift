@@ -15,7 +15,7 @@ struct HomeView: View {
     @State private var manualPastedText: String = ""
     @State private var navigationPath = NavigationPath()
 
-    private let parentOptions = ["Orang Tua 1", "Orang Tua 2", "Ibu", "Ayah"]
+    private let parentOptions = ["Orang Tua 1", "Orang Tua 2", "anda", "Ayah"]
 
     private var isActuallyConnected: Bool {
         if userRole == UserRole.parent.rawValue {

@@ -149,7 +149,7 @@ final class GeminiService: Sendable {
         8. NADA REASSURING (MENCEGAH KECEMASAN ANAK):
            - Tujuan utama aplikasi adalah mendampingi anak menjaga orang tua dengan tenang tanpa rasa cemas atau panik berlebihan.
            - Jika ada perbedaan atau fluktuasi data yang masih terbilang wajar menurut rule engine (status STABLE atau delta wajar), WAJIB sertakan penenang: "namun perubahan ini masih terbilang wajar dan normal dalam keseharian orang tua".
-           - Jika ada kondisi yang perlu perhatian (DECLINED), sampaikan secara bijak dan hangat tanpa kepanikan, fokus pada sapaan santai anak (misal: "Anak tidak perlu cemas berlebihan, cukup luangkan waktu untuk menyapa santai dan menanyakan kabar Ibu").
+           - Jika ada kondisi yang perlu perhatian (DECLINED), sampaikan secara bijak dan hangat tanpa kepanikan, fokus pada sapaan santai anak (misal: "Anak tidak perlu cemas berlebihan, cukup luangkan waktu untuk menyapa santai dan menanyakan kabar anda").
         9. ATURAN LANGKAH SIANG/SORE HARI: Jika langkah kaki di siang atau sore hari masih di bawah total baseline harian, JANGAN menilainya buruk atau menurun drastis karena hari belum selesai. Jelaskan secara ramah bahwa langkah masih terus berproses seiring sisa waktu sebelum jam tidur, dan perbedaannya masih wajar.
         10. ATURAN KUALITAS TIDUR & STANDAR SEHAT 7–8 JAM:
            - Standar kebutuhan tidur sehat manusia (termasuk lansia) adalah 7 hingga 8 jam per malam.

@@ -8,7 +8,7 @@
   "task": "generate_caregiver_insight",
   "language": "id-ID",
   "audience": "anak/caregiver lansia",
-  "parent_display_name": "Ibu",
+  "parent_display_name": "anda",
   "overall_status": "CAUTION",
   "concern_state": "NEW_CONCERN",
   "report_period": "3 hari terakhir",
@@ -31,7 +31,7 @@
     "A11: Kecepatan berjalan turun >=15% vs baseline selama >=3 hari"
   ],
   "allowed_actions": [
-    "Hubungi Ibu hari ini untuk check-in menanyakan kabar",
+    "Hubungi anda hari ini untuk check-in menanyakan kabar",
     "Tanyakan keluhan seperti lemas, pusing, nyeri dada, sesak, atau demam (dari rule H2 & H6)",
     "Ingatkan pengukuran tekanan darah dengan tensimeter bila tersedia (dari rule H2 & policy CAUTION)",
     "Tanyakan apakah sulit tidur atau sering terbangun di malam hari (dari rule S17 & S20)",

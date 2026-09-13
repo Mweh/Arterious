@@ -76,6 +76,19 @@ struct LLMInsightView: View {
                         sleepSection(output.sleepInsight)
                         heartSection(output.heartInsight)
                         recommendedActionsSection(output.recommendedActions)
+                        
+                        // Disclaimer Pembanding Personal (Non-Medis)
+                        HStack(alignment: .top, spacing: 6) {
+                            Image(systemName: "info.circle")
+                                .font(.footnote)
+                                .foregroundStyle(.secondary)
+                            Text("Pola 14 hari terakhir digunakan sebagai pembanding personal, bukan target medis.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.horizontal, 4)
+                        .padding(.top, 4)
                     } else if isCurrentlyLoading {
                         loadingCard
                     } else {
@@ -174,37 +187,50 @@ struct LLMInsightView: View {
     
     // MARK: - 2. Activity Section
     
+    // MARK: - 2. Activity Section
+    
     private func activitySection(_ insight: DomainMetricInsight) -> some View {
-        domainCard(
+        let baselineText = insight.baselineValue.contains("/hari") ? insight.baselineValue : "\(insight.baselineValue)/hari"
+        
+        return domainCard(
             title: "Aktivitas Fisik",
             systemImage: "figure.walk",
             iconColor: .green,
             metricInsight: insight,
-            metricUnit: ""
+            baselineLabel: "Pola 14 hari terakhir",
+            baselineValueFormatted: baselineText
         )
     }
     
     // MARK: - 3. Sleep Section
     
     private func sleepSection(_ insight: DomainMetricInsight) -> some View {
-        domainCard(
+        let baselineText = insight.baselineValue.contains("/malam") ? insight.baselineValue : "\(insight.baselineValue)/malam"
+        
+        return domainCard(
             title: "Tidur Semalam",
             systemImage: "bed.double.fill",
             iconColor: .indigo,
             metricInsight: insight,
-            metricUnit: ""
+            baselineLabel: "Pola 14 malam terakhir",
+            baselineValueFormatted: baselineText
         )
     }
     
-    // MARK: - 4. Heart Section (Unified Single Heart Rate)
+    // MARK: - 4. Heart Section (Denyut Saat Istirahat)
     
     private func heartSection(_ insight: DomainMetricInsight) -> some View {
-        domainCard(
-            title: "Kesehatan Jantung",
+        let baselineText = insight.baselineValue.contains("bpm") || insight.baselineValue.contains("BPM") ? insight.baselineValue.lowercased() : "\(insight.baselineValue) bpm"
+        let currentText = insight.currentValue.contains("bpm") || insight.currentValue.contains("BPM") ? insight.currentValue.lowercased() : "\(insight.currentValue) bpm"
+        
+        return domainCard(
+            title: "Denyut Saat Istirahat",
             systemImage: "waveform.path.ecg",
             iconColor: .red,
             metricInsight: insight,
-            metricUnit: ""
+            currentValueFormatted: currentText,
+            baselineLabel: "Pola 14 hari terakhir",
+            baselineValueFormatted: baselineText
         )
     }
     
@@ -215,9 +241,11 @@ struct LLMInsightView: View {
         systemImage: String,
         iconColor: Color,
         metricInsight: DomainMetricInsight,
-        metricUnit: String
+        currentValueFormatted: String? = nil,
+        baselineLabel: String,
+        baselineValueFormatted: String
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 14) {
             // Header Bar
             HStack(spacing: 8) {
                 Image(systemName: systemImage)
@@ -235,14 +263,14 @@ struct LLMInsightView: View {
                 Spacer()
             }
             
-            // Numbers Comparison Row
+            // Numbers Comparison Row (Clean & Non-Technical Table/Box)
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Hari Ini")
+                    Text("Hari ini")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Text(metricInsight.currentValue)
+                    Text(currentValueFormatted ?? metricInsight.currentValue)
                         .font(.subheadline.weight(.bold))
                         .foregroundStyle(.primary)
                         .lineLimit(1)
@@ -251,14 +279,14 @@ struct LLMInsightView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 
                 Divider()
-                    .frame(height: 28)
+                    .frame(height: 32)
                 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Baseline (14h)")
+                    Text(baselineLabel)
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                    Text(metricInsight.baselineValue)
+                    Text(baselineValueFormatted)
                         .font(.subheadline.weight(.semibold))
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -266,23 +294,27 @@ struct LLMInsightView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 10)
             .background(Color(.tertiarySystemGroupedBackground))
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             
-            // Insight Text (AI vs Rule Engine)
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
-                    .font(.caption2)
-                    .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
-                    .padding(.top, 2)
-                
-                Text(metricInsight.insight)
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+            // Insight Text (AI vs Rule Engine) - Multi-Sparkles!
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(Array(metricInsight.allInsights.enumerated()), id: \.offset) { _, point in
+                    HStack(alignment: .top, spacing: 8) {
+                        Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
+                            .font(.caption)
+                            .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
+                            .padding(.top, 2)
+                        
+                        Text(point)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                            .lineSpacing(3)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
         .padding(16)

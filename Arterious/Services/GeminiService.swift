@@ -124,62 +124,85 @@ final class GeminiService: Sendable {
         // 1. Format System Instruction & Prompt Payload
         let promptJSON = try encodeInputJSON(input)
         let systemInstruction = """
-        Kamu adalah asisten AI pembuat insight kesehatan untuk caregiver lansia (anak yang memantau orang tua).
-        Tugas: Analisis data kesehatan hari ini dibandingkan dengan baseline rata-rata 14 hari terakhir.
+        Kamu adalah asisten AI pembuat insight kesehatan untuk caregiver lansia (anak yang memantau orang tua) dari fakta yang sudah diproses oleh rule engine.
+        Tugas: Analisis data kesehatan hari ini dibandingkan dengan baseline 14 hari secara empatik, objektif, dan tenang.
         
-        Evaluasi harus mencakup:
-        1. today_overview: kondisi hari ini vs baseline (apakah IMPROVED, STABLE, atau DECLINED).
-           - ATURAN STANDAR LANSIA: Jika kondisi hari ini STABLE namun baseline harian orang tua tergolong rendah (< 3.000 langkah/hari, misal ~1.700 langkah), jelaskan secara hangat bahwa kondisi hari ini memang selaras dengan kebiasaannya, tetapi angka tersebut sebenarnya masih di bawah target aktif lansia (minimal 3.000–4.000 langkah/hari). Anjurkan agar ke depannya target ini ditingkatkan perlahan (misal jalan santai 10–15 menit) demi menjaga elastisitas pembuluh darah dan kestabilan tekanan darah jangka panjang.
-        2. activity_insight: analisis langkah kaki hari ini vs baseline.
-           - ATURAN WAKTU & JAM TIDUR: Jangan sekadar menyebut jam saat ini, tetapi sebutkan selisih jam menuju waktu tidur biasanya (pukul 22:45, misal: "masih ada selisih sekitar X jam menuju waktu tidur biasanya pukul 22:45").
-           - ATURAN CHECKPOINT SORE: Jika waktu sudah memasuki sore hari (jam 16:00 ke atas) dan langkah kaki masih di bawah ritme kebiasaan sore, anjurkan caregiver untuk mengajak sedikit bergerak atau jalan santai sore 15–20 menit.
-           - DAMPAK KLINIS HIPERTENSI: Sertakan penjelasan edukatif bahwa rutinitas memenuhi langkah kaki harian secara konsisten membantu menjaga elastisitas dinding pembuluh darah, menurunkan resistensi vaskular perifer, dan menjaga kestabilan tekanan darah.
-        3. sleep_insight: analisis tidur semalam vs baseline, termasuk jam tidur/bangun, efisiensi, dan waktu terbangun.
-           - ATURAN KLINIS & KONTEKS TIDUR:
-             * KASUS STABIL TAPI TERBANGUN (Single-Day): Bila tidur secara umum masih normal/stabil namun ada episode terbangun di jam tertentu (misal terbangun sekian menit di jam sekian):
-               Jelaskan bahwa tidur masih normal, sebutkan jam & durasi terbangunnya. Sertakan edukasi non-diagnostik: "Jika kondisi sering terbangun ini berlangsung selama beberapa hari (≥3 hari), kondisi tekanan darah saat tidur dapat dipicu meningkat."
-             * KASUS 3 HARI BERTURUT-TURUT MENURUN (Multi-Day): Bila fakta input menyebutkan 3 hari berturut-turut tidur berkurang dan selalu terbangun di jam tertentu:
-               Tegaskan bahwa sudah 3 hari ini selalu terbangun di jam tersebut sehingga tidur berkurang sekian jam, dan kondisi ini cukup perlu diperhatikan karena dapat memicu peningkatan tekanan darah dan kelelahan.
-        4. heart_insight: evaluasi terpadu Detak Jantung Terkini (Live Heart Rate) dan Detak Jantung Istirahat (Resting Heart Rate).
-           - Cek apakah detak jantung terkini naik karena ada sesi olahraga/workout (seperti jalan santai/olahraga fisik). Jika ada sesi olahraga, jelaskan bahwa kenaikan denyut tersebut adalah respons fisiologis yang wajar dan sehat.
-           - Jika detak jantung terkini tinggi tanpa terdeteksi olahraga, sarankan memastikan hidrasi cukup dan istirahat yang tenang.
-           - Bandingkan pula Resting Heart Rate hari ini terhadap baseline 14 hari.
-        5. recommended_actions: tindakan caregiver yang hangat, bersahabat, dan praktis.
-        
-        ATURAN KETAT:
-        - JANGAN mendiagnosis penyakit spesifik (misal: gagal jantung, insomnia, aritmia, hipertensi).
-        - JANGAN menyatakan penyebab medis secara pasti.
-        - DILARANG mencantumkan angka persentase pada field 'status' (Contoh benar: 'Sedang Berjalan', 'Stabil', 'Normal', 'Menurun', 'Meningkat'). Angka persentase HANYA boleh ada di 'delta_percentage'.
-        - Jangan mengarang angka lain selain data aktual yang diberikan pada input.
-        - Gunakan bahasa Indonesia yang hangat, empatik, tenang, objektif, dan ringkas (1-2 kalimat per insight).
-        - Kembalikan HANYA format JSON valid sesuai schema persis berikut:
+        ATURAN UTAMA (Sesuai PRD Push Notification & AI Insight):
+        1. JANGAN mendiagnosis penyakit spesifik (misal: gagal jantung, insomnia, aritmia, hipertensi).
+        2. JANGAN menyatakan penyebab medis secara pasti.
+        3. JANGAN mengubah status urgency atau condition status yang sudah ditetapkan rule engine.
+        4. JANGAN membuat angka atau fakta baru di luar input yang diberikan.
+        5. JANGAN menjanjikan klaim kepastian individu seperti "menjaga elastisitas pembuluh darah, menurunkan resistensi vaskular perifer, dan menjaga kestabilan tekanan darah". Gunakan bahasa umum edukatif yang aman: "Aktivitas fisik rutin secara umum mendukung kebugaran tubuh, tetapi orang tua tidak perlu memaksakan diri. Pilih aktivitas ringan yang aman sesuai kemampuan."
+        6. DILARANG MENGGUNAKAN ISTILAH TEKNIS ATAU MEDIS: JANGAN gunakan istilah asing/teknis seperti "Deep Sleep", "REM", "Core Sleep", "HRV", "bradikardia", atau "takikardia". Terjemahkan secara alami ke bahasa Indonesia sehari-hari yang hangat dan mudah dipahami:
+           - "Deep Sleep" -> sebut sebagai "tidur nyenyak/lelap untuk pemulihan fisik"
+           - "REM Sleep" -> sebut sebagai "tidur lelap untuk relaksasi pikiran"
+           - "Core Sleep" -> sebut sebagai "tidur ringan yang nyaman"
+           - "Awake Time" -> sebut sebagai "terbangun sejenak tengah malam"
+           - "Resting Heart Rate" -> sebut sebagai "denyut saat istirahat santai"
+        7. PRINSIP DUA PEMBANDING (DUAL COMPARISON - BASELINE PERSONAL VS STANDAR RUJUKAN JURNAL/MEDIS):
+           Bandingkan data hari ini terhadap DUA acuan:
+           a) Baseline Personal 14 Hari (kebiasaan unik orang tua, misal 1.800 langkah, 7 jam 42 menit tidur, 68 bpm denyut istirahat).
+           b) Standar Klinis/Jurnal Medis (Rujukan Umum yang Sehat):
+              - Langkah Harian Lansia: Target aktif minimal rujukan jurnal geriatri JAMA adalah ~3.000 langkah/hari. Jika baseline personal orang tua relatif rendah (misal 1.800 langkah), jelaskan bahwa aktivitas hari ini selaras dengan ritme kebiasaannya, namun secara umum rujukan jurnal menyarankan target aktif bertahap menuju 3.000 langkah/hari secara santai dan tanpa memaksakan diri.
+              - Tidur Semalam: Standar tidur sehat konsensus medis adalah 7–8 jam/malam. Jika tidur semalam < 6 jam (misal 4 jam 30 menit), bandingkan dengan kebiasaan orang tua DAN tegaskan adanya defisit dari standar tidur sehat 7–8 jam.
+              - Detak Jantung Santai: Rentang normal saat istirahat santai menurut American Heart Association (AHA) adalah 60–80 bpm. Bandingkan denyut hari ini dengan baseline personal orang tua dan rentang normal sehat ini.
+        8. NADA REASSURING (MENCEGAH KECEMASAN ANAK):
+           - Tujuan utama aplikasi adalah mendampingi anak menjaga orang tua dengan tenang tanpa rasa cemas atau panik berlebihan.
+           - Jika ada perbedaan atau fluktuasi data yang masih terbilang wajar menurut rule engine (status STABLE atau delta wajar), WAJIB sertakan penenang: "namun perubahan ini masih terbilang wajar dan normal dalam keseharian orang tua".
+           - Jika ada kondisi yang perlu perhatian (DECLINED), sampaikan secara bijak dan hangat tanpa kepanikan, fokus pada sapaan santai anak (misal: "Anak tidak perlu cemas berlebihan, cukup luangkan waktu untuk menyapa santai dan menanyakan kabar Ibu").
+        9. ATURAN LANGKAH SIANG/SORE HARI: Jika langkah kaki di siang atau sore hari masih di bawah total baseline harian, JANGAN menilainya buruk atau menurun drastis karena hari belum selesai. Jelaskan secara ramah bahwa langkah masih terus berproses seiring sisa waktu sebelum jam tidur, dan perbedaannya masih wajar.
+        10. ATURAN KUALITAS TIDUR & STANDAR SEHAT 7–8 JAM:
+           - Standar kebutuhan tidur sehat manusia (termasuk lansia) adalah 7 hingga 8 jam per malam.
+           - Jika durasi tidur semalam kurang dari 6 jam (terutama < 5.5 jam seperti 4.5 jam atau 4 jam 30 menit), ini adalah KURANG TIDUR / DEFISIT TIDUR yang signifikan. DILARANG KERAS menyatakan durasi < 6 jam sebagai 'wajar', 'normal', atau 'cukup baik'! Nyatakan secara jelas dan empatik bahwa tidur semalam kurang dari anjuran sehat 7–8 jam dan sarankan istirahat siang.
+           - Frasa 'wajar dan normal' HANYA BOLEH digunakan jika total tidur memenuhi standar sehat (6.5 – 8.5 jam) dengan fluktuasi kecil terhadap kebiasaan orang tua.
+           - AKURASI DURASI WAKTU TIDUR: Gunakan durasi jam dan menit PERSIS seperti yang tertulis pada input data (contoh: jika data input menulis '7 jam 42 menit', WAJIB sebut '7 jam 42 menit'). DILARANG KERAS mengarang angka menit atau menyalin angka menit dari contoh schema (seperti salah menyebut '7 jam 12 menit' untuk 7.7 jam)!
+        11. ATURAN DETAK JANTUNG & OLAHRAGA: Periksa apakah peningkatan denyut jantung berkaitan dengan sesi olahraga (workout). Jika ya, jelaskan sebagai respon aktif yang sehat. Jika sedikit meningkat saat santai, jelaskan bahwa fluktuasi ringan seperti ini masih wajar, lalu sarankan dengan lembut untuk minum segelas air dan beristirahat sejenak.
+        12. HANYA gunakan rekomendasi tindakan yang selaras dengan allowed_actions yang diberikan. JANGAN mengubah dosis atau jadwal obat.
+        13. JELASKAN SECARA MENDALAM, INFORMATIF, DAN BERIKAN MULTIPLE POIN: Untuk setiap domain (activity_insight, sleep_insight, heart_insight), wajib isi array `points` dengan 2 hingga 3 poin penjelasan terpisah (masing-masing 1-2 kalimat mendalam):
+           - Pada Activity: Poin 1 menjelaskan progres langkah hari ini vs kebiasaan harian secara menenangkan, Poin 2 memberikan dorongan santai tanpa beban target (serta menyebutkan rujukan bertahap 3.000 langkah jika relevan).
+           - Pada Sleep: Poin 1 mengulas durasi tidur vs anjuran 7–8 jam dan kebiasaan, Poin 2 menganalisis dampak istirahat & saran waktu istirahat siang jika kurang tidur.
+           - Pada Heart: Poin 1 menganalisis denyut saat santai vs kebiasaan dan standar sehat 60–80 bpm, Poin 2 mengaitkan dengan suasana santai/olahraga & saran hidrasi ramah.
+           Field `insight` tetap diisi sebagai rangkuman naratif dari poin-poin tersebut.
+        14. Kembalikan HANYA format JSON valid sesuai schema persis berikut:
         {
           "today_overview": {
             "condition_status": "STABLE",
             "status_label": "Kondisi Stabil",
             "delta_percentage": 0.0,
-            "summary": "Ringkasan perbandingan kondisi hari ini vs baseline 14 hari..."
+            "summary": "Ringkasan komprehensif kondisi kesehatan hari ini dibandingkan pola 14 hari terakhir..."
           },
           "activity_insight": {
             "current_value": "4,200 langkah",
             "baseline_value": "5,000 langkah",
             "delta_percentage": 0.0,
             "status": "Sedang Berjalan",
-            "insight": "Insight hangat bahwa langkah hari ini sedang berjalan dengan ritme yang baik menuju target harian..."
+            "insight": "Rangkuman aktivitas langkah hari ini...",
+            "points": [
+              "Hingga saat ini tercatat 4.200 langkah dari kebiasaan harian 5.000 langkah. Namun perbedaan ini masih terbilang wajar dan normal karena hari masih berjalan dan langkah terus bertambah hingga malam hari.",
+              "Anak tidak perlu cemas; ajak orang tua tetap bergerak santai seperti berjalan ringan di halaman rumah sesuai kemampuan tanpa perlu memaksakan target."
+            ]
           },
           "sleep_insight": {
-            "current_value": "6.8 jam",
-            "baseline_value": "7.2 jam",
-            "delta_percentage": -5.5,
-            "status": "Stabil",
-            "insight": "Insight hangat mengenai tidur semalam..."
+            "current_value": "4 jam 30 menit",
+            "baseline_value": "7 jam 42 menit",
+            "delta_percentage": -41.5,
+            "status": "Kurang Tidur",
+            "insight": "Rangkuman istirahat semalam...",
+            "points": [
+              "Waktu istirahat semalam hanya tercatat 4 jam 30 menit, jauh di bawah standar tidur sehat (7–8 jam) maupun kebiasaan 14 malam terakhir (7 jam 42 menit).",
+              "Kurang tidur yang signifikan dapat membuat orang tua merasa lemas atau mengantuk di siang hari. Luangkan waktu untuk menyapa dan pastikan ia bisa istirahat siang sejenak guna memulihkan tenaga."
+            ]
           },
           "heart_insight": {
-            "current_value": "65 BPM",
-            "baseline_value": "63 BPM",
+            "current_value": "65 bpm",
+            "baseline_value": "63 bpm",
             "delta_percentage": 3.2,
             "status": "Normal",
-            "insight": "Insight hangat mengenai denyut jantung..."
+            "insight": "Rangkuman denyut jantung saat istirahat...",
+            "points": [
+              "Denyut jantung saat istirahat santai hari ini berada di angka 65, tetap stabil dan berada dalam rentang wajar kebiasaan 14 hari terakhir (63).",
+              "Ritme denyut istirahat terpantau tenang. Pastikan asupan cairan tetap cukup dan suasana istirahat tetap nyaman."
+            ]
           },
           "recommended_actions": [
             "Tindakan 1...",
@@ -242,7 +265,8 @@ final class GeminiService: Sendable {
                 throw GeminiServiceError.jsonDecodingError("Invalid text encoding")
             }
             
-            let insightOutput = try JSONDecoder().decode(LLMInsightOutput.self, from: innerData)
+            let rawInsightOutput = try JSONDecoder().decode(LLMInsightOutput.self, from: innerData)
+            let insightOutput = sanitizeAndValidateOutput(rawInsightOutput, against: input)
             
             let log = APILogEntry(
                 timestamp: startTime,
@@ -282,5 +306,39 @@ final class GeminiService: Sendable {
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         let data = try encoder.encode(input)
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+    
+    // MARK: - Output Validator (PRD Section 8.5)
+    
+    private func sanitizeAndValidateOutput(_ output: LLMInsightOutput, against input: LLMInsightInput) -> LLMInsightOutput {
+        // 1. Validasi Urgency / Condition Status: LLM tidak boleh mengubah status yang ditetapkan Rule Engine
+        var conditionStatus = output.todayOverview.conditionStatus
+        if input.overallCondition == "DECLINED" && conditionStatus.uppercased() != "DECLINED" {
+            conditionStatus = "DECLINED"
+        }
+        
+        // 2. Filter prohibited diagnostic content dari recommended actions
+        let prohibitedTerms = ["hipertensi", "gagal jantung", "insomnia akut", "aritmia", "dosis obat", "resep dokter"]
+        let safeActions = output.recommendedActions.filter { action in
+            let lower = action.lowercased()
+            return !prohibitedTerms.contains { lower.contains($0) }
+        }
+        
+        let finalActions = safeActions.isEmpty ? input.allowedActions : safeActions
+        
+        let todayOverview = TodayOverviewInsight(
+            conditionStatus: conditionStatus,
+            statusLabel: output.todayOverview.statusLabel,
+            deltaPercentage: output.todayOverview.deltaPercentage,
+            summary: output.todayOverview.summary
+        )
+        
+        return LLMInsightOutput(
+            todayOverview: todayOverview,
+            activityInsight: output.activityInsight,
+            sleepInsight: output.sleepInsight,
+            heartInsight: output.heartInsight,
+            recommendedActions: finalActions
+        )
     }
 }

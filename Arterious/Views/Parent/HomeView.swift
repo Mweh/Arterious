@@ -123,7 +123,7 @@ struct HomeView: View {
 
             Text("Peran: \(userRole == UserRole.parent.rawValue ? "Orang Tua" : "Anak")")
         } label: {
-            Image(systemName: "person.2.fill")
+            Image(systemName: "hammer.circle.fill")
                 .foregroundStyle(AppColor.actionBlue)
         }
     }

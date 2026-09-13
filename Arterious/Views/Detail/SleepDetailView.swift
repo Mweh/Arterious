@@ -178,17 +178,28 @@ struct SleepDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // MARK: - Upper Section (Pure White Canvas)
+                // MARK: - Upper Section (Gray Canvas)
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
                     // Condition Summary
                     conditionHeader
+                }
+                .padding(.horizontal, AppSpacing.lg)
+                .padding(.top, AppSpacing.md)
+                .padding(.bottom, AppSpacing.lg)
+                .frame(maxWidth: .infinity, alignment: .leading)
 
-                    // Daily Sleep Score Card
-                    dailyScoreSection
+                // Daily Sleep Score Card
+                dailyScoreSection
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.bottom, AppSpacing.lg)
 
-                    // Time Range Segmented Control
-                    TimeRangePicker(selectedRange: $selectedRange)
+                // Time Range Segmented Control
+                TimeRangePicker(selectedRange: $selectedRange)
+                    .padding(.horizontal, AppSpacing.lg)
+                    .padding(.bottom, AppSpacing.lg)
 
+                // MARK: - Chart Section (White Canvas)
+                VStack(alignment: .leading, spacing: AppSpacing.lg) {
                     // Sleep Average Header
                     averageSleepHeader
 
@@ -196,7 +207,7 @@ struct SleepDetailView: View {
                     sleepStagesChart
                 }
                 .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.md)
+                .padding(.top, AppSpacing.lg)
                 .padding(.bottom, AppSpacing.lg)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .background(Color.white)
@@ -218,18 +229,11 @@ struct SleepDetailView: View {
             }
         }
         .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedRange)
-        .background {
-            VStack(spacing: 0) {
-                Color.white
-                    .frame(height: 550)
-                AppColor.backgroundPrimary
-            }
-            .ignoresSafeArea()
-        }
+        .background(AppColor.backgroundPrimary.ignoresSafeArea())
         .navigationBarBackButtonHidden(true)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar(.hidden, for: .tabBar)
-        .toolbarBackground(Color.white, for: .navigationBar)
+        .toolbarBackground(AppColor.backgroundPrimary, for: .navigationBar)
         .toolbarBackground(.visible, for: .navigationBar)
         .toolbar {
             ToolbarItem(placement: .topBarLeading) {

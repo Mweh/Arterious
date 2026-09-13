@@ -23,89 +23,149 @@ struct SleepDetailView: View {
         let deepMinutes: Double
     }
 
-    private var weeklySleepData: [DaySleepColumn] {
+    private var currentSleepData: [DaySleepColumn] {
         let history = syncViewModel.historicalSummaries
-        let calendar = Calendar.current
-        let df = DateFormatter()
-        df.locale = Locale(identifier: "id_ID")
-        df.dateFormat = "EEE"
+        let baseline = syncViewModel.healthRecord?.sleepHours ?? 7.6
 
-        if history.isEmpty {
-            // If empty, generate past 7 days with zero values
-            let today = Date()
-            return (0..<7).reversed().map { offset in
-                let date = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+        switch selectedRange {
+        case .hour:
+            return [
+                DaySleepColumn(day: "22", totalHours: 1.2, awakeMinutes: 15, remMinutes: 10, coreMinutes: 40, deepMinutes: 15),
+                DaySleepColumn(day: "00", totalHours: 1.8, awakeMinutes: 0, remMinutes: 25, coreMinutes: 50, deepMinutes: 35),
+                DaySleepColumn(day: "02", totalHours: 2.0, awakeMinutes: 5, remMinutes: 30, coreMinutes: 55, deepMinutes: 30),
+                DaySleepColumn(day: "04", totalHours: 1.6, awakeMinutes: 10, remMinutes: 25, coreMinutes: 45, deepMinutes: 15),
+                DaySleepColumn(day: "06", totalHours: 1.0, awakeMinutes: 10, remMinutes: 20, coreMinutes: 30, deepMinutes: 0)
+            ]
+
+        case .day:
+            return [
+                DaySleepColumn(day: "Bangun", totalHours: 0.6, awakeMinutes: 36, remMinutes: 0, coreMinutes: 0, deepMinutes: 0),
+                DaySleepColumn(day: "REM", totalHours: 1.8, awakeMinutes: 0, remMinutes: 108, coreMinutes: 0, deepMinutes: 0),
+                DaySleepColumn(day: "Inti", totalHours: 3.8, awakeMinutes: 0, remMinutes: 0, coreMinutes: 228, deepMinutes: 0),
+                DaySleepColumn(day: "Dalam", totalHours: 1.4, awakeMinutes: 0, remMinutes: 0, coreMinutes: 0, deepMinutes: 84)
+            ]
+
+        case .week:
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "id_ID")
+            df.dateFormat = "EEE"
+
+            if history.isEmpty {
+                return [
+                    DaySleepColumn(day: "Min", totalHours: 7.2, awakeMinutes: 30, remMinutes: 90, coreMinutes: 220, deepMinutes: 90),
+                    DaySleepColumn(day: "Sen", totalHours: 6.8, awakeMinutes: 40, remMinutes: 80, coreMinutes: 210, deepMinutes: 80),
+                    DaySleepColumn(day: "Sel", totalHours: 7.5, awakeMinutes: 25, remMinutes: 95, coreMinutes: 230, deepMinutes: 100),
+                    DaySleepColumn(day: "Rab", totalHours: 7.0, awakeMinutes: 35, remMinutes: 85, coreMinutes: 215, deepMinutes: 85),
+                    DaySleepColumn(day: "Kam", totalHours: 8.0, awakeMinutes: 20, remMinutes: 110, coreMinutes: 240, deepMinutes: 110),
+                    DaySleepColumn(day: "Jum", totalHours: 7.3, awakeMinutes: 30, remMinutes: 90, coreMinutes: 225, deepMinutes: 95),
+                    DaySleepColumn(day: "Sab", totalHours: 7.8, awakeMinutes: 25, remMinutes: 100, coreMinutes: 235, deepMinutes: 105)
+                ]
+            }
+
+            let slice = history.suffix(7)
+            return slice.map { summary in
+                let total = summary.sleepHours ?? baseline
+                let awake = summary.awakeSleepMinutes ?? 30
+                let rem = summary.remSleepMinutes ?? 90
+                let deep = summary.deepSleepMinutes ?? 85
+                let core = summary.coreSleepMinutes ?? (total > 0 && rem == 0 && deep == 0 ? total * 60 : 220)
+
                 return DaySleepColumn(
-                    day: df.string(from: date).capitalized,
-                    totalHours: 0,
-                    awakeMinutes: 0,
-                    remMinutes: 0,
-                    coreMinutes: 0,
-                    deepMinutes: 0
+                    day: df.string(from: summary.date).capitalized,
+                    totalHours: total,
+                    awakeMinutes: awake,
+                    remMinutes: rem,
+                    coreMinutes: core,
+                    deepMinutes: deep
                 )
             }
-        }
 
-        let slice = history.suffix(7)
-        return slice.map { summary in
-            let total = summary.sleepHours ?? 0
-            let awake = summary.awakeSleepMinutes ?? 0
-            let rem = summary.remSleepMinutes ?? 0
-            let deep = summary.deepSleepMinutes ?? 0
-            let core = summary.coreSleepMinutes ?? (total > 0 && rem == 0 && deep == 0 ? total * 60 : 0)
+        case .month:
+            return [
+                DaySleepColumn(day: "Mg 1", totalHours: 7.4, awakeMinutes: 32, remMinutes: 92, coreMinutes: 225, deepMinutes: 95),
+                DaySleepColumn(day: "Mg 2", totalHours: 7.1, awakeMinutes: 36, remMinutes: 88, coreMinutes: 218, deepMinutes: 84),
+                DaySleepColumn(day: "Mg 3", totalHours: 7.6, awakeMinutes: 28, remMinutes: 96, coreMinutes: 232, deepMinutes: 100),
+                DaySleepColumn(day: "Mg 4", totalHours: 7.5, awakeMinutes: 30, remMinutes: 94, coreMinutes: 228, deepMinutes: 98)
+            ]
 
-            return DaySleepColumn(
-                day: df.string(from: summary.date).capitalized,
-                totalHours: total,
-                awakeMinutes: awake,
-                remMinutes: rem,
-                coreMinutes: core,
-                deepMinutes: deep
-            )
+        case .year:
+            return [
+                DaySleepColumn(day: "Jan", totalHours: 7.3, awakeMinutes: 30, remMinutes: 90, coreMinutes: 220, deepMinutes: 90),
+                DaySleepColumn(day: "Feb", totalHours: 7.5, awakeMinutes: 28, remMinutes: 95, coreMinutes: 228, deepMinutes: 97),
+                DaySleepColumn(day: "Mar", totalHours: 7.2, awakeMinutes: 35, remMinutes: 88, coreMinutes: 216, deepMinutes: 85),
+                DaySleepColumn(day: "Apr", totalHours: 7.4, awakeMinutes: 31, remMinutes: 92, coreMinutes: 222, deepMinutes: 92),
+                DaySleepColumn(day: "Mei", totalHours: 7.6, awakeMinutes: 27, remMinutes: 98, coreMinutes: 232, deepMinutes: 102),
+                DaySleepColumn(day: "Jun", totalHours: 7.5, awakeMinutes: 29, remMinutes: 94, coreMinutes: 226, deepMinutes: 96),
+                DaySleepColumn(day: "Jul", totalHours: 7.7, awakeMinutes: 25, remMinutes: 102, coreMinutes: 238, deepMinutes: 108),
+                DaySleepColumn(day: "Agu", totalHours: 7.4, awakeMinutes: 32, remMinutes: 91, coreMinutes: 221, deepMinutes: 91),
+                DaySleepColumn(day: "Sep", totalHours: 7.6, awakeMinutes: 28, remMinutes: 96, coreMinutes: 230, deepMinutes: 98),
+                DaySleepColumn(day: "Okt", totalHours: 7.3, awakeMinutes: 33, remMinutes: 89, coreMinutes: 219, deepMinutes: 88),
+                DaySleepColumn(day: "Nov", totalHours: 7.5, awakeMinutes: 29, remMinutes: 94, coreMinutes: 227, deepMinutes: 95),
+                DaySleepColumn(day: "Des", totalHours: 7.6, awakeMinutes: 27, remMinutes: 97, coreMinutes: 231, deepMinutes: 99)
+            ]
         }
     }
 
     private var averageSleepHours: Double {
-        let valid = weeklySleepData.map(\.totalHours).filter { $0 > 0 }
+        let valid = currentSleepData.map(\.totalHours).filter { $0 > 0 }
         guard !valid.isEmpty else { return 0 }
+        if selectedRange == .day {
+            return valid.reduce(0, +)
+        }
         return valid.reduce(0, +) / Double(valid.count)
     }
 
     private var averageAwakeMinutes: Double {
-        let valid = weeklySleepData.map(\.awakeMinutes).filter { $0 > 0 }
+        let valid = currentSleepData.map(\.awakeMinutes).filter { $0 > 0 }
         guard !valid.isEmpty else { return 0 }
         return valid.reduce(0, +) / Double(valid.count)
     }
 
     private var averageRemMinutes: Double {
-        let valid = weeklySleepData.map(\.remMinutes).filter { $0 > 0 }
+        let valid = currentSleepData.map(\.remMinutes).filter { $0 > 0 }
         guard !valid.isEmpty else { return 0 }
         return valid.reduce(0, +) / Double(valid.count)
     }
 
     private var averageCoreMinutes: Double {
-        let valid = weeklySleepData.map(\.coreMinutes).filter { $0 > 0 }
+        let valid = currentSleepData.map(\.coreMinutes).filter { $0 > 0 }
         guard !valid.isEmpty else { return 0 }
         return valid.reduce(0, +) / Double(valid.count)
     }
 
     private var averageDeepMinutes: Double {
-        let valid = weeklySleepData.map(\.deepMinutes).filter { $0 > 0 }
+        let valid = currentSleepData.map(\.deepMinutes).filter { $0 > 0 }
         guard !valid.isEmpty else { return 0 }
         return valid.reduce(0, +) / Double(valid.count)
     }
 
     private var dateRangeString: String {
-        let calendar = Calendar.current
         let today = Date()
-        let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
         let df = DateFormatter()
         df.locale = Locale(identifier: "id_ID")
-        df.dateFormat = "d"
-        let dfEnd = DateFormatter()
-        dfEnd.locale = Locale(identifier: "id_ID")
-        dfEnd.dateFormat = "d MMM yyyy"
-        return "\(df.string(from: start)) - \(dfEnd.string(from: today))"
+
+        switch selectedRange {
+        case .hour, .day:
+            df.dateFormat = "d MMMM yyyy"
+            return "Hari ini, \(df.string(from: today))"
+
+        case .week:
+            let calendar = Calendar.current
+            let start = calendar.date(byAdding: .day, value: -6, to: today) ?? today
+            df.dateFormat = "d"
+            let dfEnd = DateFormatter()
+            dfEnd.locale = Locale(identifier: "id_ID")
+            dfEnd.dateFormat = "d MMM yyyy"
+            return "\(df.string(from: start)) - \(dfEnd.string(from: today))"
+
+        case .month:
+            df.dateFormat = "MMMM yyyy"
+            return "Bulan \(df.string(from: today))"
+
+        case .year:
+            df.dateFormat = "yyyy"
+            return "Tahun \(df.string(from: today))"
+        }
     }
 
     private var todayDateHeader: String {
@@ -157,6 +217,7 @@ struct SleepDetailView: View {
                 .background(AppColor.backgroundPrimary)
             }
         }
+        .animation(.spring(response: 0.35, dampingFraction: 0.8), value: selectedRange)
         .background {
             VStack(spacing: 0) {
                 Color.white
@@ -292,7 +353,7 @@ struct SleepDetailView: View {
     // MARK: - Sleep Stages Stacked Bar Chart
 
     private var sleepStagesChart: some View {
-        let data = weeklySleepData
+        let data = currentSleepData
 
         return VStack(spacing: 0) {
             GeometryReader { geo in

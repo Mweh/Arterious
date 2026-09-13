@@ -52,15 +52,17 @@ struct HealthMetricSummaryCard: View {
 
             Spacer(minLength: 4)
 
-            // Right Trailing: Chevron, Date, Mini Chart
-            VStack(alignment: .trailing, spacing: 4) {
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(Color(.systemGray3))
-
-                Text(dateString)
-                    .font(AppTypography.captionRegular)
-                    .foregroundStyle(AppColor.textSecondary)
+            // Right Trailing: Date & Chevron, Mini Chart
+            VStack(alignment: .trailing, spacing: 8) {
+                HStack(spacing: 4) {
+                    Text(dateString)
+                        .font(AppTypography.captionRegular)
+                        .foregroundStyle(AppColor.textSecondary)
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color(.systemGray3))
+                }
 
                 MiniBarChartPreview(values: chartValues, color: iconColor)
             }

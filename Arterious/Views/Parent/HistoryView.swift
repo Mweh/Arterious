@@ -2,18 +2,18 @@ import SwiftUI
 
 /// History tab screen (Riwayat) with calendar selector, daily summary, and metric cards matching Figma design.
 struct HistoryView: View {
-
+    
     @Environment(SyncViewModel.self) private var syncViewModel
     @AppStorage("userRole") private var userRole: String = UserRole.parent.rawValue
-
+    
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showingCalendarPicker: Bool = false
     @State private var tempCalendarDate: Date = Date()
-
+    
     private var isChildEmpty: Bool {
         userRole == UserRole.child.rawValue && (syncViewModel.syncState.status != .accepted || syncViewModel.healthRecord == nil)
     }
-
+    
     private struct DayItem: Identifiable {
         let id: String
         let date: Date
@@ -21,26 +21,26 @@ struct HistoryView: View {
         let dayNumber: Int
         let dateString: String
     }
-
+    
     private var weekDays: [DayItem] {
         var calendar = Calendar(identifier: .gregorian)
         calendar.firstWeekday = 1 // 1 = Sunday (MIN)
         calendar.locale = Locale(identifier: "id_ID")
-
+        
         let startOfDay = calendar.startOfDay(for: selectedDate)
         guard let weekInterval = calendar.dateInterval(of: .weekOfYear, for: startOfDay) else {
             return []
         }
-
+        
         var days: [DayItem] = []
         let dayFormatter = DateFormatter()
         dayFormatter.locale = Locale(identifier: "id_ID")
         dayFormatter.dateFormat = "EEE"
-
+        
         let longFormatter = DateFormatter()
         longFormatter.locale = Locale(identifier: "id_ID")
         longFormatter.dateFormat = "d MMMM yyyy"
-
+        
         for offset in 0..<7 {
             if let date = calendar.date(byAdding: .day, value: offset, to: weekInterval.start) {
                 let dayNum = calendar.component(.day, from: date)
@@ -57,82 +57,83 @@ struct HistoryView: View {
         }
         return days
     }
-
+    
     private var currentSelectedDateString: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "id_ID")
         formatter.dateFormat = "d MMMM yyyy"
         return formatter.string(from: selectedDate)
     }
-
+    
     private var isViewingToday: Bool {
         Calendar.current.isDateInToday(selectedDate)
     }
-
+    
     private var historicalSummaryForSelectedDate: DailyHealthSummary? {
         let calendar = Calendar.current
         return syncViewModel.historicalSummaries.first { summary in
             calendar.isDate(summary.date, inSameDayAs: selectedDate)
         }
     }
-
+    
     var body: some View {
         NavigationStack {
             ZStack {
                 AppColor.backgroundPrimary
                     .ignoresSafeArea()
-
+                
                 if isChildEmpty {
                     childEmptyStateView
                 } else {
                     historyContentView
                 }
             }
-            .navigationTitle("Riwayat")
-            .toolbar {
-                if !isChildEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        calendarToolbarButton
-                    }
-                }
-            }
-            .sheet(isPresented: $showingCalendarPicker) {
-                calendarPickerSheet
-                    .presentationDetents([.height(350)])
-                    .presentationDragIndicator(.visible)
-            }
-            .task {
-                await syncViewModel.refreshIfNeeded()
-            }
-            .refreshable {
-                await syncViewModel.refreshIfNeeded()
-            }
+        }
+        .toolbar(.hidden, for: .navigationBar)
+        .sheet(isPresented: $showingCalendarPicker) {
+            calendarPickerSheet
+                .presentationDetents([.height(350)])
+                .presentationDragIndicator(.visible)
+        }
+        .task {
+            await syncViewModel.refreshIfNeeded()
+        }
+        .refreshable {
+            await syncViewModel.refreshIfNeeded()
         }
     }
-
+    
     // MARK: - History Content View
-
+    
     private var historyContentView: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                HStack {
+                    Text("Riwayat")
+                        .font(.largeTitle.weight(.bold))
+                        .foregroundStyle(AppColor.textPrimary)
+                    Spacer()
+                    calendarToolbarButton
+                }
+                
                 // Horizontal Calendar Strip
                 weekCalendarStrip
-
+                
                 // Selected Date Text (e.g. "3 September 2026")
                 Text(currentSelectedDateString)
                     .font(.system(size: 15, weight: .regular))
                     .foregroundStyle(AppColor.textPrimary)
                     .padding(.top, AppSpacing.xs)
-
+                
                 // Summary Card ("Ringkasan")
                 summaryCard
-
+                
                 // Metric Cards Section
                 VStack(alignment: .leading, spacing: AppSpacing.md) {
                     Text("Data")
                         .font(.system(size: 20, weight: .bold))
                         .foregroundStyle(AppColor.textPrimary)
-
+                    
                     // 1. Detak Jantung Card
                     NavigationLink {
                         HeartRateDetailView()
@@ -150,7 +151,7 @@ struct HistoryView: View {
                         )
                     }
                     .buttonStyle(.plain)
-
+                    
                     // 2. Tidur Card
                     NavigationLink {
                         SleepDetailView()
@@ -167,7 +168,7 @@ struct HistoryView: View {
                         )
                     }
                     .buttonStyle(.plain)
-
+                    
                     // 3. Aktivitas Card
                     NavigationLink {
                         ActivityDetailView()
@@ -191,14 +192,14 @@ struct HistoryView: View {
             .padding(.bottom, AppSpacing.xxl)
         }
     }
-
+    
     // MARK: - Weekly Calendar Strip
-
+    
     private var weekCalendarStrip: some View {
         HStack(spacing: 0) {
             ForEach(weekDays) { item in
                 let isSelected = Calendar.current.isDate(item.date, inSameDayAs: selectedDate)
-
+                
                 Button {
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) {
                         selectedDate = item.date
@@ -208,14 +209,14 @@ struct HistoryView: View {
                         Text(item.dayName)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundStyle(AppColor.textSecondary)
-
+                        
                         ZStack {
                             if isSelected {
                                 Circle()
                                     .fill(Color(hex: "D0E6FF"))
                                     .frame(width: 36, height: 36)
                             }
-
+                            
                             Text("\(item.dayNumber)")
                                 .font(.system(size: 17, weight: isSelected ? .bold : .regular))
                                 .foregroundStyle(isSelected ? AppColor.Brand.primaryBlue : AppColor.textPrimary)
@@ -229,42 +230,62 @@ struct HistoryView: View {
         }
         .padding(.vertical, AppSpacing.xs)
     }
-
+    
     // MARK: - Summary Card
-
+    
     private var summaryCard: some View {
-        VStack(alignment: .leading, spacing: AppSpacing.xs) {
-            Text("Ringkasan")
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(Color(hex: "687B94"))
+        NavigationLink {
+            LLMInsightView()
+        } label: {
+            VStack(alignment: .leading, spacing: AppSpacing.xs) {
+                HStack {
+                    Text("Ringkasan")
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(Color(hex: "687B94"))
+                    
+                    Spacer()
 
-            Text(summaryTitleText)
-                .font(.system(size: 22, weight: .bold))
-                .foregroundStyle(AppColor.textPrimary)
-                .padding(.top, 1)
-
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(.system(size: 14, weight: .semibold))
+                    HStack(spacing: 4) {
+                        Image(systemName: "sparkles")
+                            .font(.system(size: 13, weight: .semibold))
+                        Text("Insight AI")
+                            .font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "chevron.right")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
                     .foregroundStyle(AppColor.actionBlue)
-                    .padding(.top, 2)
-
-                Text(summaryBodyText)
-                    .font(AppTypography.subheadlineRegular)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
+                }
+                
+                Text(summaryTitleText)
+                    .font(.system(size: 22, weight: .bold))
+                    .foregroundStyle(AppColor.textPrimary)
+                    .padding(.top, 1)
+                
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "sparkles")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppColor.actionBlue)
+                        .padding(.top, 2)
+                
+                    Text(summaryBodyText)
+                        .font(AppTypography.subheadlineRegular)
+                        .foregroundStyle(AppColor.textSecondary)
+                        .lineSpacing(3)
+                        .lineLimit(3)
+                        .multilineTextAlignment(.leading)
+                }
+                .padding(.top, 2)
             }
-            .padding(.top, 2)
+            .padding(AppSpacing.lg)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColor.Accent.blue12)
+            .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
         }
-        .padding(AppSpacing.lg)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColor.Accent.blue12)
-        .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
+        .buttonStyle(.plain)
     }
-
+    
     // MARK: - Calendar Toolbar Button
-
+    
     private var calendarToolbarButton: some View {
         Button {
             tempCalendarDate = selectedDate
@@ -280,9 +301,9 @@ struct HistoryView: View {
         }
         .buttonStyle(.plain)
     }
-
+    
     // MARK: - Calendar Picker Bottom Sheet (Matching Image 2)
-
+    
     private var calendarPickerSheet: some View {
         VStack(spacing: 0) {
             Text("Pilih Tanggal")
@@ -290,7 +311,7 @@ struct HistoryView: View {
                 .foregroundStyle(AppColor.textPrimary)
                 .padding(.top, 20)
                 .padding(.bottom, 8)
-
+            
             DatePicker(
                 "",
                 selection: $tempCalendarDate,
@@ -300,9 +321,9 @@ struct HistoryView: View {
             .labelsHidden()
             .environment(\.locale, Locale(identifier: "id_ID"))
             .frame(maxWidth: .infinity)
-
+            
             Spacer()
-
+            
             Button {
                 selectedDate = Calendar.current.startOfDay(for: tempCalendarDate)
                 showingCalendarPicker = false
@@ -320,16 +341,16 @@ struct HistoryView: View {
         }
         .background(Color.white)
     }
-
+    
     // MARK: - Dynamic Metric Formatted Values
-
+    
     private var displayDateString: String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "id_ID")
         formatter.dateFormat = "d MMM"
         return formatter.string(from: selectedDate)
     }
-
+    
     private var hasDataForSelectedDate: Bool {
         if isViewingToday {
             let hrValid = (syncViewModel.healthRecord?.displayHeartRate.flatMap { $0 } ?? 0) > 0
@@ -343,7 +364,7 @@ struct HistoryView: View {
             return hrValid || sleepValid || stepsValid
         }
     }
-
+    
     private var heartRateDisplayValue: String {
         if isViewingToday {
             if let hr = syncViewModel.healthRecord?.displayHeartRate.flatMap({ $0 }), hr > 0 {
@@ -357,7 +378,7 @@ struct HistoryView: View {
             return "-"
         }
     }
-
+    
     private var heartRateSubtitle: String {
         if isViewingToday {
             if let hr = syncViewModel.healthRecord?.displayHeartRate.flatMap({ $0 }), hr > 0 {
@@ -370,7 +391,7 @@ struct HistoryView: View {
         }
         return "Belum ada data"
     }
-
+    
     private var sleepDisplayValue: String {
         if isViewingToday {
             if let s = syncViewModel.healthRecord?.sleepFormatted, s != "-" {
@@ -385,7 +406,7 @@ struct HistoryView: View {
         }
         return "-"
     }
-
+    
     private var sleepSubtitle: String {
         if isViewingToday {
             if let s = syncViewModel.healthRecord?.sleepFormatted, s != "-" {
@@ -398,7 +419,7 @@ struct HistoryView: View {
         }
         return "Belum ada data"
     }
-
+    
     private var stepsDisplayValue: String {
         if isViewingToday {
             if let st = syncViewModel.healthRecord?.stepFormatted, st != "-" {
@@ -414,7 +435,7 @@ struct HistoryView: View {
         }
         return "-"
     }
-
+    
     private var stepsSubtitle: String {
         if isViewingToday {
             if let st = syncViewModel.healthRecord?.stepFormatted, st != "-" {
@@ -427,7 +448,7 @@ struct HistoryView: View {
         }
         return "Belum ada data"
     }
-
+    
     private var summaryTitleText: String {
         if isViewingToday {
             if hasDataForSelectedDate {
@@ -437,7 +458,7 @@ struct HistoryView: View {
         }
         return hasDataForSelectedDate ? (syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil") : "Belum ada data"
     }
-
+    
     private var summaryBodyText: String {
         if isViewingToday {
             if hasDataForSelectedDate {
@@ -446,10 +467,10 @@ struct HistoryView: View {
             return "Data detak jantung, tidur, dan langkah belum tersedia di Apple Health hari ini."
         }
         return hasDataForSelectedDate
-            ? (syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
-            : "Data detak jantung, tidur, dan langkah tidak tercatat pada tanggal ini."
+        ? (syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
+        : "Data detak jantung, tidur, dan langkah tidak tercatat pada tanggal ini."
     }
-
+    
     private var heartRateChartValues: [CGFloat] {
         guard hasDataForSelectedDate else {
             return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
@@ -461,7 +482,7 @@ struct HistoryView: View {
         }
         return [0.4, 0.6, 0.3, 0.9, 0.7, 1.0, 0.5]
     }
-
+    
     private var sleepChartValues: [CGFloat] {
         guard hasDataForSelectedDate else {
             return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
@@ -473,7 +494,7 @@ struct HistoryView: View {
         }
         return [0.3, 0.7, 0.4, 0.9, 0.8, 0.6, 0.5]
     }
-
+    
     private var stepChartValues: [CGFloat] {
         guard hasDataForSelectedDate else {
             return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
@@ -485,26 +506,35 @@ struct HistoryView: View {
         }
         return [0.4, 0.6, 0.5, 0.9, 0.8, 0.7, 0.3]
     }
-
+    
     // MARK: - Child Empty State
-
+    
     private var childEmptyStateView: some View {
         VStack(spacing: AppSpacing.sm) {
+            HStack {
+                Text("Riwayat")
+                    .font(.largeTitle.weight(.bold))
+                    .foregroundStyle(AppColor.textPrimary)
+                Spacer()
+            }
+            .padding(.horizontal, AppSpacing.lg)
+            .padding(.top, AppSpacing.sm)
+            
             Spacer()
                 .frame(height: 140)
-
+            
             Text("Belum Ada Riwayat")
                 .font(.system(size: 18, weight: .bold))
                 .foregroundStyle(Color(.systemGray))
                 .multilineTextAlignment(.center)
-
+            
             Text("Hubungkan dengan akun orang tua di menu Beranda atau Akses untuk mulai memantau riwayat data kesehatan.")
                 .font(AppTypography.subheadlineRegular)
                 .foregroundStyle(Color(.systemGray2))
                 .multilineTextAlignment(.center)
                 .lineSpacing(3)
                 .padding(.horizontal, AppSpacing.xl)
-
+            
             Spacer()
         }
         .frame(maxWidth: .infinity)

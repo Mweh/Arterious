@@ -45,6 +45,14 @@ struct HomeView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                    HStack {
+                        Text("Beranda")
+                            .font(.largeTitle.weight(.bold))
+                            .foregroundStyle(AppColor.textPrimary)
+                        Spacer()
+                        roleSwitcherMenu
+                    }
+
                     if !isActuallyConnected {
                         emptyStateCard
                     } else {
@@ -63,12 +71,7 @@ struct HomeView: View {
                 await syncViewModel.refreshIfNeeded()
                 syncViewModel.checkClipboardForInvitation()
             }
-            .navigationTitle("Beranda")
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    roleSwitcherMenu
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showingShareSheet) {
                 ActivityViewController(items: [childInvitationMessage])
                     .presentationDetents([.medium, .large])
@@ -295,33 +298,6 @@ struct HomeView: View {
 
     private var connectedDashboardContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
-            // Parent Selector Dropdown Menu
-            HStack {
-                Spacer()
-
-                Button {
-                    if userRole == UserRole.child.rawValue {
-                        showingParentSelectorSheet = true
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        Text(displayName)
-                            .font(.system(size: 19, weight: .bold))
-                            .foregroundStyle(AppColor.textPrimary)
-
-                        if userRole == UserRole.child.rawValue {
-                            Image(systemName: "chevron.down")
-                                .font(.system(size: 13, weight: .bold))
-                                .foregroundStyle(AppColor.textSecondary)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .buttonStyle(.plain)
-
-                Spacer()
-            }
-
             // "Ringkasan Hari Ini" Blue Tinted Card with direct access to Caregiver AI Insights
             NavigationLink {
                 LLMInsightView()
@@ -360,7 +336,7 @@ struct HomeView: View {
                             .font(AppTypography.bodyRegular)
                             .foregroundStyle(AppColor.textSecondary)
                             .lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
+                            .lineLimit(3)
                     }
                     .padding(.top, 2)
                 }

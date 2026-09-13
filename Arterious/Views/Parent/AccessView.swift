@@ -44,6 +44,14 @@ struct AccessView: View {
 
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: AppSpacing.lg) {
+                        HStack {
+                            Text("Akses")
+                                .font(.largeTitle.weight(.bold))
+                                .foregroundStyle(AppColor.textPrimary)
+                            Spacer()
+                            toolbarActionButtons
+                        }
+
                         if !isConnected {
                             emptyStateView
                         } else {
@@ -59,12 +67,7 @@ struct AccessView: View {
                     deleteConfirmationModal
                 }
             }
-            .navigationTitle("Akses")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    toolbarActionButtons
-                }
-            }
+            .toolbar(.hidden, for: .navigationBar)
             .refreshable {
                 await syncViewModel.refreshIfNeeded()
                 syncViewModel.checkClipboardForInvitation()

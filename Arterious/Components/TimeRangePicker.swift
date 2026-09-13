@@ -20,46 +20,27 @@ enum TimeRangeOption: String, CaseIterable, Identifiable {
     }
 }
 
-/// Capsule segmented control matching the J | H | M | B | T design in Arterious metric detail pages.
+/// Apple's original native segmented control component with built-in system liquid glass material.
 struct TimeRangePicker: View {
 
     @Binding var selectedRange: TimeRangeOption
 
     var body: some View {
-        HStack(spacing: 0) {
+        Picker("Rentang Waktu", selection: $selectedRange) {
             ForEach(TimeRangeOption.allCases) { option in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.18)) {
-                        selectedRange = option
-                    }
-                } label: {
-                    Text(option.rawValue)
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(selectedRange == option ? AppColor.textPrimary : AppColor.textSecondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 7)
-                        .background {
-                            if selectedRange == option {
-                                Capsule()
-                                    .fill(Color.white)
-                                    .shadow(color: Color.black.opacity(0.08), radius: 3, x: 0, y: 1)
-                            }
-                        }
-                }
-                .buttonStyle(.plain)
+                Text(option.rawValue)
+                    .tag(option)
             }
         }
-        .padding(3)
-        .background(Color(.systemGray5))
-        .clipShape(Capsule())
+        .pickerStyle(.segmented)
     }
 }
 
 #Preview {
     @Previewable @State var range: TimeRangeOption = .week
-    VStack {
+    VStack(spacing: 20) {
         TimeRangePicker(selectedRange: $range)
             .padding()
     }
-    .background(AppColor.backgroundPrimary)
+    .background(Color.white)
 }

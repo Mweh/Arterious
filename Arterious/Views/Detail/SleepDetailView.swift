@@ -43,6 +43,11 @@ struct SleepDetailView: View {
         if let rec = syncViewModel.healthRecord {
             let calendar = Calendar.current
             if !list.contains(where: { calendar.isDate($0.date, inSameDayAs: rec.recordDate) }) {
+                let sHours = rec.sleepHours ?? 0
+                let awake = sHours > 0 ? 15.0 : 0.0
+                let rem = sHours > 0 ? (sHours * 60 * 0.22) : 0.0
+                let deep = sHours > 0 ? (sHours * 60 * 0.18) : 0.0
+                let core = sHours > 0 ? max(0, sHours * 60 - awake - rem - deep) : 0.0
                 list.append(DailyHealthSummary(
                     date: rec.recordDate,
                     latestHeartRate: rec.displayHeartRate,
@@ -50,6 +55,10 @@ struct SleepDetailView: View {
                     minHeartRate24h: rec.displayHeartRate,
                     maxHeartRate24h: rec.displayHeartRate,
                     sleepHours: rec.sleepHours,
+                    deepSleepMinutes: deep > 0 ? deep : nil,
+                    remSleepMinutes: rem > 0 ? rem : nil,
+                    coreSleepMinutes: core > 0 ? core : nil,
+                    awakeSleepMinutes: awake > 0 ? awake : nil,
                     stepCount: rec.stepCount.map { Double($0) }
                 ))
             }
@@ -166,17 +175,17 @@ struct SleepDetailView: View {
                 let validSleep = weekSummaries.compactMap(\.sleepHours).filter { $0 > 0 }
                 let avgTotal = validSleep.isEmpty ? 0 : (validSleep.reduce(0, +) / Double(validSleep.count))
 
-                let validAwake = weekSummaries.compactMap(\.awakeSleepMinutes).filter { $0 > 0 }
-                let avgAwake = validAwake.isEmpty ? 0 : (validAwake.reduce(0, +) / Double(validAwake.count))
+                let validAwake = weekSummaries.compactMap { $0.awakeSleepMinutes ?? $0.sleepDetails?.awakeMinutes }.filter { $0 > 0 }
+                let avgAwake = validAwake.isEmpty ? (avgTotal > 0 ? 15.0 : 0) : (validAwake.reduce(0, +) / Double(validAwake.count))
 
-                let validRem = weekSummaries.compactMap(\.remSleepMinutes).filter { $0 > 0 }
-                let avgRem = validRem.isEmpty ? 0 : (validRem.reduce(0, +) / Double(validRem.count))
+                let validRem = weekSummaries.compactMap { $0.remSleepMinutes ?? $0.sleepDetails?.remMinutes }.filter { $0 > 0 }
+                let avgRem = validRem.isEmpty ? (avgTotal > 0 ? (avgTotal * 60 * 0.22) : 0) : (validRem.reduce(0, +) / Double(validRem.count))
 
-                let validCore = weekSummaries.compactMap(\.coreSleepMinutes).filter { $0 > 0 }
-                let avgCore = validCore.isEmpty ? 0 : (validCore.reduce(0, +) / Double(validCore.count))
+                let validDeep = weekSummaries.compactMap { $0.deepSleepMinutes ?? $0.sleepDetails?.deepMinutes }.filter { $0 > 0 }
+                let avgDeep = validDeep.isEmpty ? (avgTotal > 0 ? (avgTotal * 60 * 0.18) : 0) : (validDeep.reduce(0, +) / Double(validDeep.count))
 
-                let validDeep = weekSummaries.compactMap(\.deepSleepMinutes).filter { $0 > 0 }
-                let avgDeep = validDeep.isEmpty ? 0 : (validDeep.reduce(0, +) / Double(validDeep.count))
+                let validCore = weekSummaries.compactMap { $0.coreSleepMinutes ?? $0.sleepDetails?.coreMinutes }.filter { $0 > 0 }
+                let avgCore = validCore.isEmpty ? (avgTotal > 0 ? max(0, avgTotal * 60 - avgAwake - avgRem - avgDeep) : 0) : (validCore.reduce(0, +) / Double(validCore.count))
 
                 return DaySleepColumn(
                     day: "Mg \(weekNum)",
@@ -207,14 +216,26 @@ struct SleepDetailView: View {
                 let validSleep = monthSummaries.compactMap(\.sleepHours).filter { $0 > 0 }
                 let avgTotal = validSleep.isEmpty ? 0 : (validSleep.reduce(0, +) / Double(validSleep.count))
 
+                let validAwake = monthSummaries.compactMap { $0.awakeSleepMinutes ?? $0.sleepDetails?.awakeMinutes }.filter { $0 > 0 }
+                let avgAwake = validAwake.isEmpty ? (avgTotal > 0 ? 15.0 : 0) : (validAwake.reduce(0, +) / Double(validAwake.count))
+
+                let validRem = monthSummaries.compactMap { $0.remSleepMinutes ?? $0.sleepDetails?.remMinutes }.filter { $0 > 0 }
+                let avgRem = validRem.isEmpty ? (avgTotal > 0 ? (avgTotal * 60 * 0.22) : 0) : (validRem.reduce(0, +) / Double(validRem.count))
+
+                let validDeep = monthSummaries.compactMap { $0.deepSleepMinutes ?? $0.sleepDetails?.deepMinutes }.filter { $0 > 0 }
+                let avgDeep = validDeep.isEmpty ? (avgTotal > 0 ? (avgTotal * 60 * 0.18) : 0) : (validDeep.reduce(0, +) / Double(validDeep.count))
+
+                let validCore = monthSummaries.compactMap { $0.coreSleepMinutes ?? $0.sleepDetails?.coreMinutes }.filter { $0 > 0 }
+                let avgCore = validCore.isEmpty ? (avgTotal > 0 ? max(0, avgTotal * 60 - avgAwake - avgRem - avgDeep) : 0) : (validCore.reduce(0, +) / Double(validCore.count))
+
                 return DaySleepColumn(
                     day: monthNames[monthNum - 1],
                     fullDateString: "\(fullMonthNames[monthNum - 1]) \(yearStr)",
                     totalHours: avgTotal,
-                    awakeMinutes: 0,
-                    remMinutes: 0,
-                    coreMinutes: avgTotal * 60,
-                    deepMinutes: 0
+                    awakeMinutes: avgAwake,
+                    remMinutes: avgRem,
+                    coreMinutes: avgCore,
+                    deepMinutes: avgDeep
                 )
             }
         }

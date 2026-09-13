@@ -46,7 +46,7 @@ struct ContentView: View {
             Text(syncViewModel.roleMismatchMessage)
         }
         .alert("Gagal Terhubung", isPresented: Binding(
-            get: { syncViewModel.errorMessage != nil },
+            get: { syncViewModel.errorMessage != nil && syncViewModel.connectionHUD == nil },
             set: { if !$0 { syncViewModel.errorMessage = nil } }
         )) {
             Button("Tutup", role: .cancel) {
@@ -55,13 +55,8 @@ struct ContentView: View {
         } message: {
             Text(syncViewModel.errorMessage ?? "")
         }
-        .alert("Berhasil Terhubung!", isPresented: Bindable(syncViewModel).showConnectionSuccessModal) {
-            Button("Mulai", role: .cancel) { }
-        } message: {
-            Text(syncViewModel.connectionSuccessMessage)
-        }
         .overlay {
-            if syncViewModel.isLoading {
+            if syncViewModel.isInitialConnecting {
                 ZStack {
                     Color.black.opacity(0.3)
                         .ignoresSafeArea()
@@ -71,7 +66,7 @@ struct ContentView: View {
                             .scaleEffect(1.2)
                             .tint(AppColor.actionBlue)
 
-                        Text(syncViewModel.loadingStatusMessage.isEmpty ? "Menghubungkan ke iCloud..." : syncViewModel.loadingStatusMessage)
+                        Text(syncViewModel.loadingStatusMessage.isEmpty ? "Menghubungkan ke Orang Tua..." : syncViewModel.loadingStatusMessage)
                             .font(AppTypography.bodySemibold)
                             .foregroundStyle(AppColor.textPrimary)
                             .multilineTextAlignment(.center)
@@ -83,31 +78,21 @@ struct ContentView: View {
                     .shadow(color: Color.black.opacity(0.12), radius: 16, x: 0, y: 6)
                 }
                 .transition(.opacity)
-                .animation(.easeInOut(duration: 0.2), value: syncViewModel.isLoading)
+                .animation(.easeInOut(duration: 0.2), value: syncViewModel.isInitialConnecting)
             }
         }
-        .overlay(alignment: .top) {
-            if syncViewModel.showAcceptedBanner {
-                HStack(spacing: AppSpacing.sm) {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundStyle(AppColor.Accent.green)
-                    Text(syncViewModel.bannerMessage)
-                        .font(AppTypography.captionRegular)
-                        .foregroundStyle(Color.white)
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-                .background(Color.black.opacity(0.85))
-                .clipShape(Capsule())
-                .padding(.top, 50)
-                .transition(.move(edge: .top).combined(with: .opacity))
-                .onAppear {
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 4.5) {
-                        withAnimation {
-                            syncViewModel.showAcceptedBanner = false
-                        }
+        .overlay {
+            if let hud = syncViewModel.connectionHUD {
+                NativeStatusHUD(
+                    type: hud.type,
+                    title: hud.title,
+                    message: hud.message,
+                    onDismiss: {
+                        syncViewModel.dismissHUD()
                     }
-                }
+                )
+                .transition(.scale(scale: 0.88).combined(with: .opacity))
+                .zIndex(999)
             }
         }
         .task {

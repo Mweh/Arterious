@@ -4,6 +4,7 @@ import UIKit
 import CloudKit
 import HealthKit
 import UserNotifications
+import Contacts
 
 @Observable
 @MainActor
@@ -18,7 +19,7 @@ final class SyncViewModel {
     var parentSnapshot: DailyHealthSummary?
     var healthRecord: HealthRecord?
     var historicalSummaries: [DailyHealthSummary] = []
-    var parentName: String = "Nama Ortu 1"
+    var parentName: String = "Orang Tua"
     var lastSyncDate: Date?
 
     /// Evaluasi lengkap dari RuleEngine
@@ -41,7 +42,10 @@ final class SyncViewModel {
     var roleMismatchMessage: String = ""
     var pendingRoleSwitchTarget: SyncRole? = nil
 
-    /// Banner toast state for child when share is accepted
+    /// Native Apple-style centered status HUD state (check/x)
+    var connectionHUD: ConnectionHUDState? = nil
+
+    /// Banner toast state for child when share is accepted (legacy fallback)
     var showAcceptedBanner: Bool = false
     var bannerMessage: String = ""
 
@@ -52,6 +56,9 @@ final class SyncViewModel {
     /// Loading status message during iCloud fetch
     var loadingStatusMessage: String = "Menghubungkan ke iCloud..."
 
+    /// Active only during explicit initial connection / invite acceptance (not periodic sync)
+    var isInitialConnecting: Bool = false
+
     /// Detected clipboard invite URL for prompt
     var detectedClipboardURL: URL? = nil
     var showDetectedClipboardPrompt: Bool = false
@@ -61,6 +68,53 @@ final class SyncViewModel {
 
     /// Holds the active native Apple CKShare for presentation in UICloudSharingController
     var nativeShare: CKShare?
+
+    // MARK: - Native Status HUD Helpers
+
+    func showSuccessHUD(title: String = "Berhasil Terhubung", message: String) {
+        self.connectionHUD = ConnectionHUDState(type: .success, title: title, message: message)
+    }
+
+    func showFailureHUD(title: String = "Gagal Terhubung", message: String) {
+        self.connectionHUD = ConnectionHUDState(type: .failure, title: title, message: message)
+    }
+
+    func dismissHUD() {
+        self.connectionHUD = nil
+    }
+
+    // MARK: - Name Formatting Helpers
+
+    /// Sanitizes and formats the parent's display name to ensure it always cleanly says "Orang Tua"
+    /// (or "Orang Tua (Name)") and never "Saya", "Anak", or raw placeholder strings.
+    func formattedParentName(_ raw: String?) -> String {
+        guard let name = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return "Orang Tua"
+        }
+        let lower = name.lowercased()
+        if lower == "saya" || lower == "anak" || lower == "parent" || lower == "nama ortu 1" || lower == "nama ortu 2" || lower == "iphone" || lower == "keluarga" || lower == "data saya" {
+            return "Orang Tua"
+        }
+        if lower.contains("orang tua") || lower.contains("ortu") || lower.contains("ayah") || lower.contains("ibu") || lower.contains("papa") || lower.contains("mama") {
+            return name
+        }
+        return "Orang Tua (\(name))"
+    }
+
+    /// Sanitizes and formats the child's display name for parent display.
+    func formattedChildName(_ raw: String?) -> String {
+        guard let name = raw?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty else {
+            return "Anak"
+        }
+        let lower = name.lowercased()
+        if lower == "saya" || lower == "parent" || lower == "orang tua" || lower == "iphone" || lower == "data saya" {
+            return "Anak"
+        }
+        if lower.contains("anak") {
+            return name
+        }
+        return "Anak (\(name))"
+    }
 
     var cloudKitContainer: CKContainer {
         cloudKit.container
@@ -76,6 +130,10 @@ final class SyncViewModel {
     @ObservationIgnored private var heartRateObserverQuery: HKQuery?
     @ObservationIgnored private var isProcessingInvite: Bool = false
     @ObservationIgnored private var hasExecutedInitialAICall: Bool = false
+    @ObservationIgnored private var observerDebounceTask: Task<Void, Never>?
+    @ObservationIgnored private var lastHealthDataLoadTime: Date?
+    @ObservationIgnored private var isCurrentlyLoadingHealthData: Bool = false
+    @ObservationIgnored private var geminiCooldownUntil: Date?
 
     /// Real user name for display and invites (defaults to CloudKit name, clean device name, or saved name)
     var userDisplayName: String {
@@ -110,7 +168,7 @@ final class SyncViewModel {
         }
     }
 
-    /// Resolves the user's real first and last name from CloudKit identity or clean device name
+    /// Resolves the user's real first and last name from Contacts "My Card", CloudKit identity, or clean device name
     func resolveUserDisplayName() async -> String {
         if !userDisplayName.isEmpty {
             return userDisplayName
@@ -149,6 +207,10 @@ final class SyncViewModel {
             "['’]s\\s+Apple\\s*Watch.*",
             "^iPhone\\s+milik\\s+",
             "^iPad\\s+milik\\s+",
+            "^Apple\\s*Watch\\s+milik\\s+",
+            "^iPhone\\s+",
+            "^iPad\\s+",
+            "^Apple\\s*Watch\\s+",
             "^iPhone\\s+de\\s+",
             "^iPad\\s+de\\s+",
             "^iPhone\\s+von\\s+",
@@ -188,8 +250,15 @@ final class SyncViewModel {
             parentPushTask?.cancel()
             parentPushTask = nil
             startPeriodicAutoRefresh()
-            if syncState.status == .accepted {
+            if syncState.status == .accepted && syncState.inviteCode != nil && !syncState.inviteCode!.isEmpty {
                 await fetchSharedParentSnapshot()
+            } else {
+                self.healthRecord = nil
+                self.parentSnapshot = nil
+                self.insightOutput = nil
+                self.evaluatedOverview = nil
+                self.baseline = nil
+                self.historicalSummaries = []
             }
         }
     }
@@ -197,6 +266,17 @@ final class SyncViewModel {
     // MARK: - Parent: Local HealthKit Data Loading
 
     func loadParentLocalHealthData(forceGemini: Bool = false, autoPushToCloud: Bool = true) async {
+        // Debounce: Hindari pemanggilan ganda/beruntun dalam hitungan milidetik
+        if isCurrentlyLoadingHealthData && !forceGemini { return }
+        if let lastLoad = lastHealthDataLoadTime, Date().timeIntervalSince(lastLoad) < 3.0, !forceGemini { return }
+        isCurrentlyLoadingHealthData = true
+        isLoading = true
+        defer {
+            isCurrentlyLoadingHealthData = false
+            isLoading = false
+        }
+        lastHealthDataLoadTime = Date()
+
         if healthKit.isHealthKitAvailable {
             try? await healthKit.requestAuthorization()
         }
@@ -212,22 +292,35 @@ final class SyncViewModel {
         self.evaluatedOverview = overview
         self.baseline = overview.baseline
 
+        // Tandai bahwa evaluasi kesehatan telah dijalankan
+        self.hasExecutedInitialAICall = true
+
         // Cek apakah perlu memanggil Gemini API:
-        // Hanya panggil 1x saat aplikasi awal dijalankan, atau jika force Gemini diminta secara eksplisit.
+        // Hanya panggil 1x saat aplikasi awal dijalankan, atau jika ada perubahan/eskalasi kondisi yang signifikan.
         var overviewSummaryText = overview.statusBadge
         let shouldCallAI = shouldCallGeminiAPI(for: overview, forceRefresh: forceGemini)
 
         if shouldCallAI {
-            self.hasExecutedInitialAICall = true
             do {
                 let (output, _) = try await GeminiService.shared.generateInsight(input: promptInput)
                 let cleaned = RuleEngine.shared.sanitizeInsightOutput(output, overview: overview)
                 self.insightOutput = cleaned
                 self.isUsingLocalRuleFallback = false
                 self.lastGeminiCallDate = Date()
+                self.geminiCooldownUntil = nil
                 overviewSummaryText = cleaned.todayOverview.summary
             } catch {
-                print("⚠️ [SyncViewModel] Gemini error, using rule fallback: \(error)")
+                let errorStr = "\(error)"
+                let isQuota429 = errorStr.contains("429") || errorStr.contains("RESOURCE_EXHAUSTED")
+                if isQuota429 {
+                    print("⚠️ [SyncViewModel] Kuota free-tier Gemini habis (HTTP 429 RESOURCE_EXHAUSTED). Menggunakan RuleEngine fallback (cooldown 15 menit).")
+                    self.geminiCooldownUntil = Date().addingTimeInterval(900) // 15 menit jeda
+                } else {
+                    print("⚠️ [SyncViewModel] Gemini error, using rule fallback: \(error.localizedDescription)")
+                    self.geminiCooldownUntil = Date().addingTimeInterval(180) // 3 menit jeda
+                }
+                // Catat waktu panggilan agar tidak melakukan retry beruntun setiap detik
+                self.lastGeminiCallDate = Date()
                 self.isUsingLocalRuleFallback = true
                 let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "anda" : pName)
                 self.insightOutput = fallback
@@ -235,12 +328,28 @@ final class SyncViewModel {
             }
         } else if let existing = self.insightOutput {
             self.isUsingLocalRuleFallback = false
-            overviewSummaryText = existing.todayOverview.summary
+            // Selaraskan data metrik domain yang terus terakumulasi (misal langkah hari ini) ke insight yang ada
+            let updated = RuleEngine.shared.sanitizeInsightOutput(existing, overview: overview)
+            self.insightOutput = updated
+            self.saveDailyInsight(updated, for: summary.date)
+            overviewSummaryText = updated.todayOverview.summary
+        } else if let cachedToday = self.historicalInsights[dateKey(for: Date())] {
+            let updated = RuleEngine.shared.sanitizeInsightOutput(cachedToday, overview: overview)
+            self.insightOutput = updated
+            self.saveDailyInsight(updated, for: summary.date)
+            self.isUsingLocalRuleFallback = false
+            overviewSummaryText = updated.todayOverview.summary
         } else {
             self.isUsingLocalRuleFallback = true
             let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pName == "Saya" ? "anda" : pName)
             self.insightOutput = fallback
             overviewSummaryText = fallback.todayOverview.summary
+        }
+
+        // Simpan status kondisi dan push class saat ini agar tidak memicu deteksi eskalasi palsu di putaran refresh berikutnya
+        UserDefaults.standard.set(overview.conditionStatus, forKey: "arterious.lastKnownConditionStatus")
+        if let pushClass = overview.pushDecision?.pushClass.rawValue {
+            UserDefaults.standard.set(pushClass, forKey: "arterious.lastKnownPushClass")
         }
 
         let record = HealthRecord.create(
@@ -298,13 +407,18 @@ final class SyncViewModel {
             }
         }
 
-        // Observer Query untuk deteksi sampel Heart Rate baru di Apple Health
+        // Observer Query untuk deteksi sampel Heart Rate baru di Apple Health dengan debounce 3 detik
         if syncState.role == .parent {
             heartRateObserverQuery = healthKit.startHeartRateObserver { [weak self] in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    if self.syncState.role == .parent {
-                        await self.loadParentLocalHealthData()
+                    self.observerDebounceTask?.cancel()
+                    self.observerDebounceTask = Task { @MainActor [weak self] in
+                        try? await Task.sleep(for: .seconds(3))
+                        guard let self, !Task.isCancelled else { return }
+                        if self.syncState.role == .parent {
+                            await self.loadParentLocalHealthData()
+                        }
                     }
                 }
             }
@@ -417,26 +531,28 @@ final class SyncViewModel {
         }
 
         isProcessingInvite = true
+        isInitialConnecting = true
         isLoading = true
+        loadingStatusMessage = "Menghubungkan ke Orang Tua..."
         errorMessage = nil
         defer {
             isProcessingInvite = false
+            isInitialConnecting = false
             isLoading = false
         }
 
         let urlString = url.absoluteString
 
-        // 1. Parent receives request from child to share health data: arterious://ask-parent?name=Valentino
-        if url.host == "ask-parent" || urlString.contains("ask-parent") {
-            // ROLE VALIDATION: Intended for Orang Tua (Parent)
+        // 1. Parent receives request from child (arterious://ask-parent?name=...)
+        if urlString.contains("ask-parent") || url.host == "ask-parent" {
+            // If child accidentally opens ask link, show native HUD
             if syncState.role == .child {
-                print("⚠️ [SyncViewModel] Role mismatch: child opened ask-parent link")
-                self.roleMismatchMessage = "Tautan undangan ini ditujukan untuk Orang Tua agar dapat membagikan data kesehatan. Anda saat ini masuk sebagai Anak."
-                self.pendingRoleSwitchTarget = .parent
-                self.showRoleMismatchAlert = true
+                showFailureHUD(
+                    title: "Tautan untuk Orang Tua",
+                    message: "Tautan ini harus dibuka di perangkat orang tua Anda."
+                )
                 return
             }
-
             let components = URLComponents(url: url, resolvingAgainstBaseURL: false)
             let childName = components?.queryItems?.first(where: { $0.name == "name" })?.value ?? "Anak"
             self.pendingParentShareName = childName
@@ -466,21 +582,28 @@ final class SyncViewModel {
                 if let targetURL = URL(string: targetURLStr ?? urlString), urlString.contains("icloud.com/share") {
                     do {
                         let (pName, share) = try await cloudKit.acceptNativeShare(url: targetURL)
-                        self.syncState = SyncState(role: .child, inviteCode: "SHARED", status: .accepted, partnerName: pName, lastSyncDate: Date())
-                        self.parentName = pName
-                        UserDefaults.standard.set(pName, forKey: "savedParentName")
+                        let displayParentName = formattedParentName(pName)
+                        self.syncState = SyncState(role: .child, inviteCode: "SHARED", status: .accepted, partnerName: displayParentName, lastSyncDate: Date())
+                        self.parentName = displayParentName
+                        UserDefaults.standard.set(displayParentName, forKey: "savedParentName")
                         self.nativeShare = share
                         persistState()
                         await fetchSharedParentSnapshot()
-                        self.bannerMessage = "Undangan diterima dari \(pName)! Data kesehatan kini terhubung."
-                        self.showAcceptedBanner = true
+                        self.showSuccessHUD(
+                            title: "Berhasil Terhubung",
+                            message: "Terhubung dengan \(displayParentName)"
+                        )
                         return
                     } catch {
-                        self.errorMessage = "Tautan undangan tidak memiliki kode valid."
+                        let msg = "Tautan undangan tidak memiliki kode valid."
+                        self.errorMessage = msg
+                        self.showFailureHUD(title: "Gagal Terhubung", message: msg)
                         return
                     }
                 }
-                self.errorMessage = "Tautan undangan tidak valid atau tidak memiliki kode aktivasi."
+                let msg = "Tautan undangan tidak valid atau tidak memiliki kode aktivasi."
+                self.errorMessage = msg
+                self.showFailureHUD(title: "Gagal Terhubung", message: msg)
                 return
             }
 
@@ -488,6 +611,11 @@ final class SyncViewModel {
             if syncState.status == .accepted && syncState.inviteCode == inviteCode {
                 print("✅ [SyncViewModel] Invite \(inviteCode) already active, refreshing data.")
                 await fetchSharedParentSnapshot()
+                let displayParentName = formattedParentName(self.parentName)
+                self.showSuccessHUD(
+                    title: "Berhasil Terhubung",
+                    message: "Terhubung dengan \(displayParentName)"
+                )
                 return
             }
 
@@ -495,7 +623,8 @@ final class SyncViewModel {
             let childDeviceName = !userDisplayName.isEmpty ? userDisplayName : (UIDevice.current.name.isEmpty ? "Anak" : UIDevice.current.name)
             do {
                 let validatedParentName = try await cloudKit.validateAndAcceptInvite(code: inviteCode, childName: childDeviceName)
-                let finalParentName = validatedParentName.isEmpty ? pNameFromQuery : validatedParentName
+                let resolvedParentName = validatedParentName.isEmpty ? pNameFromQuery : validatedParentName
+                let displayParentName = formattedParentName(resolvedParentName)
 
                 // If native share URL was provided, attempt native share accept as well
                 if let targetStr = targetURLStr, let nativeURL = URL(string: targetStr) {
@@ -508,27 +637,31 @@ final class SyncViewModel {
                     role: .child,
                     inviteCode: inviteCode,
                     status: .accepted,
-                    partnerName: finalParentName,
+                    partnerName: displayParentName,
                     lastSyncDate: Date()
                 )
-                self.parentName = finalParentName
-                UserDefaults.standard.set(finalParentName, forKey: "savedParentName")
+                self.parentName = displayParentName
+                UserDefaults.standard.set(displayParentName, forKey: "savedParentName")
                 persistState()
 
-                await triggerAcceptNotification(parentName: finalParentName)
+                await triggerAcceptNotification(parentName: displayParentName)
                 await subscribeAndFetch(code: inviteCode)
 
-                self.bannerMessage = "Berhasil terhubung dengan data kesehatan \(finalParentName)!"
-                self.showAcceptedBanner = true
-                self.connectionSuccessMessage = "Kamu sekarang terhubung dengan \(finalParentName)! Data aktivitas, tidur, dan detak jantung dapat dipantau langsung di Beranda."
-                self.showConnectionSuccessModal = true
+                self.showSuccessHUD(
+                    title: "Berhasil Terhubung",
+                    message: "Terhubung dengan \(displayParentName)"
+                )
             } catch let syncError as SyncError {
                 print("❌ [SyncViewModel] validateAndAcceptInvite SyncError: \(syncError.localizedDescription)")
-                self.errorMessage = syncError.errorDescription
+                let msg = syncError.errorDescription ?? "Gagal memvalidasi undangan."
+                self.errorMessage = msg
+                self.showFailureHUD(title: "Gagal Terhubung", message: msg)
                 return
             } catch {
                 print("❌ [SyncViewModel] validateAndAcceptInvite unexpected error: \(error)")
-                self.errorMessage = formatUserFriendlyErrorMessage(error)
+                let msg = formatUserFriendlyErrorMessage(error)
+                self.errorMessage = msg
+                self.showFailureHUD(title: "Gagal Terhubung", message: msg)
                 return
             }
             return
@@ -542,7 +675,10 @@ final class SyncViewModel {
     @discardableResult
     func handlePastedLink(_ text: String) async -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return false }
+        guard !trimmed.isEmpty else {
+            self.showFailureHUD(title: "Tautan Kosong", message: "Silakan salin tautan undangan terlebih dahulu.")
+            return false
+        }
 
         // 1. Direct URL
         if let url = URL(string: trimmed), url.scheme != nil {
@@ -568,22 +704,16 @@ final class SyncViewModel {
             }
         }
 
+        self.showFailureHUD(
+            title: "Gagal Terhubung",
+            message: "Tautan tidak dikenali. Pastikan Anda menempel tautan Arterious atau iCloud yang valid."
+        )
         return false
     }
 
-    /// Checks the clipboard for invitations when child opens app
+    /// Checks the clipboard for invitations when child opens app (Disabled in favor of user-initiated manual paste in Access tab)
     func checkClipboardForInvitation() {
-        guard syncState.role == .child, syncState.status != .accepted else { return }
-        guard let string = UIPasteboard.general.string else { return }
-
-        if let range = string.range(of: "arterious://accept-share[^\n\\s]+", options: .regularExpression) ??
-                      string.range(of: "https://www\\.icloud\\.com/share/[^\n\\s]+", options: .regularExpression) {
-            let urlString = String(string[range])
-            if let url = URL(string: urlString), detectedClipboardURL != url {
-                self.detectedClipboardURL = url
-                self.showDetectedClipboardPrompt = true
-            }
-        }
+        // Dinonaktifkan: Anak menempel tautan secara sadar melalui tab Akses
     }
 
     private func triggerAcceptNotification(parentName: String) async {
@@ -601,7 +731,9 @@ final class SyncViewModel {
         guard let components = URLComponents(url: url, resolvingAgainstBaseURL: false),
               let code = components.queryItems?.first(where: { $0.name == "code" })?.value,
               !code.isEmpty else {
-            errorMessage = "Link undangan tidak valid."
+            let msg = "Link undangan tidak valid."
+            errorMessage = msg
+            showFailureHUD(title: "Gagal Terhubung", message: msg)
             return
         }
 
@@ -613,30 +745,37 @@ final class SyncViewModel {
             code: code,
             status: "accepted",
             senderRole: syncState.role == .parent ? "child" : "parent",
-            senderName: "Keluarga"
+            senderName: "Orang Tua"
         )
 
         if details.senderRole == "parent" || syncState.role == .child {
+            let displayParentName = formattedParentName(details.senderName)
             syncState = SyncState(
                 role: .child,
                 inviteCode: code,
                 status: .accepted,
-                partnerName: details.senderName,
+                partnerName: displayParentName,
                 lastSyncDate: Date()
             )
-            self.parentName = details.senderName
+            self.parentName = displayParentName
             persistState()
 
             Task {
                 try? await cloudKit.acceptInvite(code: code)
                 await subscribeAndFetch(code: code)
             }
+
+            self.showSuccessHUD(
+                title: "Berhasil Terhubung",
+                message: "Terhubung dengan \(displayParentName)"
+            )
         } else {
+            let displayChildName = formattedChildName(details.childName ?? details.senderName)
             syncState = SyncState(
                 role: .parent,
                 inviteCode: code,
                 status: .accepted,
-                partnerName: details.senderName,
+                partnerName: displayChildName,
                 lastSyncDate: Date()
             )
             persistState()
@@ -647,6 +786,11 @@ final class SyncViewModel {
                 await pushParentHealthData(code: code)
                 startParentPushLoop(code: code)
             }
+
+            self.showSuccessHUD(
+                title: "Berhasil Terhubung",
+                message: "Terhubung dengan \(displayChildName)"
+            )
         }
     }
 
@@ -720,6 +864,8 @@ final class SyncViewModel {
     // MARK: - Child: Fetch Shared Parent Snapshot
 
     func fetchSharedParentSnapshot() async {
+        isLoading = true
+        defer { isLoading = false }
         do {
             // 1. Try native CKShare shared database first
             if let result = try await cloudKit.fetchSharedHealthData() {
@@ -729,16 +875,20 @@ final class SyncViewModel {
                 
                 if let fullRecord = result.record {
                     self.healthRecord = fullRecord
-                    self.insightOutput = fullRecord.insightOutput ?? makeInsightOutput(from: fullRecord)
+                    let ins = fullRecord.insightOutput ?? makeInsightOutput(from: fullRecord)
+                    self.insightOutput = ins
+                    self.saveDailyInsight(ins, for: fullRecord.recordDate)
                     self.synthesizeHistoryIfEmpty(from: fullRecord)
                 } else {
+                    let pDisplayName = (result.parentName.isEmpty || result.parentName == "Nama Ortu 1" || result.parentName == "Parent" || result.parentName == "Saya" || result.parentName.lowercased() == "anda") ? "orang tua" : result.parentName
                     let (overview, _) = RuleEngine.shared.evaluate(
                         today: result.summary,
                         history: self.historicalSummaries,
-                        parentDisplayName: result.parentName
+                        parentDisplayName: pDisplayName
                     )
-                    let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: result.parentName)
+                    let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pDisplayName)
                     self.insightOutput = fallback
+                    self.saveDailyInsight(fallback, for: result.summary.date)
                     self.healthRecord = HealthRecord.create(
                         from: result.summary,
                         inviteCode: syncState.inviteCode ?? "SHARED",
@@ -783,11 +933,15 @@ final class SyncViewModel {
     }
 
     func fetchParentSnapshot(code: String) async {
+        isLoading = true
+        defer { isLoading = false }
         do {
             if let hr = try await cloudKit.fetchLatestHealthRecord(inviteCode: code) {
                 self.healthRecord = hr
-                self.insightOutput = hr.insightOutput ?? makeInsightOutput(from: hr)
-                self.saveDailyInsight(self.insightOutput, for: hr.recordDate)
+                let rawInsight = hr.insightOutput ?? makeInsightOutput(from: hr)
+                let synchronized = self.synchronizeInsightWithHealthRecord(rawInsight, record: hr)
+                self.insightOutput = synchronized
+                self.saveDailyInsight(synchronized, for: hr.recordDate)
                 self.synthesizeHistoryIfEmpty(from: hr)
                 self.parentName = hr.parentName
                 self.lastSyncDate = hr.updatedAt
@@ -806,16 +960,19 @@ final class SyncViewModel {
 
                 if let rec = result.record {
                     self.healthRecord = rec
-                    self.insightOutput = rec.insightOutput ?? makeInsightOutput(from: rec)
-                    self.saveDailyInsight(self.insightOutput, for: rec.recordDate)
+                    let rawInsight = rec.insightOutput ?? makeInsightOutput(from: rec)
+                    let synchronized = self.synchronizeInsightWithHealthRecord(rawInsight, record: rec)
+                    self.insightOutput = synchronized
+                    self.saveDailyInsight(synchronized, for: rec.recordDate)
                     self.synthesizeHistoryIfEmpty(from: rec)
                 } else if self.healthRecord == nil {
+                    let pDisplayName = (result.parentName.isEmpty || result.parentName == "Nama Ortu 1" || result.parentName == "Parent" || result.parentName == "Saya" || result.parentName.lowercased() == "anda") ? "orang tua" : result.parentName
                     let (overview, _) = RuleEngine.shared.evaluate(
                         today: result.summary,
                         history: self.historicalSummaries,
-                        parentDisplayName: result.parentName
+                        parentDisplayName: pDisplayName
                     )
-                    let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: result.parentName)
+                    let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pDisplayName)
                     self.insightOutput = fallback
                     self.saveDailyInsight(fallback, for: result.summary.date)
                     self.healthRecord = HealthRecord.create(
@@ -866,15 +1023,21 @@ final class SyncViewModel {
     func makeInsightOutput(from record: HealthRecord) -> LLMInsightOutput {
         let statusUpper: String
         let titleLower = record.summaryTitle.lowercased()
-        if titleLower.contains("penurunan") || record.activityStatus.lowercased().contains("menurun") {
+        if titleLower.contains("penurunan") || titleLower.contains("kurang tidur") || record.activityStatus.lowercased().contains("menurun") {
             statusUpper = "DECLINED"
-        } else if titleLower.contains("meningkat") || titleLower.contains("membaik") {
+        } else if titleLower.contains("meningkat") || titleLower.contains("peningkatan") || titleLower.contains("membaik") {
             statusUpper = "IMPROVED"
         } else {
             statusUpper = "STABLE"
         }
         
-        let pName = (record.parentName.isEmpty || record.parentName == "Nama Ortu 1" || record.parentName == "Parent") ? "anda" : record.parentName
+        let isChild = syncState.role == .child
+        let pName: String
+        if isChild {
+            pName = (record.parentName.isEmpty || record.parentName == "Nama Ortu 1" || record.parentName == "Parent" || record.parentName == "Saya" || record.parentName.lowercased() == "anda") ? "orang tua" : record.parentName
+        } else {
+            pName = "Anda"
+        }
         
         // Activity domain
         let steps = record.stepCount ?? 0
@@ -882,93 +1045,138 @@ final class SyncViewModel {
         let stepDelta = stepAvg > 0 ? (((Double(steps) - stepAvg) / stepAvg) * 100.0) : 0.0
         let actInsightText: String
         if steps == 0 && record.stepFormatted == "-" {
-            actInsightText = "Belum ada catatan langkah hari ini di Apple Health."
-        } else if steps >= 3000 {
-            actInsightText = "Pola aktivitas fisik \(pName) hari ini terpantau baik dan mendukung kelenturan pembuluh darah."
+            actInsightText = "Belum ada catatan langkah kaki hari ini di Apple Health."
         } else {
-            actInsightText = "Aktivitas fisik hari ini sedang berjalan. Luangkan waktu untuk mengajak jalan santai ringan."
+            actInsightText = "Aktivitas langkah hari ini tercatat \(record.stepFormatted) langkah."
         }
-        
         let actInsight = DomainMetricInsight(
-            currentValue: record.stepFormatted == "-" ? "-" : "\(record.stepFormatted) langkah",
+            currentValue: record.stepFormatted == "-" ? "—" : "\(record.stepFormatted) langkah",
             baselineValue: "\(Int(stepAvg)) langkah",
             deltaPercentage: stepDelta,
             status: record.activityStatus,
-            insight: actInsightText
+            insight: actInsightText,
+            points: [actInsightText]
         )
         
         // Sleep domain
-        let sleep = record.sleepHours ?? 0.0
+        let sleepHours = record.sleepHours ?? 0.0
         let sleepAvg = record.recentSleepPoints.isEmpty ? 7.0 : (record.recentSleepPoints.reduce(0, +) / Double(record.recentSleepPoints.count))
-        let sleepDelta = sleepAvg > 0 ? (((sleep - sleepAvg) / sleepAvg) * 100.0) : 0.0
-        let sleepAvgHours = Int(sleepAvg)
-        let sleepAvgMins = Int(((sleepAvg - Double(sleepAvgHours)) * 60).rounded())
+        let sleepDelta = sleepAvg > 0 ? (((sleepHours - sleepAvg) / sleepAvg) * 100.0) : 0.0
         let sleepInsightText: String
-        if sleep == 0 && record.sleepFormatted == "-" {
-            sleepInsightText = "Belum ada catatan tidur semalam di Apple Health. Catatan tidur dapat diaktifkan melalui Sleep Focus di iPhone atau Apple Watch."
-        } else if sleep < 6.0 {
-            sleepInsightText = "Durasi tidur semalam kurang dari 6 jam (\(record.sleepFormatted)). Tanyakan dengan lembut apakah tidur \(pName) nyenyak semalam."
+        if sleepHours == 0 && record.sleepFormatted == "-" {
+            sleepInsightText = "Belum ada catatan tidur semalam di Apple Health."
         } else {
-            sleepInsightText = "Pola tidur semalam stabil dan memenuhi kebutuhan istirahat harian \(pName)."
+            sleepInsightText = "Tidur semalam tercatat \(record.sleepFormatted)."
         }
-        
         let sleepInsight = DomainMetricInsight(
-            currentValue: record.sleepFormatted,
-            baselineValue: "\(sleepAvgHours)j \(sleepAvgMins)m",
+            currentValue: record.sleepFormatted == "-" ? "—" : record.sleepFormatted,
+            baselineValue: String(format: "%.1f jam", sleepAvg),
             deltaPercentage: sleepDelta,
             status: record.sleepStatus,
-            insight: sleepInsightText
+            insight: sleepInsightText,
+            points: [sleepInsightText]
         )
         
         // Heart domain
-        let hr = record.displayHeartRate
-        let hrAvg = record.recentHeartRatePoints.isEmpty ? 70.0 : (record.recentHeartRatePoints.reduce(0, +) / Double(record.recentHeartRatePoints.count))
-        let hrDelta = (hr != nil && hrAvg > 0) ? (((hr! - hrAvg) / hrAvg) * 100.0) : 0.0
+        let hr = record.heartRate ?? 0.0
+        let hrAvg = record.recentHeartRatePoints.isEmpty ? 72.0 : (record.recentHeartRatePoints.reduce(0, +) / Double(record.recentHeartRatePoints.count))
+        let hrDelta = hrAvg > 0 ? (((hr - hrAvg) / hrAvg) * 100.0) : 0.0
         let hrInsightText: String
-        if hr == nil {
-            hrInsightText = "Detak jantung belum tercatat di Apple Health (memerlukan Apple Watch atau sensor denyut terhubung)."
-        } else if let h = hr, h > 85 {
-            hrInsightText = "Detak jantung saat santai sedikit meningkat dibanding acuan. Pastikan \(pName) cukup minum air dan beristirahat santai."
+        if hr == 0 && record.heartRateStatus == "-" {
+            hrInsightText = "Belum ada catatan denyut jantung hari ini di Apple Health."
         } else {
-            hrInsightText = "Detak jantung berada di rentang normal dan stabil."
+            hrInsightText = "Denyut jantung tercatat \(Int(hr)) bpm."
         }
-        
         let heartInsight = DomainMetricInsight(
-            currentValue: hr != nil ? "\(Int(hr!)) BPM" : "-",
-            baselineValue: "\(Int(hrAvg)) BPM",
+            currentValue: hr == 0 ? "—" : "\(Int(hr)) bpm",
+            baselineValue: "\(Int(hrAvg)) bpm",
             deltaPercentage: hrDelta,
             status: record.heartRateStatus,
-            insight: hrInsightText
+            insight: hrInsightText,
+            points: [hrInsightText]
         )
         
         // Recommended actions
         let actions: [String]
-        if statusUpper == "DECLINED" {
-            actions = [
-                "Hubungi \(pName) dengan nada santai untuk menanyakan kabar dan bagaimana istirahatnya semalam.",
-                "Pastikan asupan cairan cukup dan ingatkan untuk tidak memaksakan aktivitas fisik berat.",
-                "Cek kembali ritme aktivitas sore nanti untuk melihat apakah ada perbaikan pola."
-            ]
+        if isChild {
+            if statusUpper == "DECLINED" {
+                actions = [
+                    "Sapa \(pName) dengan hangat dan tanyakan bagaimana istirahatnya hari ini.",
+                    "Ingatkan \(pName) untuk santai, cukup minum air, dan tidak perlu memaksakan diri.",
+                    "Perhatikan kembali perkembangannya besok pagi tanpa perlu khawatir berlebihan."
+                ]
+            } else {
+                actions = [
+                    "Kondisi \(pName) terpantau baik, sapa seperti biasa untuk menjaga kedekatan.",
+                    "Dukung kebiasaan jalan santai ringan di sore hari untuk menjaga kebugaran tubuh.",
+                    "Pastikan waktu tidur malam tetap teratur dan nyaman."
+                ]
+            }
         } else {
-            actions = [
-                "Kondisi \(pName) terpantau baik, sapa seperti biasa untuk menjaga kedekatan.",
-                "Dukung kebiasaan jalan santai ringan di sore hari untuk menjaga sirkulasi darah.",
-                "Pastikan waktu tidur malam tetap teratur dan nyaman."
-            ]
+            if statusUpper == "DECLINED" {
+                actions = [
+                    "Luangkan waktu untuk beristirahat santai dan tidak memaksakan diri.",
+                    "Pastikan asupan air minum cukup sepanjang hari.",
+                    "Perhatikan kembali ritme tubuh malam ini dengan tidur lebih awal."
+                ]
+            } else {
+                actions = [
+                    "Kondisi tubuh terpantau baik, pertahankan rutinitas sehat Anda.",
+                    "Lakukan jalan santai ringan di sore hari untuk menjaga sirkulasi tubuh.",
+                    "Jaga waktu istirahat malam tetap teratur dan nyaman."
+                ]
+            }
         }
         
         return LLMInsightOutput(
             todayOverview: TodayOverviewInsight(
                 conditionStatus: statusUpper,
-                statusLabel: record.summaryTitle,
+                statusLabel: RuleEngine.unifiedOverviewTitle(conditionStatus: statusUpper, statusBadge: record.summaryTitle),
                 deltaPercentage: nil,
-                summary: record.summaryBody
+                summary: RuleEngine.sanitizeSummaryNarrative(record.summaryBody)
             ),
             activityInsight: actInsight,
             sleepInsight: sleepInsight,
             heartInsight: heartInsight,
             recommendedActions: actions
         )
+    }
+
+    func synchronizeInsightWithHealthRecord(_ insight: LLMInsightOutput, record: HealthRecord) -> LLMInsightOutput {
+        let formatted = record.stepFormatted
+        guard let steps = record.stepCount, steps > 0, formatted != "-" else {
+            return insight
+        }
+        let act = insight.activityInsight
+        if act.currentValue == "—" || act.currentValue == "-" || act.currentValue.isEmpty || act.currentValue.contains("0 langkah") {
+            let isChild = syncState.role == .child
+            let pName = isChild ? (record.parentName.isEmpty ? "orang tua" : record.parentName) : "Anda"
+            let baselineText = act.baselineValue.isEmpty ? "3.000 langkah" : act.baselineValue
+            let points = [
+                isChild
+                    ? "Hingga saat ini tercatat \(formatted) langkah dari kebiasaan harian (\(baselineText)). Namun perbedaan ini masih terbilang wajar dan normal karena hari masih berjalan."
+                    : "Hingga saat ini tercatat \(formatted) langkah dari kebiasaan harian (\(baselineText)). Namun perbedaan ini masih terbilang wajar dan normal karena hari masih berjalan.",
+                isChild
+                    ? "Anak tidak perlu cemas; ajak \(pName) tetap bergerak aktif santai seperti jalan-jalan ringan di halaman rumah sesuai kemampuan."
+                    : "Tetap bergerak aktif santai sesuai kemampuan tubuh tanpa perlu memaksakan diri."
+            ]
+            let updatedActivity = DomainMetricInsight(
+                currentValue: "\(formatted) langkah",
+                baselineValue: act.baselineValue,
+                deltaPercentage: act.deltaPercentage,
+                status: record.activityStatus,
+                insight: points.joined(separator: " "),
+                points: points
+            )
+            return LLMInsightOutput(
+                todayOverview: insight.todayOverview,
+                activityInsight: updatedActivity,
+                sleepInsight: insight.sleepInsight,
+                heartInsight: insight.heartInsight,
+                recommendedActions: insight.recommendedActions
+            )
+        }
+        return insight
     }
 
     private func synthesizeHistoryIfEmpty(from record: HealthRecord) {
@@ -1009,6 +1217,14 @@ final class SyncViewModel {
         switch syncState.role {
         case .child:
             guard syncState.status == .accepted, let code = syncState.inviteCode, !code.isEmpty else {
+                if self.healthRecord != nil && (syncState.status != .accepted || syncState.inviteCode == nil || syncState.inviteCode!.isEmpty) {
+                    self.healthRecord = nil
+                    self.parentSnapshot = nil
+                    self.insightOutput = nil
+                    self.evaluatedOverview = nil
+                    self.baseline = nil
+                    self.historicalSummaries = []
+                }
                 return
             }
 
@@ -1047,22 +1263,28 @@ final class SyncViewModel {
                         // Child accepted the invitation!
                         if self.syncState.status != .accepted || self.syncState.partnerName == nil {
                             let childName = details.childName ?? "Anak"
+                            let displayChildName = self.formattedChildName(childName)
                             self.syncState.status = .accepted
-                            self.syncState.partnerName = childName
+                            self.syncState.partnerName = displayChildName
                             self.persistState()
-                            self.connectionSuccessMessage = "\(childName) telah berhasil terhubung dan sekarang dapat memantau data kesehatan Anda."
-                            self.showConnectionSuccessModal = true
+                            self.showSuccessHUD(
+                                title: "Berhasil Terhubung",
+                                message: "Terhubung dengan \(displayChildName)"
+                            )
                         }
                     }
                 } else if syncState.status == .pending {
                     let (hasAccepted, partnerName) = await cloudKit.checkActiveParticipants()
                     if hasAccepted {
                         let childName = partnerName ?? "Anak"
+                        let displayChildName = self.formattedChildName(childName)
                         syncState.status = .accepted
-                        syncState.partnerName = childName
+                        syncState.partnerName = displayChildName
                         persistState()
-                        self.connectionSuccessMessage = "\(childName) telah berhasil terhubung dan sekarang dapat memantau data kesehatan Anda."
-                        self.showConnectionSuccessModal = true
+                        self.showSuccessHUD(
+                            title: "Berhasil Terhubung",
+                            message: "Terhubung dengan \(displayChildName)"
+                        )
                     }
                 }
 
@@ -1102,7 +1324,7 @@ final class SyncViewModel {
         parentSnapshot = nil
         healthRecord = nil
         insightOutput = nil
-        historicalInsights = [:]
+        // Pertahankan historicalInsights agar catatan AI harian tanggal-tanggal sebelumnya tidak terhapus
         evaluatedOverview = nil
         baseline = nil
         historicalSummaries = []
@@ -1111,8 +1333,12 @@ final class SyncViewModel {
         lastSyncDate = nil
         parentName = ""
         UserDefaults.standard.removeObject(forKey: "savedParentName")
-        UserDefaults.standard.removeObject(forKey: historicalInsightsKey)
         persistState()
+
+        self.showSuccessHUD(
+            title: "Berhasil Dihapus",
+            message: "Akses data kesehatan telah diputuskan."
+        )
     }
 
     // MARK: - State Persistence
@@ -1152,6 +1378,7 @@ final class SyncViewModel {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd"
         formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.timeZone = TimeZone.current
         return formatter.string(from: date)
     }
 
@@ -1160,58 +1387,120 @@ final class SyncViewModel {
         let key = dateKey(for: date)
         historicalInsights[key] = insight
         persistHistoricalInsights()
+        print("💾 [SyncViewModel] Saved daily insight for key: \(key) (Status: \(insight.todayOverview.statusLabel))")
     }
 
     func insight(for date: Date) -> LLMInsightOutput? {
         let key = dateKey(for: date)
-        if Calendar.current.isDateInToday(date) {
-            return insightOutput ?? historicalInsights[key]
+        
+        // 1. If today and active memory insightOutput exists, return it
+        if Calendar.current.isDateInToday(date), let current = insightOutput {
+            return current
         }
-        return historicalInsights[key]
+        
+        // 2. If saved in historical dictionary, return it
+        if let saved = historicalInsights[key] {
+            return saved
+        }
+        
+        // 3. If healthRecord matches this date and contains insightOutput, cache and return it
+        if let hr = healthRecord, Calendar.current.isDate(hr.recordDate, inSameDayAs: date), let ins = hr.insightOutput {
+            saveDailyInsight(ins, for: hr.recordDate)
+            return ins
+        }
+        
+        // 4. On-demand Clinical Rule-Based Evaluation for past dates with recorded health data
+        let pDisplayName: String = {
+            if syncState.role == .parent {
+                return "anda"
+            }
+            let name = parentName.trimmingCharacters(in: .whitespacesAndNewlines)
+            return (name.isEmpty || name == "Nama Ortu 1" || name == "Saya") ? "orang tua" : name
+        }()
+        
+        // Check if there is a summary for this date in historicalSummaries or healthRecord
+        let targetSummary: DailyHealthSummary? = {
+            if let found = historicalSummaries.first(where: { Calendar.current.isDate($0.date, inSameDayAs: date) }) {
+                return found
+            }
+            if let hr = healthRecord, Calendar.current.isDate(hr.recordDate, inSameDayAs: date) {
+                return DailyHealthSummary(
+                    date: hr.recordDate,
+                    latestHeartRate: hr.displayHeartRate,
+                    restingHeartRate: hr.restingHeartRate,
+                    sleepHours: hr.sleepHours,
+                    stepCount: hr.stepCount.map { Double($0) }
+                )
+            }
+            return nil
+        }()
+        
+        if let summary = targetSummary {
+            let hasMetrics = (summary.latestHeartRate ?? 0) > 0 || (summary.sleepHours ?? 0) > 0 || (summary.stepCount ?? 0) > 0
+            if hasMetrics {
+                let (overview, _) = RuleEngine.shared.evaluate(
+                    today: summary,
+                    history: self.historicalSummaries,
+                    parentDisplayName: pDisplayName
+                )
+                let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: pDisplayName)
+                saveDailyInsight(fallback, for: date)
+                print("⚡️ [SyncViewModel] Generated on-demand rule-based insight for past date \(key)")
+                return fallback
+            }
+        }
+        
+        return nil
     }
 
     func hasSavedInsight(for date: Date) -> Bool {
-        let key = dateKey(for: date)
-        if Calendar.current.isDateInToday(date) {
-            return insightOutput != nil || historicalInsights[key] != nil
-        }
-        return historicalInsights[key] != nil
+        return insight(for: date) != nil
     }
 
     func summaryTitle(for date: Date) -> String {
         if Calendar.current.isDateInToday(date) {
             if let title = healthRecord?.summaryTitle, !title.isEmpty {
-                return title
+                return RuleEngine.unifiedOverviewTitle(
+                    conditionStatus: healthRecord?.insightOutput?.todayOverview.conditionStatus ?? "",
+                    statusBadge: title
+                )
             }
             if let ins = insight(for: date) {
-                return ins.todayOverview.statusLabel
+                return RuleEngine.unifiedOverviewTitle(
+                    conditionStatus: ins.todayOverview.conditionStatus,
+                    statusBadge: ins.todayOverview.statusLabel
+                )
             }
-            return "Kondisi Cukup Stabil"
+            return "Kondisi Stabil"
         }
 
         if let ins = insight(for: date) {
-            return ins.todayOverview.statusLabel
+            return RuleEngine.unifiedOverviewTitle(
+                conditionStatus: ins.todayOverview.conditionStatus,
+                statusBadge: ins.todayOverview.statusLabel
+            )
         }
 
-        return "Belum Ada Insight Tersimpan"
+        return "Belum Ada Data"
     }
 
     func summaryBody(for date: Date) -> String {
+        let rawBody: String
         if Calendar.current.isDateInToday(date) {
             if let body = healthRecord?.summaryBody, !body.isEmpty {
-                return body
+                rawBody = body
+            } else if let ins = insight(for: date) {
+                rawBody = ins.todayOverview.summary
+            } else {
+                rawBody = "Data detak jantung, tidur, dan langkah tercatat dari Apple Health hari ini."
             }
-            if let ins = insight(for: date) {
-                return ins.todayOverview.summary
-            }
-            return "Data detak jantung, tidur, dan langkah tercatat dari Apple Health hari ini."
+        } else if let ins = insight(for: date) {
+            rawBody = ins.todayOverview.summary
+        } else {
+            rawBody = "Data detak jantung, tidur, dan langkah tidak tercatat pada tanggal ini."
         }
 
-        if let ins = insight(for: date) {
-            return ins.todayOverview.summary
-        }
-
-        return "Pada tanggal ini belum ada insight yang tersimpan, hanya data kesehatan yang tercatat."
+        return RuleEngine.sanitizeSummaryNarrative(rawBody)
     }
 
     private func persistHistoricalInsights() {
@@ -1225,7 +1514,28 @@ final class SyncViewModel {
               let decoded = try? JSONDecoder().decode([String: LLMInsightOutput].self, from: data) else {
             return
         }
-        self.historicalInsights = decoded
+        var sanitized: [String: LLMInsightOutput] = [:]
+        for (key, item) in decoded {
+            let cleanTitle = RuleEngine.unifiedOverviewTitle(
+                conditionStatus: item.todayOverview.conditionStatus,
+                statusBadge: item.todayOverview.statusLabel
+            )
+            let cleanSummary = RuleEngine.sanitizeSummaryNarrative(item.todayOverview.summary)
+            let updatedOverview = TodayOverviewInsight(
+                conditionStatus: item.todayOverview.conditionStatus,
+                statusLabel: cleanTitle,
+                deltaPercentage: nil,
+                summary: cleanSummary
+            )
+            sanitized[key] = LLMInsightOutput(
+                todayOverview: updatedOverview,
+                activityInsight: item.activityInsight,
+                sleepInsight: item.sleepInsight,
+                heartInsight: item.heartInsight,
+                recommendedActions: item.recommendedActions
+            )
+        }
+        self.historicalInsights = sanitized
     }
 
     // MARK: - Smart AI Rate-Limiting & Alert Triggering (PRD Section 9)
@@ -1241,25 +1551,52 @@ final class SyncViewModel {
         // 1. Force refresh / Caregiver meminta penjelasan eksplisit
         if forceRefresh { return true }
 
-        // 2. Urgent event (P4): Jangan panggil LLM untuk pesan utama; gunakan template tetap
+        // 2. Cooldown check: Jika kuota habis (429) atau sedang error, jangan spam API
+        if let cooldown = geminiCooldownUntil, Date() < cooldown {
+            return false
+        }
+
+        // 3. Urgent event (P4): Jangan panggil LLM untuk pesan utama; gunakan template tetap
         if let push = overview.pushDecision, push.pushClass == .p4 {
             return false
         }
 
-        // 3. Daily overview: Maksimal 1 kali per hari
         let calendar = Calendar.current
         let isNewDay: Bool
         if let lastCall = lastGeminiCallDate {
             isNewDay = !calendar.isDate(lastCall, inSameDayAs: Date())
         } else {
-            isNewDay = true
+            isNewDay = (self.insightOutput == nil && self.historicalInsights[dateKey(for: Date())] == nil)
         }
 
-        if !hasExecutedInitialAICall || isNewDay {
+        // 4. Jika sudah ada insight untuk hari ini:
+        // Cek apakah kondisi status dan severity berubah secara signifikan.
+        // Jika status sama persis (misal sama-sama STABLE atau sama-sama DECLINED yang sudah dianalisis hari ini),
+        // JANGAN panggil Gemini lagi! Tetap gunakan insight yang sudah ada.
+        let existingInsight = self.insightOutput ?? self.historicalInsights[dateKey(for: Date())]
+        if let existing = existingInsight, !isNewDay {
+            let lastKnownStatus = UserDefaults.standard.string(forKey: "arterious.lastKnownConditionStatus") ?? existing.todayOverview.conditionStatus
+            let currentStatus = overview.conditionStatus
+            
+            // Eskalasi hanya jika kondisi sebelumnya bukan DECLINED, lalu sekarang memburuk menjadi DECLINED
+            let hasSeverityEscalated = (lastKnownStatus != "DECLINED" && currentStatus == "DECLINED")
+            
+            let lastKnownPushClass = UserDefaults.standard.string(forKey: "arterious.lastKnownPushClass") ?? "P0"
+            let currentPushClass = overview.pushDecision?.pushClass.rawValue ?? "P0"
+            let hasPushEscalated = (currentPushClass != lastKnownPushClass && (currentPushClass == "P2" || currentPushClass == "P3"))
+            
+            if !hasSeverityEscalated && !hasPushEscalated {
+                // Fluktuasi ringan (langkah kaki bertambah sedikit, dsb). Tidak perlu hit Gemini berulang-ulang!
+                return false
+            }
+        }
+
+        // 5. Daily overview: Maksimal 1 kali per hari jika belum ada insight sama sekali hari ini
+        if !hasExecutedInitialAICall || isNewDay || existingInsight == nil {
             return true
         }
 
-        // 4. Deteksi Concern Baru atau Eskalasi (Severity memburuk / Domain baru terdampak)
+        // 6. Deteksi Concern Baru atau Eskalasi
         let lastKnownStatus = UserDefaults.standard.string(forKey: "arterious.lastKnownConditionStatus") ?? "STABLE"
         let lastKnownPushClass = UserDefaults.standard.string(forKey: "arterious.lastKnownPushClass") ?? "P0"
         let currentPushClass = overview.pushDecision?.pushClass.rawValue ?? "P0"
@@ -1268,12 +1605,10 @@ final class SyncViewModel {
         let hasPushEscalated = (currentPushClass != lastKnownPushClass && (currentPushClass == "P2" || currentPushClass == "P3"))
 
         if hasSeverityChanged || hasPushEscalated {
-            UserDefaults.standard.set(overview.conditionStatus, forKey: "arterious.lastKnownConditionStatus")
-            UserDefaults.standard.set(currentPushClass, forKey: "arterious.lastKnownPushClass")
             return true
         }
 
-        // 5. Kondisi tetap sama atau fluktuasi ringan: Gunakan cached insight atau template lokal
+        // 7. Kondisi tetap sama: Gunakan cached insight
         return false
     }
 

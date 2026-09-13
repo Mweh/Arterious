@@ -192,7 +192,7 @@ final class CloudKitSyncManager {
 
     /// Checks the parent's native CKShare to see if any child/participant has actually accepted the invitation.
     func checkActiveParticipants() async -> (hasAccepted: Bool, partnerName: String?) {
-        guard let share = try? await getOrCreateNativeShare(parentName: "Saya") else {
+        guard let share = try? await getOrCreateNativeShare(parentName: "Orang Tua") else {
             return (false, nil)
         }
 
@@ -443,7 +443,7 @@ final class CloudKitSyncManager {
         return HealthRecord(
             inviteCode: record[CKField.inviteCode] as? String ?? fallbackInviteCode,
             recordDate: record[CKField.recordDate] as? Date ?? Date(),
-            parentName: record[CKField.parentName] as? String ?? "Parent",
+            parentName: record[CKField.parentName] as? String ?? "Orang Tua",
             heartRate: record[CKField.restingHeartRate] as? Double,
             restingHeartRate: record[CKField.restingHeartRate] as? Double,
             heartRateStatus: record[CKField.heartRateStatus] as? String ?? "Belum ada data",
@@ -476,7 +476,7 @@ final class CloudKitSyncManager {
         guard let jsonString = record[CKField.snapshotJSON] as? String,
               let jsonData = jsonString.data(using: .utf8) else { return nil }
         let summary = try decoder.decode(DailyHealthSummary.self, from: jsonData)
-        let parentName = record[CKField.parentName] as? String ?? "Parent"
+        let parentName = record[CKField.parentName] as? String ?? "Orang Tua"
         let updatedAt = record[CKField.updatedAt] as? Date ?? Date()
         
         var healthRecord: HealthRecord? = nil
@@ -574,8 +574,8 @@ final class CloudKitSyncManager {
         return InviteDetails(
             code: code,
             status: record[CKField.status] as? String ?? "pending",
-            senderRole: record[CKField.senderRole] as? String ?? "child",
-            senderName: record[CKField.senderName] as? String ?? "Keluarga",
+            senderRole: record[CKField.senderRole] as? String ?? "parent",
+            senderName: record[CKField.senderName] as? String ?? "Orang Tua",
             childName: record[CKField.childName] as? String
         )
     }

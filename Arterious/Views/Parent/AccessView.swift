@@ -8,7 +8,7 @@ struct AccessView: View {
     @AppStorage("userRole") private var userRole: String = UserRole.parent.rawValue
 
     @State private var isEditMode: Bool = false
-    @State private var showingDeleteConfirmationModal: Bool = false
+    @State private var showingDeleteConfirmationAlert: Bool = false
     @State private var itemToDelete: String = ""
 
     @State private var showingShareDataView: Bool = false
@@ -19,7 +19,7 @@ struct AccessView: View {
     @State private var navigationPath = NavigationPath()
 
     private var isConnected: Bool {
-        syncViewModel.syncState.status == .accepted && (syncViewModel.syncState.partnerName != nil || !syncViewModel.parentName.isEmpty)
+        syncViewModel.syncState.status == .accepted && syncViewModel.syncState.inviteCode != nil && !syncViewModel.syncState.inviteCode!.isEmpty && (syncViewModel.syncState.partnerName != nil || !syncViewModel.parentName.isEmpty)
     }
 
     private var partnerDisplayName: String {
@@ -29,7 +29,7 @@ struct AccessView: View {
         if let partner = syncViewModel.syncState.partnerName, !partner.isEmpty {
             return partner
         }
-        return userRole == UserRole.parent.rawValue ? "Anak" : "Nama Ortu 1"
+        return userRole == UserRole.parent.rawValue ? "Anak" : "Orang Tua"
     }
 
     private var childInvitationMessage: String {
@@ -46,7 +46,6 @@ struct AccessView: View {
                 ScrollView(.vertical, showsIndicators: false) {
                     VStack(alignment: .leading, spacing: AppSpacing.lg) {
 
-
                         if !isConnected {
                             emptyStateView
                         } else {
@@ -57,15 +56,46 @@ struct AccessView: View {
                     .padding(.top, AppSpacing.sm)
                     .padding(.bottom, AppSpacing.xxl)
                 }
-
-                if showingDeleteConfirmationModal {
-                    deleteConfirmationModal
-                }
             }
             .navigationTitle("Akses")
             .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    toolbarActionButtons
+                if isConnected {
+                    if isEditMode {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button("Selesai") {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isEditMode = false
+                                }
+                            }
+                            .fontWeight(.semibold)
+                        }
+                    } else {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    isEditMode = true
+                                }
+                            } label: {
+                                Image(systemName: "pencil")
+                            }
+                        }
+
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                handlePlusButtonTapped()
+                            } label: {
+                                Image(systemName: "plus")
+                            }
+                        }
+                    }
+                } else {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            handlePlusButtonTapped()
+                        } label: {
+                            Image(systemName: "plus")
+                        }
+                    }
                 }
             }
             .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
@@ -81,11 +111,17 @@ struct AccessView: View {
             }
             .refreshable {
                 await syncViewModel.refreshIfNeeded()
-                syncViewModel.checkClipboardForInvitation()
             }
             .task {
                 await syncViewModel.refreshIfNeeded()
-                syncViewModel.checkClipboardForInvitation()
+            }
+            .alert("Hapus Akses?", isPresented: $showingDeleteConfirmationAlert) {
+                Button("Hapus", role: .destructive) {
+                    handleDeleteAccess()
+                }
+                Button("Batal", role: .cancel) { }
+            } message: {
+                Text("Kontak ini tidak lagi dapat mengakses seluruh riwayat atau data kesehatan Anda.")
             }
             .sheet(isPresented: Binding(
                 get: { showingShareDataView || syncViewModel.shouldShowParentShareFlow },
@@ -136,59 +172,6 @@ struct AccessView: View {
             } message: {
                 Text("Pilih cara untuk menghubungkan akun dengan orang tua:")
             }
-            .alert("Tautan Undangan Terdeteksi", isPresented: Bindable(syncViewModel).showDetectedClipboardPrompt) {
-                Button("Hubungkan") {
-                    if let url = syncViewModel.detectedClipboardURL {
-                        Task {
-                            await syncViewModel.handleIncomingShareURL(url: url)
-                        }
-                    }
-                }
-                Button("Abaikan", role: .cancel) { }
-            } message: {
-                Text("Ditemukan tautan berbagi data kesehatan dari papan klip. Ingin langsung menghubungkan dan memantau?")
-            }
-        }
-    }
-
-    // MARK: - Toolbar Buttons
-
-    @ViewBuilder
-    private var toolbarActionButtons: some View {
-        if isConnected {
-            if isEditMode {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        isEditMode = false
-                    }
-                } label: {
-                    Text("Selesai").bold()
-                }
-            } else {
-                HStack(spacing: AppSpacing.sm) {
-                    Button {
-                        handlePlusButtonTapped()
-                    } label: {
-                        Image(systemName: "plus")
-                            .foregroundStyle(AppColor.textPrimary)
-                    }
-
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            isEditMode = true
-                        }
-                    } label: {
-                        Image(systemName: "pencil")
-                    }
-                }
-            }
-        } else {
-            Button {
-                handlePlusButtonTapped()
-            } label: {
-                Image(systemName: "plus")
-                    .foregroundStyle(AppColor.textPrimary)
-            }
         }
     }
 
@@ -235,9 +218,7 @@ struct AccessView: View {
         if isEditMode {
             Button {
                 itemToDelete = name
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showingDeleteConfirmationModal = true
-                }
+                showingDeleteConfirmationAlert = true
             } label: {
                 HStack(spacing: AppSpacing.md) {
                     Image(systemName: "minus.circle.fill")
@@ -249,17 +230,16 @@ struct AccessView: View {
                         .foregroundStyle(AppColor.textPrimary)
 
                     Spacer()
-
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color(.systemGray3))
                 }
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.vertical, 18)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         } else {
-            NavigationLink(value: DetailDestination.personalDetails(name: name)) {
+            Button {
+                navigationPath.append(DetailDestination.personalDetails(name: name))
+            } label: {
                 HStack {
                     Text(name)
                         .font(.system(size: 16, weight: .medium))
@@ -273,76 +253,19 @@ struct AccessView: View {
                 }
                 .padding(.horizontal, AppSpacing.lg)
                 .padding(.vertical, 18)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
     }
 
-    // MARK: - Delete Confirmation Modal
-
-    private var deleteConfirmationModal: some View {
-        ZStack {
-            Color.black.opacity(0.35)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showingDeleteConfirmationModal = false
-                    }
-                }
-
-            VStack(alignment: .leading, spacing: AppSpacing.sm) {
-                Text("Hapus Akses?")
-                    .font(.system(size: 17, weight: .bold))
-                    .foregroundStyle(AppColor.textPrimary)
-
-                Text("Kontak ini tidak lagi dapat mengakses seluruh riwayat atau data kesehatan kamu.")
-                    .font(AppTypography.subheadlineRegular)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(2)
-                    .padding(.bottom, AppSpacing.sm)
-
-                HStack(spacing: AppSpacing.md) {
-                    Button {
-                        Task {
-                            await syncViewModel.disconnect()
-                            withAnimation(.easeInOut(duration: 0.2)) {
-                                showingDeleteConfirmationModal = false
-                                isEditMode = false
-                            }
-                        }
-                    } label: {
-                        Text("Ya")
-                            .font(AppTypography.buttonLabel)
-                            .foregroundStyle(AppColor.textPrimary)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color(.systemGray5))
-                            .clipShape(Capsule())
-                    }
-
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.2)) {
-                            showingDeleteConfirmationModal = false
-                        }
-                    } label: {
-                        Text("Tidak")
-                            .font(AppTypography.buttonLabel)
-                            .foregroundStyle(Color.white)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(AppColor.actionBlue)
-                            .clipShape(Capsule())
-                    }
-                }
+    private func handleDeleteAccess() {
+        Task {
+            await syncViewModel.disconnect()
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isEditMode = false
             }
-            .padding(AppSpacing.lg)
-            .background(AppColor.backgroundSecondary)
-            .clipShape(RoundedRectangle(cornerRadius: AppRadius.r24))
-            .shadow(color: Color.black.opacity(0.15), radius: 20, x: 0, y: 8)
-            .padding(.horizontal, AppSpacing.xl)
         }
-        .transition(.opacity.combined(with: .scale(scale: 0.95)))
-        .zIndex(10)
     }
 
     // MARK: - Actions
@@ -425,7 +348,7 @@ struct PersonalDetailsView: View {
             
             VStack(alignment: .leading, spacing: AppSpacing.lg) {
                 VStack(spacing: 0) {
-                    detailRow(label: "Nama", value: name.isEmpty ? "Actifed" : name)
+                    detailRow(label: "Nama", value: name.isEmpty ? "Orang Tua" : name)
                     Divider().padding(.horizontal, AppSpacing.lg)
                     detailRow(label: "Gender", value: userProfile.gender != "-" ? userProfile.gender : "Laki-Laki")
                     Divider().padding(.horizontal, AppSpacing.lg)

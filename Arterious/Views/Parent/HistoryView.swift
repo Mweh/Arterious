@@ -12,7 +12,7 @@ struct HistoryView: View {
     @State private var navigationPath = NavigationPath()
     
     private var isChildEmpty: Bool {
-        userRole == UserRole.child.rawValue && (syncViewModel.syncState.status != .accepted || syncViewModel.healthRecord == nil)
+        userRole == UserRole.child.rawValue && (syncViewModel.syncState.status != .accepted || syncViewModel.syncState.inviteCode == nil || syncViewModel.syncState.inviteCode!.isEmpty || syncViewModel.healthRecord == nil)
     }
     
     private struct DayItem: Identifiable {
@@ -76,6 +76,13 @@ struct HistoryView: View {
             calendar.isDate(summary.date, inSameDayAs: selectedDate)
         }
     }
+
+    private var healthRecordForSelectedDate: HealthRecord? {
+        guard let hr = syncViewModel.healthRecord else { return nil }
+        return Calendar.current.isDate(hr.recordDate, inSameDayAs: selectedDate) ? hr : nil
+    }
+
+
     
     var body: some View {
         NavigationStack(path: $navigationPath) {
@@ -110,7 +117,6 @@ struct HistoryView: View {
                     .presentationDragIndicator(.visible)
             }
             .task {
-                selectedDate = Calendar.current.startOfDay(for: Date())
                 await syncViewModel.refreshIfNeeded()
             }
         }
@@ -152,7 +158,8 @@ struct HistoryView: View {
                             unit: heartRateDisplayValue == "-" ? nil : "BPM",
                             subtitle: heartRateSubtitle,
                             dateString: displayDateString,
-                            chartValues: heartRateChartValues
+                            chartValues: heartRateChartValues,
+                            isLoading: syncViewModel.isLoading
                         )
                     }
                     .buttonStyle(.plain)
@@ -167,7 +174,8 @@ struct HistoryView: View {
                             value: sleepDisplayValue,
                             subtitle: sleepSubtitle,
                             dateString: displayDateString,
-                            chartValues: sleepChartValues
+                            chartValues: sleepChartValues,
+                            isLoading: syncViewModel.isLoading
                         )
                     }
                     .buttonStyle(.plain)
@@ -182,7 +190,8 @@ struct HistoryView: View {
                             value: stepsDisplayValue,
                             subtitle: stepsSubtitle,
                             dateString: displayDateString,
-                            chartValues: stepChartValues
+                            chartValues: stepChartValues,
+                            isLoading: syncViewModel.isLoading
                         )
                     }
                     .buttonStyle(.plain)
@@ -364,9 +373,10 @@ struct HistoryView: View {
             let stepsValid = (syncViewModel.healthRecord?.stepCount.flatMap { $0 } ?? 0) > 0
             return hrValid || sleepValid || stepsValid
         } else {
-            let hrValid = (historicalSummaryForSelectedDate?.latestHeartRate ?? 0) > 0
-            let sleepValid = (historicalSummaryForSelectedDate?.sleepHours ?? 0) > 0
-            let stepsValid = (historicalSummaryForSelectedDate?.stepCount ?? 0) > 0
+            let summary = historicalSummaryForSelectedDate
+            let hrValid = (summary?.latestHeartRate ?? 0) > 0 || (healthRecordForSelectedDate?.displayHeartRate ?? 0) > 0
+            let sleepValid = (summary?.sleepHours ?? 0) > 0 || (healthRecordForSelectedDate?.sleepHours ?? 0) > 0
+            let stepsValid = (summary?.stepCount ?? 0) > 0 || (healthRecordForSelectedDate?.stepCount ?? 0) > 0
             return hrValid || sleepValid || stepsValid
         }
     }
@@ -378,7 +388,7 @@ struct HistoryView: View {
             }
             return "-"
         } else {
-            if let hr = historicalSummaryForSelectedDate?.latestHeartRate, hr > 0 {
+            if let hr = historicalSummaryForSelectedDate?.latestHeartRate ?? healthRecordForSelectedDate?.displayHeartRate, hr > 0 {
                 return "\(Int(hr))"
             }
             return "-"
@@ -392,7 +402,7 @@ struct HistoryView: View {
             }
             return "Belum ada data"
         }
-        if let hr = historicalSummaryForSelectedDate?.latestHeartRate, hr > 0 {
+        if let hr = historicalSummaryForSelectedDate?.latestHeartRate ?? healthRecordForSelectedDate?.displayHeartRate, hr > 0 {
             return hr < 55 ? "Cenderung Lambat" : (hr > 85 ? "Sedikit Meningkat" : "Dalam rentang normal")
         }
         return "Belum ada data"
@@ -405,10 +415,13 @@ struct HistoryView: View {
             }
             return "-"
         }
-        if let s = historicalSummaryForSelectedDate?.sleepHours, s > 0 {
+        if let s = historicalSummaryForSelectedDate?.sleepHours ?? healthRecordForSelectedDate?.sleepHours, s > 0 {
             let hours = Int(s)
             let mins = Int(((s - Double(hours)) * 60).rounded())
             return "\(hours)j \(mins)m"
+        }
+        if let sf = healthRecordForSelectedDate?.sleepFormatted, sf != "-" {
+            return sf
         }
         return "-"
     }
@@ -420,8 +433,11 @@ struct HistoryView: View {
             }
             return "Belum ada data"
         }
-        if let s = historicalSummaryForSelectedDate?.sleepHours, s > 0 {
+        if let s = historicalSummaryForSelectedDate?.sleepHours ?? healthRecordForSelectedDate?.sleepHours, s > 0 {
             return s >= 7.0 ? "Kualitas tidur baik" : "Perlu istirahat lebih"
+        }
+        if let ss = healthRecordForSelectedDate?.sleepStatus, ss != "-" {
+            return ss
         }
         return "Belum ada data"
     }
@@ -433,11 +449,14 @@ struct HistoryView: View {
             }
             return "-"
         }
-        if let st = historicalSummaryForSelectedDate?.stepCount, st > 0 {
+        if let st = historicalSummaryForSelectedDate?.stepCount ?? healthRecordForSelectedDate?.stepCount.map({ Double($0) }), st > 0 {
             let formatter = NumberFormatter()
             formatter.numberStyle = .decimal
             formatter.groupingSeparator = "."
             return formatter.string(from: NSNumber(value: Int(st))) ?? "\(Int(st))"
+        }
+        if let stf = healthRecordForSelectedDate?.stepFormatted, stf != "-" {
+            return stf
         }
         return "-"
     }
@@ -449,8 +468,11 @@ struct HistoryView: View {
             }
             return "Belum ada data"
         }
-        if let st = historicalSummaryForSelectedDate?.stepCount, st > 0 {
+        if let st = historicalSummaryForSelectedDate?.stepCount ?? healthRecordForSelectedDate?.stepCount.map({ Double($0) }), st > 0 {
             return st >= 4000 ? "Lebih baik dari biasanya" : (st > 0 ? "Cenderung santai hari ini" : "Belum mulai beraktivitas")
+        }
+        if let ast = healthRecordForSelectedDate?.activityStatus, ast != "-" {
+            return ast
         }
         return "Belum ada data"
     }

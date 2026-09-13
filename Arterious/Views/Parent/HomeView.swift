@@ -21,7 +21,7 @@ struct HomeView: View {
         if userRole == UserRole.parent.rawValue {
             return true
         }
-        return (syncViewModel.syncState.status == .accepted && syncViewModel.healthRecord != nil) || hasConnectedParent
+        return syncViewModel.syncState.role == .child && syncViewModel.syncState.status == .accepted && syncViewModel.syncState.inviteCode != nil && !syncViewModel.syncState.inviteCode!.isEmpty && syncViewModel.healthRecord != nil
     }
 
     private var displayName: String {
@@ -63,7 +63,6 @@ struct HomeView: View {
             }
             .task {
                 await syncViewModel.refreshIfNeeded()
-                syncViewModel.checkClipboardForInvitation()
             }
             .navigationTitle("Beranda")
             .toolbar {
@@ -94,18 +93,6 @@ struct HomeView: View {
                 parentSelectorSheet
                     .presentationDetents([.height(260), .fraction(0.35)])
                     .presentationDragIndicator(.visible)
-            }
-            .alert("Tautan Undangan Terdeteksi", isPresented: Bindable(syncViewModel).showDetectedClipboardPrompt) {
-                Button("Hubungkan") {
-                    if let url = syncViewModel.detectedClipboardURL {
-                        Task {
-                            await syncViewModel.handleIncomingShareURL(url: url)
-                        }
-                    }
-                }
-                Button("Abaikan", role: .cancel) { }
-            } message: {
-                Text("Ditemukan tautan berbagi data kesehatan dari papan klip. Ingin langsung menghubungkan dan memantau?")
             }
         }
     }
@@ -247,15 +234,15 @@ struct HomeView: View {
 
             VStack(spacing: 0) {
                 Button {
-                    selectedParentName = syncViewModel.parentName.isEmpty ? "Nama Ortu 1" : syncViewModel.parentName
+                    selectedParentName = syncViewModel.parentName.isEmpty ? "Orang Tua 1" : syncViewModel.parentName
                     showingParentSelectorSheet = false
                 } label: {
                     HStack(spacing: AppSpacing.md) {
-                        Image(systemName: selectedParentName != "Nama Ortu 2" ? "checkmark.circle.fill" : "circle")
+                        Image(systemName: selectedParentName != (syncViewModel.secondaryParentName ?? "Orang Tua 2") ? "checkmark.circle.fill" : "circle")
                             .font(.system(size: 22))
-                            .foregroundStyle(selectedParentName != "Nama Ortu 2" ? AppColor.actionBlue : Color(.systemGray4))
+                            .foregroundStyle(selectedParentName != (syncViewModel.secondaryParentName ?? "Orang Tua 2") ? AppColor.actionBlue : Color(.systemGray4))
 
-                        Text(syncViewModel.parentName.isEmpty ? "Nama Ortu 1" : syncViewModel.parentName)
+                        Text(syncViewModel.parentName.isEmpty ? "Orang Tua 1" : syncViewModel.parentName)
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(AppColor.textPrimary)
 
@@ -268,15 +255,15 @@ struct HomeView: View {
                 Divider()
 
                 Button {
-                    selectedParentName = syncViewModel.secondaryParentName ?? "Nama Ortu 2"
+                    selectedParentName = syncViewModel.secondaryParentName ?? "Orang Tua 2"
                     showingParentSelectorSheet = false
                 } label: {
                     HStack(spacing: AppSpacing.md) {
-                        Image(systemName: selectedParentName == "Nama Ortu 2" ? "checkmark.circle.fill" : "circle")
+                        Image(systemName: selectedParentName == (syncViewModel.secondaryParentName ?? "Orang Tua 2") ? "checkmark.circle.fill" : "circle")
                             .font(.system(size: 22))
-                            .foregroundStyle(selectedParentName == "Nama Ortu 2" ? AppColor.actionBlue : Color(.systemGray4))
+                            .foregroundStyle(selectedParentName == (syncViewModel.secondaryParentName ?? "Orang Tua 2") ? AppColor.actionBlue : Color(.systemGray4))
 
-                        Text(syncViewModel.secondaryParentName ?? "Nama Ortu 2")
+                        Text(syncViewModel.secondaryParentName ?? "Orang Tua 2")
                             .font(.system(size: 16, weight: .medium))
                             .foregroundStyle(AppColor.textPrimary)
 
@@ -299,6 +286,23 @@ struct HomeView: View {
 
     private var connectedDashboardContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
+            // Loading status indicator banner (hanya muncul di awal saat data belum ada)
+            if syncViewModel.isLoading && syncViewModel.healthRecord == nil {
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text(userRole == UserRole.parent.rawValue ? "Sedang mengambil data kesehatan Apple Health..." : "Sedang mengambil data kesehatan orang tua...")
+                        .font(AppTypography.captionRegular.weight(.medium))
+                        .foregroundStyle(AppColor.textSecondary)
+                    Spacer()
+                }
+                .padding(.horizontal, AppSpacing.md)
+                .padding(.vertical, 8)
+                .background(Color(.secondarySystemGroupedBackground))
+                .clipShape(Capsule())
+                .transition(.opacity.combined(with: .scale(scale: 0.98)))
+            }
+
             // "Ringkasan Hari Ini" Blue Tinted Card with direct access to Caregiver AI Insights
             NavigationLink(value: DetailDestination.llmInsight) {
                 VStack(alignment: .leading, spacing: AppSpacing.xs) {
@@ -320,7 +324,7 @@ struct HomeView: View {
                         .foregroundStyle(AppColor.actionBlue)
                     }
 
-                    Text(syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil")
+                    Text(displaySummaryTitle)
                         .font(AppTypography.title3Bold)
                         .foregroundStyle(AppColor.textPrimary)
                         .padding(.top, 1)
@@ -331,7 +335,7 @@ struct HomeView: View {
                             .foregroundStyle(AppColor.actionBlue)
                             .padding(.top, 2)
 
-                        Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
+                        Text(displaySummaryBody)
                             .font(AppTypography.bodyRegular)
                             .foregroundStyle(AppColor.textSecondary)
                             .lineSpacing(3)
@@ -361,9 +365,10 @@ struct HomeView: View {
                         title: "Detak Jantung",
                         value: heartRateDisplayValue,
                         unit: "BPM",
-                        subtitle: syncViewModel.healthRecord?.heartRateStatus ?? "Belum ada data",
+                        subtitle: syncViewModel.healthRecord?.heartRateStatus ?? ((syncViewModel.isLoading && syncViewModel.healthRecord == nil) ? "Memuat..." : "Belum ada data"),
                         dateString: syncViewModel.healthRecord?.displayDate ?? "Hari Ini",
-                        chartValues: heartRateChartValues
+                        chartValues: heartRateChartValues,
+                        isLoading: syncViewModel.isLoading && syncViewModel.healthRecord == nil
                     )
                 }
                 .buttonStyle(.plain)
@@ -376,9 +381,10 @@ struct HomeView: View {
                         iconBgColor: Color(red: 0.55, green: 0.45, blue: 0.9).opacity(0.12),
                         title: "Waktu Tidur",
                         value: syncViewModel.healthRecord?.sleepFormatted ?? "-",
-                        subtitle: syncViewModel.healthRecord?.sleepStatus ?? "Belum ada data",
+                        subtitle: syncViewModel.healthRecord?.sleepStatus ?? ((syncViewModel.isLoading && syncViewModel.healthRecord == nil) ? "Memuat..." : "Belum ada data"),
                         dateString: syncViewModel.healthRecord?.displayDate ?? "Hari Ini",
-                        chartValues: sleepChartValues
+                        chartValues: sleepChartValues,
+                        isLoading: syncViewModel.isLoading && syncViewModel.healthRecord == nil
                     )
                 }
                 .buttonStyle(.plain)
@@ -391,14 +397,16 @@ struct HomeView: View {
                         iconBgColor: AppColor.Accent.green12,
                         title: "Aktivitas",
                         value: syncViewModel.healthRecord?.stepFormatted ?? "-",
-                        subtitle: syncViewModel.healthRecord?.activityStatus ?? "Belum ada data",
+                        subtitle: syncViewModel.healthRecord?.activityStatus ?? ((syncViewModel.isLoading && syncViewModel.healthRecord == nil) ? "Memuat..." : "Belum ada data"),
                         dateString: syncViewModel.healthRecord?.displayDate ?? "Hari Ini",
-                        chartValues: stepChartValues
+                        chartValues: stepChartValues,
+                        isLoading: syncViewModel.isLoading && syncViewModel.healthRecord == nil
                     )
                 }
                 .buttonStyle(.plain)
             }
         }
+        .animation(.easeInOut(duration: 0.25), value: syncViewModel.healthRecord == nil && syncViewModel.isLoading)
     }
 
     private var heartRateDisplayValue: String {
@@ -452,12 +460,31 @@ struct HomeView: View {
         }
     }
 
+    private var displaySummaryTitle: String {
+        if let title = syncViewModel.healthRecord?.summaryTitle, !title.isEmpty {
+            return RuleEngine.unifiedOverviewTitle(
+                conditionStatus: syncViewModel.healthRecord?.insightOutput?.todayOverview.conditionStatus ?? "",
+                statusBadge: title
+            )
+        }
+        return (syncViewModel.isLoading && syncViewModel.healthRecord == nil) ? "Sedang memperbarui..." : "Kondisi Stabil"
+    }
+
+    private var displaySummaryBody: String {
+        if let body = syncViewModel.healthRecord?.summaryBody, !body.isEmpty {
+            return RuleEngine.sanitizeSummaryNarrative(body)
+        }
+        return (syncViewModel.isLoading && syncViewModel.healthRecord == nil)
+            ? "Sedang mengambil dan menganalisis data kesehatan terbaru..."
+            : "Data detak jantung, tidur, dan langkah tercatat dari Apple Health hari ini."
+    }
+
     private func badgeColor(for badge: String) -> Color {
         let lower = badge.lowercased()
-        if lower.contains("menurun") || lower.contains("penurunan") {
+        if lower.contains("menurun") || lower.contains("penurunan") || lower.contains("kurang tidur") {
             return .red
         }
-        if lower.contains("membaik") || lower.contains("meningkat") {
+        if lower.contains("membaik") || lower.contains("meningkat") || lower.contains("peningkatan") {
             return .green
         }
         return AppColor.actionBlue

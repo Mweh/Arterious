@@ -49,7 +49,11 @@ struct LLMInsightView: View {
     
     private var parentDisplayName: String {
         let name = syncViewModel.parentName
-        return (name.isEmpty || name == "Nama Ortu 1" || name == "Saya") ? "anda" : name
+        if isChild {
+            return (name.isEmpty || name == "Nama Ortu 1" || name == "Saya") ? "Orang Tua" : name
+        } else {
+            return "Anda"
+        }
     }
     
     private var isCurrentlyLoading: Bool {
@@ -150,18 +154,22 @@ struct LLMInsightView: View {
                 await syncViewModel.fetchSharedParentSnapshot()
             } else {
                 await syncViewModel.loadParentLocalHealthData(forceGemini: false)
-                await localViewModel.loadAndGenerateInsight(forceRefresh: false)
             }
         }
         .task {
-            guard isViewingToday else { return }
+            if !isViewingToday {
+                if let targetDate, activeOutput == nil {
+                    _ = syncViewModel.insight(for: targetDate)
+                }
+                return
+            }
             if isChild {
                 if syncViewModel.insightOutput == nil {
                     await syncViewModel.fetchSharedParentSnapshot()
                 }
             } else {
-                if syncViewModel.insightOutput == nil && localViewModel.insightOutput == nil {
-                    await localViewModel.loadAndGenerateInsight()
+                if syncViewModel.insightOutput == nil {
+                    await syncViewModel.loadParentLocalHealthData(forceGemini: false)
                 }
             }
         }
@@ -181,7 +189,7 @@ struct LLMInsightView: View {
                 Spacer(minLength: 4)
             }
             
-            Text(overviewHeadline(overview.conditionStatus))
+            Text(overviewHeadline(overview))
                 .font(.title3.weight(.bold))
                 .foregroundStyle(.primary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -192,7 +200,7 @@ struct LLMInsightView: View {
                     .foregroundStyle(isFallback ? .teal : AppColor.actionBlue)
                     .padding(.top, 2)
                 
-                Text(overview.summary)
+                Text(RuleEngine.sanitizeSummaryNarrative(overview.summary))
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .lineSpacing(4)
@@ -212,11 +220,41 @@ struct LLMInsightView: View {
     private func activitySection(_ insight: DomainMetricInsight) -> some View {
         let baselineText = insight.baselineValue.contains("/hari") ? insight.baselineValue : "\(insight.baselineValue)/hari"
         
+        let displayCurrentValue: String = {
+            if insight.currentValue != "—" && insight.currentValue != "-" && !insight.currentValue.isEmpty {
+                return insight.currentValue
+            }
+            if isViewingToday, let formatted = syncViewModel.healthRecord?.stepFormatted, formatted != "-" {
+                return "\(formatted) langkah"
+            }
+            return insight.currentValue
+        }()
+        
+        let displayInsights: [String] = {
+            let isNoDataText = insight.allInsights.allSatisfy {
+                let lower = $0.lowercased()
+                return lower.contains("belum ada catatan") || lower.contains("tidak ada catatan") || lower.contains("belum tercatat")
+            }
+            if isNoDataText, isViewingToday, let formatted = syncViewModel.healthRecord?.stepFormatted, formatted != "-" {
+                let resolvedParentName = isChild ? (syncViewModel.parentName.isEmpty ? "orang tua" : syncViewModel.parentName) : "Anda"
+                let prefix = isChild
+                    ? "Hingga saat ini tercatat \(formatted) langkah dari kebiasaan harian (\(baselineText)). Namun perbedaan ini masih terbilang wajar dan normal karena hari masih berjalan."
+                    : "Hingga saat ini tercatat \(formatted) langkah dari kebiasaan harian (\(baselineText)). Namun perbedaan ini masih terbilang wajar dan normal karena hari masih berjalan."
+                let suffix = isChild
+                    ? "Anak tidak perlu cemas; ajak \(resolvedParentName) tetap bergerak aktif santai seperti jalan-jalan ringan di halaman rumah sesuai kemampuan."
+                    : "Tetap bergerak aktif santai sesuai kemampuan tubuh tanpa perlu memaksakan diri."
+                return [prefix, suffix]
+            }
+            return insight.allInsights
+        }()
+        
         return domainCard(
             title: "Aktivitas Fisik",
             systemImage: "figure.walk",
             iconColor: .green,
             metricInsight: insight,
+            currentValueFormatted: displayCurrentValue,
+            customInsights: displayInsights,
             baselineLabel: "Pola 14 hari terakhir",
             baselineValueFormatted: baselineText
         )
@@ -226,12 +264,22 @@ struct LLMInsightView: View {
     
     private func sleepSection(_ insight: DomainMetricInsight) -> some View {
         let baselineText = insight.baselineValue.contains("/malam") ? insight.baselineValue : "\(insight.baselineValue)/malam"
+        let currentText: String = {
+            if insight.currentValue != "—" && insight.currentValue != "-" && !insight.currentValue.isEmpty {
+                return insight.currentValue
+            }
+            if isViewingToday, let formatted = syncViewModel.healthRecord?.sleepFormatted, formatted != "-" {
+                return formatted
+            }
+            return insight.currentValue
+        }()
         
         return domainCard(
             title: "Tidur Semalam",
             systemImage: "bed.double.fill",
             iconColor: .indigo,
             metricInsight: insight,
+            currentValueFormatted: currentText,
             baselineLabel: "Pola 14 malam terakhir",
             baselineValueFormatted: baselineText
         )
@@ -241,7 +289,15 @@ struct LLMInsightView: View {
     
     private func heartSection(_ insight: DomainMetricInsight) -> some View {
         let baselineText = insight.baselineValue.contains("bpm") || insight.baselineValue.contains("BPM") ? insight.baselineValue.lowercased() : "\(insight.baselineValue) bpm"
-        let currentText = insight.currentValue.contains("bpm") || insight.currentValue.contains("BPM") ? insight.currentValue.lowercased() : "\(insight.currentValue) bpm"
+        let currentText: String = {
+            if insight.currentValue != "—" && insight.currentValue != "-" && !insight.currentValue.isEmpty {
+                return insight.currentValue.contains("bpm") ? insight.currentValue.lowercased() : "\(insight.currentValue) bpm"
+            }
+            if isViewingToday, let hr = syncViewModel.healthRecord?.displayHeartRate, hr > 0 {
+                return "\(Int(hr)) bpm"
+            }
+            return insight.currentValue
+        }()
         
         return domainCard(
             title: "Denyut Saat Istirahat",
@@ -262,6 +318,7 @@ struct LLMInsightView: View {
         iconColor: Color,
         metricInsight: DomainMetricInsight,
         currentValueFormatted: String? = nil,
+        customInsights: [String]? = nil,
         baselineLabel: String,
         baselineValueFormatted: String
     ) -> some View {
@@ -320,8 +377,9 @@ struct LLMInsightView: View {
             .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             
             // Insight Text (AI vs Rule Engine) - Multi-Sparkles!
+            let displayInsights = customInsights ?? metricInsight.allInsights
             VStack(alignment: .leading, spacing: 10) {
-                ForEach(Array(metricInsight.allInsights.enumerated()), id: \.offset) { _, point in
+                ForEach(Array(displayInsights.enumerated()), id: \.offset) { _, point in
                     HStack(alignment: .top, spacing: 8) {
                         Image(systemName: isFallback ? "doc.text.magnifyingglass" : "sparkles")
                             .font(.caption)
@@ -418,8 +476,12 @@ struct LLMInsightView: View {
     
     // MARK: - UI Helpers
     
+    private func overviewHeadline(_ overview: TodayOverviewInsight) -> String {
+        RuleEngine.unifiedOverviewTitle(conditionStatus: overview.conditionStatus, statusBadge: overview.statusLabel)
+    }
+    
     private func overviewHeadline(_ status: String) -> String {
-        RuleEngine.overviewHeadline(for: status)
+        RuleEngine.unifiedOverviewTitle(conditionStatus: status, statusBadge: "")
     }
 }
 

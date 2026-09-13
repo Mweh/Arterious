@@ -32,7 +32,7 @@ struct EvaluatedDomainMetric {
 /// Evaluasi komprehensif hari ini vs baseline
 struct EvaluatedHealthOverview {
     let conditionStatus: String // "IMPROVED", "STABLE", "DECLINED", "UNKNOWN"
-    let statusBadge: String     // e.g. "Kondisi Stabil", "Penurunan 23%", "Membaik +14%", "Belum Ada Data"
+    let statusBadge: String     // e.g. "Kondisi Stabil", "Perubahan Pola Perlu Diperhatikan", "Kurang Tidur", "Belum Ada Data Sensor"
     let dominantDeltaPercentage: Double
     let baseline: HealthBaseline // Baseline 14 hari yang tersimpan
     let activity: EvaluatedDomainMetric
@@ -47,7 +47,7 @@ struct EvaluatedHealthOverview {
     var pushDecision: PushTriageDecision? = nil
     
     var headline: String {
-        RuleEngine.overviewHeadline(for: conditionStatus)
+        RuleEngine.unifiedOverviewTitle(conditionStatus: conditionStatus, statusBadge: statusBadge)
     }
 }
 
@@ -76,14 +76,54 @@ final class RuleEngine {
     private init() {}
     
     static func overviewHeadline(for conditionStatus: String) -> String {
-        switch conditionStatus.uppercased() {
-        case "IMPROVED":
-            return "Kondisi Menunjukkan Peningkatan"
-        case "DECLINED":
-            return "Perubahan Pola Perlu Diperhatikan"
-        default:
-            return "Kondisi Stabil Dibandingkan Baseline"
+        unifiedOverviewTitle(conditionStatus: conditionStatus, statusBadge: "")
+    }
+    
+    /// Menghasilkan judul ringkasan/overview yang 100% konsisten antara kartu ringkasan luar dan halaman detail insight dalam
+    /// Bebas persentase sedikit pun (jangan ada persentase), dan akurat sesuai status (misal "Kurang Tidur")
+    static func unifiedOverviewTitle(conditionStatus: String, statusBadge: String = "") -> String {
+        let badgeLower = statusBadge.lowercased()
+        
+        // 1. Kondisi spesifik Kurang Tidur (diprioritaskan)
+        if badgeLower.contains("kurang tidur") {
+            return "Kurang Tidur"
         }
+        
+        // 2. Perubahan Pola Perlu Diperhatikan
+        if badgeLower.contains("perubahan pola") || badgeLower.contains("perlu diperhatikan") {
+            return "Perubahan Pola Perlu Diperhatikan"
+        }
+        
+        // 3. Peningkatan / Membaik -> Tanpa persentase sedikit pun
+        if conditionStatus.uppercased() == "IMPROVED" || badgeLower.contains("peningkatan") || badgeLower.contains("membaik") || badgeLower.contains("meningkat") {
+            return "Kondisi Menunjukkan Peningkatan"
+        }
+        
+        // 4. Penurunan berdasarkan status kondisi
+        if conditionStatus.uppercased() == "DECLINED" {
+            if badgeLower.contains("tidur") {
+                return "Kurang Tidur"
+            }
+            return "Perubahan Pola Perlu Diperhatikan"
+        }
+        
+        // 5. Belum ada data
+        if badgeLower.contains("belum ada data") || conditionStatus.uppercased() == "NO_DATA" {
+            return "Belum Ada Data"
+        }
+        
+        // 6. Default stabil
+        return "Kondisi Stabil"
+    }
+    
+    /// Membersihkan narasi summary dari kalimat canggung seperti "penurunan Kurang Tidur"
+    static func sanitizeSummaryNarrative(_ summary: String) -> String {
+        var text = summary
+        text = text.replacingOccurrences(of: "penurunan Kurang Tidur", with: "kondisi kurang tidur yang perlu diperhatikan")
+        text = text.replacingOccurrences(of: "penurunan kurang tidur", with: "kondisi kurang tidur yang perlu diperhatikan")
+        text = text.replacingOccurrences(of: "penurunan Perubahan Pola Perlu Diperhatikan", with: "perubahan pola yang perlu diperhatikan")
+        text = text.replacingOccurrences(of: "penurunan perubahan pola perlu diperhatikan", with: "perubahan pola yang perlu diperhatikan")
+        return text
     }
     
     // MARK: - Robust Statistics Helpers (PRD BaselineNew.md)
@@ -284,7 +324,7 @@ final class RuleEngine {
     func evaluate(
         today: DailyHealthSummary,
         history: [DailyHealthSummary],
-        parentDisplayName: String = "anda"
+        parentDisplayName: String = "orang tua"
     ) -> (overview: EvaluatedHealthOverview, input: LLMInsightInput) {
         
         // 1. Hitung Nilai Baseline 14 Hari
@@ -570,12 +610,12 @@ final class RuleEngine {
             overallCondition = "DECLINED"
             let drops = [hasSteps ? stepsDelta : 0, hasSleep ? sleepDelta : 0, hasHeart ? -hrDelta : 0].filter { $0 < 0 }
             dominantDelta = drops.min() ?? -15.0
-            statusBadge = (hasSleep && currentSleep < 5.5) ? "Kurang Tidur" : "Penurunan \(abs(Int(dominantDelta)))%"
+            statusBadge = (hasSleep && currentSleep < 5.5) ? "Kurang Tidur" : "Perubahan Pola Perlu Diperhatikan"
         } else if improvedCount >= 1 && declinedCount == 0 {
             overallCondition = "IMPROVED"
             let gains = [hasSteps ? stepsDelta : 0, hasSleep ? sleepDelta : 0].filter { $0 > 0 }
-            dominantDelta = gains.isEmpty ? 10.0 : (gains.reduce(0, +) / Double(gains.count))
-            statusBadge = "Membaik +\(Int(dominantDelta))%"
+            dominantDelta = gains.isEmpty ? 0.0 : (gains.reduce(0, +) / Double(gains.count))
+            statusBadge = "Kondisi Menunjukkan Peningkatan"
         } else {
             overallCondition = "STABLE"
             dominantDelta = 0.0
@@ -978,19 +1018,36 @@ final class RuleEngine {
     
     // MARK: - Local Fallback Generator
     
-    func makeLocalFallbackInsight(from overview: EvaluatedHealthOverview, parentName: String = "anda") -> LLMInsightOutput {
+    func makeLocalFallbackInsight(from overview: EvaluatedHealthOverview, parentName: String = "orang tua") -> LLMInsightOutput {
+        let isSelf = parentName.lowercased() == "anda" || parentName.lowercased() == "saya"
+        let resolvedName = isSelf ? "Anda" : parentName
+        
         let overviewSummary: String
         switch overview.conditionStatus {
         case "DECLINED":
-            overviewSummary = "Kondisi \(parentName) hari ini menunjukkan penurunan \(overview.statusBadge.replacingOccurrences(of: "Penurunan ", with: "")) dibandingkan rata-rata 14 hari terakhir. Sebaiknya luangkan waktu untuk menghubungi atau mengecek keadaannya."
+            if overview.statusBadge == "Kurang Tidur" {
+                overviewSummary = isSelf
+                    ? "Kondisi fisik Anda hari ini menunjukkan kondisi kurang tidur yang perlu diperhatikan dibandingkan rata-rata 14 hari terakhir. Luangkan waktu untuk beristirahat santai dan memulihkan energi."
+                    : "Kondisi \(resolvedName) hari ini menunjukkan kondisi kurang tidur yang perlu diperhatikan dibandingkan rata-rata 14 hari terakhir. Sebaiknya luangkan waktu untuk menyapa atau mengecek keadaannya."
+            } else {
+                overviewSummary = isSelf
+                    ? "Kondisi fisik Anda hari ini menunjukkan perubahan pola yang perlu diperhatikan dibandingkan rata-rata 14 hari terakhir. Luangkan waktu untuk beristirahat santai dan tidak memaksakan diri."
+                    : "Kondisi \(resolvedName) hari ini menunjukkan perubahan pola yang perlu diperhatikan dibandingkan rata-rata 14 hari terakhir. Sebaiknya luangkan waktu untuk menghubungi atau mengecek keadaannya."
+            }
         case "IMPROVED":
-            overviewSummary = "Kondisi \(parentName) hari ini menunjukkan perkembangan positif dibandingkan baseline 14 hari. Aktivitas dan kualitas istirahatnya terpantau lebih baik."
+            overviewSummary = isSelf
+                ? "Kondisi Anda hari ini menunjukkan perkembangan positif dibandingkan baseline 14 hari. Aktivitas dan kualitas istirahat Anda terpantau lebih baik."
+                : "Kondisi \(resolvedName) hari ini menunjukkan perkembangan positif dibandingkan baseline 14 hari. Aktivitas dan kualitas istirahatnya terpantau lebih baik."
         default:
             let baselineStepsInt = Int(overview.baseline.steps)
             if overview.baseline.steps < 3000 {
-                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola 14 hari terakhir (\(baselineStepsInt) langkah). Pola dasar \(parentName) relatif rendah, sehingga peningkatan aktivitas sebaiknya dilakukan bertahap dan sesuai kemampuan. Aktivitas fisik ringan rutin secara umum baik mendukung kebugaran tanpa perlu memaksakan diri."
+                overviewSummary = isSelf
+                    ? "Kondisi Anda hari ini terpantau stabil dan selaras dengan pola 14 hari terakhir (\(baselineStepsInt) langkah). Pola dasar Anda relatif santai, sehingga peningkatan aktivitas sebaiknya dilakukan bertahap dan sesuai kenyamanan tubuh. Aktivitas fisik ringan rutin secara umum baik mendukung kebugaran tanpa perlu memaksakan diri."
+                    : "Kondisi \(resolvedName) hari ini terpantau stabil dan selaras dengan pola 14 hari terakhir (\(baselineStepsInt) langkah). Pola dasar \(resolvedName) relatif rendah, sehingga peningkatan aktivitas sebaiknya dilakukan bertahap dan sesuai kemampuan. Aktivitas fisik ringan rutin secara umum baik mendukung kebugaran tanpa perlu memaksakan diri."
             } else {
-                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Pola aktivitas harian ini sudah baik dalam mendukung kebugaran tubuh."
+                overviewSummary = isSelf
+                    ? "Kondisi Anda hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Pola aktivitas harian ini sudah baik dalam menjaga kebugaran tubuh."
+                    : "Kondisi \(resolvedName) hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Pola aktivitas harian ini sudah baik dalam mendukung kebugaran tubuh."
             }
         }
         
@@ -1001,22 +1058,22 @@ final class RuleEngine {
         if !overview.activity.hasData {
             actPoints = [
                 "Belum ada catatan langkah kaki hari ini di Apple Health.",
-                "Data langkah akan diperbarui secara otomatis saat orang tua membawa iPhone atau mengenakan Apple Watch."
+                isSelf ? "Data langkah akan diperbarui secara otomatis saat Anda membawa iPhone atau mengenakan Apple Watch." : "Data langkah akan diperbarui secara otomatis saat orang tua membawa iPhone atau mengenakan Apple Watch."
             ]
         } else if currentHour < 21 && overview.activity.deltaPercentage < 0 {
             let remHours = max(1, 22 - currentHour)
-            let rujukanNote = baselineStepsInt < ClinicalBenchmark.recommendedStepsSenior ? " Meskipun kebiasaan harian \(parentName) relatif santai dibanding rujukan umum lansia (\(ClinicalBenchmark.stepsReferenceNote)), aktivitas hari ini tetap selaras dengan ritmenya." : ""
+            let rujukanNote = baselineStepsInt < ClinicalBenchmark.recommendedStepsSenior ? (isSelf ? " Meskipun kebiasaan harian Anda relatif santai dibanding rujukan umum (\(ClinicalBenchmark.stepsReferenceNote)), aktivitas hari ini tetap selaras dengan ritme Anda." : " Meskipun kebiasaan harian \(resolvedName) relatif santai dibanding rujukan umum lansia (\(ClinicalBenchmark.stepsReferenceNote)), aktivitas hari ini tetap selaras dengan ritmenya.") : ""
             actPoints = [
                 "Hingga saat ini tercatat \(overview.activity.formattedCurrent) dari kebiasaan harian (\(overview.activity.formattedBaseline)). Namun perbedaan ini masih terbilang wajar dan normal karena hari masih berjalan (tersisa ~\(remHours) jam menuju jam istirahat malam).\(rujukanNote)",
-                "Anak tidak perlu cemas; ajak \(parentName) tetap bergerak aktif santai seperti jalan-jalan ringan di halaman rumah sesuai kemampuan tanpa perlu memaksakan diri."
+                isSelf ? "Tidak perlu cemas; tetap bergerak aktif santai seperti jalan-jalan ringan di sekitar rumah sesuai kemampuan tanpa perlu memaksakan diri." : "Anak tidak perlu cemas; ajak \(resolvedName) tetap bergerak aktif santai seperti jalan-jalan ringan di halaman rumah sesuai kemampuan tanpa perlu memaksakan diri."
             ]
         } else if overview.activity.deltaPercentage <= -25.0 {
             actPoints = [
-                "Total langkah hari ini tercatat \(overview.activity.formattedCurrent), lebih rendah dibandingkan kebiasaan harian (\(overview.activity.formattedBaseline)) serta rujukan minimal aktif lansia (\(ClinicalBenchmark.stepsReferenceNote)). Namun satu hari yang lebih santai masih terbilang wajar terjadi.",
-                "Anak dapat menyapa santai untuk memastikan \(parentName) tidak merasa lelah dan memiliki waktu istirahat yang cukup malam ini."
+                "Total langkah hari ini tercatat \(overview.activity.formattedCurrent), lebih rendah dibandingkan kebiasaan harian (\(overview.activity.formattedBaseline)) serta rujukan minimal aktif (\(ClinicalBenchmark.stepsReferenceNote)). Namun satu hari yang lebih santai masih terbilang wajar terjadi.",
+                isSelf ? "Pastikan Anda tidak merasa terlalu lelah dan memiliki waktu istirahat yang cukup malam ini." : "Anak dapat menyapa santai untuk memastikan \(resolvedName) tidak merasa lelah dan memiliki waktu istirahat yang cukup malam ini."
             ]
         } else {
-            let rujukanTarget = baselineStepsInt < ClinicalBenchmark.recommendedStepsSenior ? "Meskipun kebiasaan harian (\(overview.activity.formattedBaseline)) berada di bawah target aktif rujukan jurnal (\(ClinicalBenchmark.stepsReferenceNote)), peningkatan disarankan bertahap." : "Langkah harian ini sudah selaras dengan standar aktif sehat lansia (\(ClinicalBenchmark.stepsReferenceNote))."
+            let rujukanTarget = baselineStepsInt < ClinicalBenchmark.recommendedStepsSenior ? "Meskipun kebiasaan harian (\(overview.activity.formattedBaseline)) berada di bawah target aktif rujukan jurnal (\(ClinicalBenchmark.stepsReferenceNote)), peningkatan disarankan bertahap." : "Langkah harian ini sudah selaras dengan standar aktif sehat (\(ClinicalBenchmark.stepsReferenceNote))."
             actPoints = [
                 "Aktivitas langkah hari ini tercatat \(overview.activity.formattedCurrent), tetap stabil dan selaras dengan kebiasaan 14 hari terakhir (\(overview.activity.formattedBaseline)). Perubahan harian masih terbilang wajar dan normal.",
                 "Konsistensi berjalan santai secara rutin sangat baik untuk menjaga kebugaran. \(rujukanTarget)"
@@ -1030,17 +1087,17 @@ final class RuleEngine {
         if !overview.sleep.hasData {
             sleepPoints = [
                 "Belum ada catatan tidur semalam di Apple Health.",
-                "Catatan tidur otomatis dapat diaktifkan melalui fitur Jadwal Tidur di iPhone atau Apple Watch."
+                isSelf ? "Catatan tidur otomatis dapat diaktifkan melalui fitur Jadwal Tidur di iPhone atau Apple Watch Anda." : "Catatan tidur otomatis dapat diaktifkan melalui fitur Jadwal Tidur di iPhone atau Apple Watch."
             ]
         } else if currentSleepVal < 5.5 {
             sleepPoints = [
-                "Waktu istirahat semalam hanya tercatat \(overview.sleep.formattedCurrent), jauh di bawah standar tidur sehat (\(ClinicalBenchmark.sleepReferenceNote)) maupun kebiasaan \(parentName) (\(overview.sleep.formattedBaseline)).",
-                "Durasi tidur yang sangat minim dapat membuat orang tua merasa lemas, mengantuk berlebih, atau pusing di siang hari. Luangkan waktu untuk menyapa \(parentName) dan ingatkan untuk tidur siang sejenak guna memulihkan tenaga."
+                "Waktu istirahat semalam hanya tercatat \(overview.sleep.formattedCurrent), jauh di bawah standar tidur sehat (\(ClinicalBenchmark.sleepReferenceNote)) maupun kebiasaan \(resolvedName) (\(overview.sleep.formattedBaseline)).",
+                isSelf ? "Durasi tidur yang sangat minim dapat membuat tubuh terasa lemas atau mengantuk di siang hari. Luangkan waktu untuk tidur siang sejenak guna memulihkan tenaga." : "Durasi tidur yang sangat minim dapat membuat orang tua merasa lemas, mengantuk berlebih, atau pusing di siang hari. Luangkan waktu untuk menyapa \(resolvedName) dan ingatkan untuk tidur siang sejenak guna memulihkan tenaga."
             ]
         } else if currentSleepVal < 6.5 || overview.sleep.deltaPercentage <= -15.0 {
             sleepPoints = [
                 "Waktu istirahat semalam tercatat \(overview.sleep.formattedCurrent), lebih singkat dibanding kebiasaan (\(overview.sleep.formattedBaseline)) dan berada di bawah anjuran tidur sehat (\(ClinicalBenchmark.sleepReferenceNote)).",
-                "Amati apakah \(parentName) merasa lelah di siang hari dan pastikan kondisi kamar lebih tenang untuk istirahat malam berikutnya."
+                isSelf ? "Perhatikan apakah Anda merasa lelah di siang hari dan pastikan kondisi kamar lebih nyaman untuk istirahat malam berikutnya." : "Amati apakah \(resolvedName) merasa lelah di siang hari dan pastikan kondisi kamar lebih tenang untuk istirahat malam berikutnya."
             ]
         } else if overview.sleep.deltaPercentage >= 10.0 && currentSleepVal >= 7.0 {
             sleepPoints = [
@@ -1070,7 +1127,7 @@ final class RuleEngine {
         } else if overview.heart.deltaPercentage >= 8.0 {
             heartPoints = [
                 "Denyut jantung saat santai hari ini tercatat \(overview.heart.formattedCurrent), sedikit lebih tinggi dibandingkan pola 14 hari terakhir (\(overview.heart.formattedBaseline)). Namun fluktuasi ringan seperti ini masih terbilang wajar dan dapat dipengaruhi oleh suhu ruangan atau asupan air.",
-                "Anak tidak perlu cemas; ingatkan \(parentName) untuk minum segelas air putih dan beristirahat santai sejenak (rentang normal saat santai menurut AHA adalah \(ClinicalBenchmark.restingHRReferenceNote))."
+                isSelf ? "Minum segelas air putih dan beristirahat santai sejenak (rentang normal saat santai menurut AHA adalah \(ClinicalBenchmark.restingHRReferenceNote))." : "Anak tidak perlu cemas; ingatkan \(resolvedName) untuk minum segelas air putih dan beristirahat santai sejenak (rentang normal saat santai menurut AHA adalah \(ClinicalBenchmark.restingHRReferenceNote))."
             ]
         } else {
             heartPoints = [
@@ -1083,9 +1140,9 @@ final class RuleEngine {
         return LLMInsightOutput(
             todayOverview: TodayOverviewInsight(
                 conditionStatus: overview.conditionStatus,
-                statusLabel: overview.statusBadge,
-                deltaPercentage: overview.dominantDeltaPercentage,
-                summary: overviewSummary
+                statusLabel: RuleEngine.unifiedOverviewTitle(conditionStatus: overview.conditionStatus, statusBadge: overview.statusBadge),
+                deltaPercentage: nil,
+                summary: RuleEngine.sanitizeSummaryNarrative(overviewSummary)
             ),
             activityInsight: DomainMetricInsight(
                 currentValue: overview.activity.formattedCurrent,
@@ -1120,18 +1177,38 @@ final class RuleEngine {
     func sanitizeInsightOutput(_ output: LLMInsightOutput, overview: EvaluatedHealthOverview) -> LLMInsightOutput {
         let cleanedOverview = TodayOverviewInsight(
             conditionStatus: overview.conditionStatus,
-            statusLabel: overview.statusBadge,
-            deltaPercentage: overview.dominantDeltaPercentage,
-            summary: output.todayOverview.summary
+            statusLabel: RuleEngine.unifiedOverviewTitle(conditionStatus: overview.conditionStatus, statusBadge: overview.statusBadge),
+            deltaPercentage: nil,
+            summary: RuleEngine.sanitizeSummaryNarrative(output.todayOverview.summary)
         )
+        
+        // Pastikan narasi domain aktivitas selaras dengan data riil hari ini
+        let actInsightText: String
+        let actPoints: [String]?
+        if overview.activity.hasData {
+            let isStaleNoData = (output.activityInsight.points ?? [output.activityInsight.insight]).allSatisfy {
+                $0.lowercased().contains("belum ada catatan") || $0.lowercased().contains("tidak ada catatan")
+            }
+            if isStaleNoData || output.activityInsight.currentValue == "—" || output.activityInsight.currentValue == "-" {
+                let fallback = makeLocalFallbackInsight(from: overview, parentName: "orang tua")
+                actPoints = fallback.activityInsight.points
+                actInsightText = fallback.activityInsight.insight
+            } else {
+                actPoints = output.activityInsight.points
+                actInsightText = output.activityInsight.insight
+            }
+        } else {
+            actPoints = output.activityInsight.points
+            actInsightText = output.activityInsight.insight
+        }
         
         let cleanedActivity = DomainMetricInsight(
             currentValue: overview.activity.formattedCurrent,
             baselineValue: overview.activity.formattedBaseline,
             deltaPercentage: overview.activity.deltaPercentage,
             status: overview.activity.status,
-            insight: output.activityInsight.insight,
-            points: output.activityInsight.points
+            insight: actInsightText,
+            points: actPoints
         )
         
         let cleanedSleep = DomainMetricInsight(

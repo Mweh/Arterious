@@ -52,22 +52,33 @@ enum APIConfig {
     /// Model Gemini aktif yang dipakai saat ini
     static var activeModel: GeminiModel = .gemini35FlashLite
     
-    /// API Key Gemini yang diambil otomatis dari file .env
+    /// API Key Gemini utama yang diambil otomatis dari file .env
     static var apiKey: String {
-        DotEnv.get("GEMINI_API_KEY") ?? ""
+        DotEnv.get("GEMINI_API_KEY") ?? DotEnv.get("GEMINI_API_KEY_2") ?? DotEnv.get("GEMINI_API_KEY_3") ?? ""
     }
     
-    /// Status apakah API key sudah berhasil terbaca
+    /// Daftar seluruh API Key yang tersedia secara berurutan (Key 1 -> Key 2 -> Key 3)
+    static var availableAPIKeys: [String] {
+        let keys = [
+            DotEnv.get("GEMINI_API_KEY"),
+            DotEnv.get("GEMINI_API_KEY_2"),
+            DotEnv.get("GEMINI_API_KEY_3")
+        ]
+        return keys.compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+    }
+    
+    /// Status apakah setidaknya satu API key sudah berhasil terbaca
     static var isConfigured: Bool {
-        !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !availableAPIKeys.isEmpty
     }
     
     // MARK: - Endpoints
     
-    /// URL endpoint generateContent untuk model tertentu
-    static func endpointURL(for model: GeminiModel = activeModel) -> URL? {
+    /// URL endpoint generateContent untuk model tertentu dan API key tertentu
+    static func endpointURL(for model: GeminiModel = activeModel, apiKey: String? = nil) -> URL? {
+        let keyToUse = (apiKey?.isEmpty == false) ? apiKey! : self.apiKey
         var components = URLComponents(string: "\(baseURL)/models/\(model.rawValue):generateContent")
-        components?.queryItems = [URLQueryItem(name: "key", value: apiKey)]
+        components?.queryItems = [URLQueryItem(name: "key", value: keyToUse)]
         return components?.url
     }
     

@@ -102,19 +102,129 @@ final class GeminiService: Sendable {
     
     private init() {}
     
-    /// Mengirim structured prompt ke Gemini API dan mengembalikan LLMInsightOutput
+    // MARK: - Per-Key Cooldown / Circuit Breaker (UserDefaults Persisted)
+    
+    private static let cooldownPrefix = "arterious.gemini.cooldown."
+    
+    /// Storage key unik berdasarkan prefix API key
+    private static func cooldownStorageKey(for apiKey: String) -> String {
+        let cleanKey = apiKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        let prefix = String(cleanKey.prefix(12))
+        return "\(cooldownPrefix)\(prefix)"
+    }
+    
+    /// Mengecek apakah API key ini sedang dalam masa cooldown (misal karena kuota 429 habis)
+    static func isKeyInCooldown(_ apiKey: String) -> (inCooldown: Bool, remainingSeconds: Int) {
+        let storageKey = cooldownStorageKey(for: apiKey)
+        guard let cooldownUntil = UserDefaults.standard.object(forKey: storageKey) as? Date else {
+            return (false, 0)
+        }
+        let remaining = Int(cooldownUntil.timeIntervalSinceNow)
+        if remaining > 0 {
+            return (true, remaining)
+        } else {
+            UserDefaults.standard.removeObject(forKey: storageKey)
+            return (false, 0)
+        }
+    }
+    
+    /// Menandai API key ke dalam masa cooldown (default 3600 detik = 1 jam)
+    static func setKeyCooldown(_ apiKey: String, duration: TimeInterval = 3600) {
+        let storageKey = cooldownStorageKey(for: apiKey)
+        let cooldownUntil = Date().addingTimeInterval(duration)
+        UserDefaults.standard.set(cooldownUntil, forKey: storageKey)
+    }
+    
+    /// Menghapus status cooldown API key setelah sukses
+    static func clearKeyCooldown(_ apiKey: String) {
+        let storageKey = cooldownStorageKey(for: apiKey)
+        UserDefaults.standard.removeObject(forKey: storageKey)
+    }
+    
+    /// Mengirim structured prompt ke Gemini API dengan automatic fallback berurutan:
+    /// Key 1 -> Key 2 -> Key 3 -> Jika semua gagal, throw error agar fallback ke Rule Engine lokal.
+    /// Dilengkapi dengan per-key cooldown: API key yang terkena 429 akan di-bypass langsung pada request berikutnya.
     func generateInsight(
         input: LLMInsightInput,
         model: GeminiModel? = nil
     ) async throws -> (output: LLMInsightOutput, log: APILogEntry) {
         
         let targetModel = model ?? APIConfig.activeModel
-        let apiKey = APIConfig.apiKey
+        let keys = APIConfig.availableAPIKeys
+        guard !keys.isEmpty else {
+            throw GeminiServiceError.apiKeyMissing
+        }
+        
+        var lastError: Error? = nil
+        var allKeysInCooldown = true
+        
+        for (index, currentKey) in keys.enumerated() {
+            let keyNumber = index + 1
+            
+            // 1. Cek apakah API Key ini sedang dalam cooldown (misal kena 429 sebelumnya)
+            let (inCooldown, remainingSec) = Self.isKeyInCooldown(currentKey)
+            if inCooldown {
+                let minutes = max(1, remainingSec / 60)
+                print("⏳ [GeminiService] API Key #\(keyNumber) sedang cooldown (\(minutes) mnt tersisa, kuota 429 habis). Melewati langsung ke API Key berikutnya...")
+                continue
+            }
+            
+            allKeysInCooldown = false
+            
+            do {
+                print("🤖 [GeminiService] Mencoba generate insight menggunakan API Key #\(keyNumber)...")
+                let result = try await executeSingleRequest(
+                    input: input,
+                    targetModel: targetModel,
+                    apiKey: currentKey,
+                    keyIndex: keyNumber
+                )
+                print("✅ [GeminiService] Berhasil generate insight dengan API Key #\(keyNumber)!")
+                // Bersihkan cooldown jika sebelumnya pernah tercatat
+                Self.clearKeyCooldown(currentKey)
+                return result
+            } catch {
+                lastError = error
+                let isLast = (index == keys.count - 1)
+                let errorDesc = "\(error)"
+                let is429 = errorDesc.contains("429") || errorDesc.contains("RESOURCE_EXHAUSTED")
+                
+                if is429 {
+                    // Set cooldown 1 jam (3600 detik) untuk key ini agar pemanggilan berikutnya langsung loncat ke key berikutnya
+                    Self.setKeyCooldown(currentKey, duration: 3600)
+                    print("⚠️ [GeminiService] API Key #\(keyNumber) gagal (429 Kuota Terlampaui). Memasukkan API Key #\(keyNumber) ke cooldown 1 jam.")
+                }
+                
+                let reason = is429 ? "429 Kuota Terlampaui" : error.localizedDescription
+                
+                if isLast {
+                    print("❌ [GeminiService] API Key #\(keyNumber) gagal (\(reason)). Semua API Key (1..\(keys.count)) telah dicoba / dalam cooldown. Beralih ke Rule-Based Fallback.")
+                } else {
+                    print("🔄 [GeminiService] API Key #\(keyNumber) tidak dapat digunakan (\(reason)). Beralih otomatis ke API Key #\(keyNumber + 1)...")
+                }
+            }
+        }
+        
+        if allKeysInCooldown {
+            print("⚠️ [GeminiService] Semua API Key (\(keys.count) key) sedang dalam masa cooldown kuota 429. Langsung beralih ke Rule-Based Fallback tanpa hit API.")
+            throw GeminiServiceError.httpError(statusCode: 429, message: "Semua Gemini API Key sedang dalam cooldown kuota.")
+        }
+        
+        throw lastError ?? GeminiServiceError.networkError("Semua Gemini API Key gagal.")
+    }
+    
+    /// Eksekusi request tunggal ke Gemini API dengan spesifik API Key
+    private func executeSingleRequest(
+        input: LLMInsightInput,
+        targetModel: GeminiModel,
+        apiKey: String,
+        keyIndex: Int
+    ) async throws -> (output: LLMInsightOutput, log: APILogEntry) {
         guard !apiKey.isEmpty else {
             throw GeminiServiceError.apiKeyMissing
         }
         
-        guard let url = APIConfig.endpointURL(for: targetModel) else {
+        guard let url = APIConfig.endpointURL(for: targetModel, apiKey: apiKey) else {
             throw GeminiServiceError.invalidURL
         }
         
@@ -131,7 +241,7 @@ final class GeminiService: Sendable {
         1. JANGAN mendiagnosis penyakit spesifik (misal: gagal jantung, insomnia, aritmia, hipertensi).
         2. JANGAN menyatakan penyebab medis secara pasti.
         3. JANGAN mengubah status urgency atau condition status yang sudah ditetapkan rule engine.
-        4. JANGAN membuat angka atau fakta baru di luar input yang diberikan.
+        4. JANGAN membuat angka atau fakta baru di luar input yang diberikan. Pada `today_overview.status_label`, WAJIB gunakan HANYA label status aturan standar ("Kondisi Menunjukkan Peningkatan", "Kondisi Stabil", "Perubahan Pola Perlu Diperhatikan", "Kurang Tidur", atau "Belum Ada Data Sensor"). DILARANG KERAS mencantumkan persentase atau kata 'Membaik +X%' / 'Penurunan X%' pada status_label.
         5. JANGAN menjanjikan klaim kepastian individu seperti "menjaga elastisitas pembuluh darah, menurunkan resistensi vaskular perifer, dan menjaga kestabilan tekanan darah". Gunakan bahasa umum edukatif yang aman: "Aktivitas fisik rutin secara umum mendukung kebugaran tubuh, tetapi orang tua tidak perlu memaksakan diri. Pilih aktivitas ringan yang aman sesuai kemampuan."
         6. DILARANG MENGGUNAKAN ISTILAH TEKNIS ATAU MEDIS: JANGAN gunakan istilah asing/teknis seperti "Deep Sleep", "REM", "Core Sleep", "HRV", "bradikardia", atau "takikardia". Terjemahkan secara alami ke bahasa Indonesia sehari-hari yang hangat dan mudah dipahami:
            - "Deep Sleep" -> sebut sebagai "tidur nyenyak/lelap untuk pemulihan fisik"
@@ -146,10 +256,12 @@ final class GeminiService: Sendable {
               - Langkah Harian Lansia: Target aktif minimal rujukan jurnal geriatri JAMA adalah ~3.000 langkah/hari. Jika baseline personal orang tua relatif rendah (misal 1.800 langkah), jelaskan bahwa aktivitas hari ini selaras dengan ritme kebiasaannya, namun secara umum rujukan jurnal menyarankan target aktif bertahap menuju 3.000 langkah/hari secara santai dan tanpa memaksakan diri.
               - Tidur Semalam: Standar tidur sehat konsensus medis adalah 7–8 jam/malam. Jika tidur semalam < 6 jam (misal 4 jam 30 menit), bandingkan dengan kebiasaan orang tua DAN tegaskan adanya defisit dari standar tidur sehat 7–8 jam.
               - Detak Jantung Santai: Rentang normal saat istirahat santai menurut American Heart Association (AHA) adalah 60–80 bpm. Bandingkan denyut hari ini dengan baseline personal orang tua dan rentang normal sehat ini.
-        8. NADA REASSURING (MENCEGAH KECEMASAN ANAK):
+        8. SUDUT PANDANG (POV) & NADA REASSURING (MENCEGAH KECEMASAN):
+           - POV ANAK (DEFAULT: MEMANTAU ORANG TUA): Jika aplikasi dalam mode anak yang memantau orang tua, subjek yang dipantau adalah "orang tua" (atau nama orang tua yang diberikan). DILARANG KERAS menggunakan kata "kesehatan Anda" untuk merujuk orang tua! Wajib gunakan "kesehatan orang tua", "istirahat orang tua", atau "langkah harian orang tua".
            - Tujuan utama aplikasi adalah mendampingi anak menjaga orang tua dengan tenang tanpa rasa cemas atau panik berlebihan.
            - Jika ada perbedaan atau fluktuasi data yang masih terbilang wajar menurut rule engine (status STABLE atau delta wajar), WAJIB sertakan penenang: "namun perubahan ini masih terbilang wajar dan normal dalam keseharian orang tua".
-           - Jika ada kondisi yang perlu perhatian (DECLINED), sampaikan secara bijak dan hangat tanpa kepanikan, fokus pada sapaan santai anak (misal: "Anak tidak perlu cemas berlebihan, cukup luangkan waktu untuk menyapa santai dan menanyakan kabar anda").
+           - Jika ada kondisi yang perlu perhatian (DECLINED), sampaikan secara bijak dan hangat tanpa kepanikan, fokus pada sapaan santai anak (misal: "Anak tidak perlu cemas berlebihan, cukup luangkan waktu untuk menyapa santai dan menanyakan kabar orang tua").
+           - POV ORANG TUA (JIKA MENAMPILKAN DATA SENDIRI): Gunakan kata sapaan langsung "Anda" ("kesehatan Anda", "kondisi fisik Anda").
         9. ATURAN LANGKAH SIANG/SORE HARI: Jika langkah kaki di siang atau sore hari masih di bawah total baseline harian, JANGAN menilainya buruk atau menurun drastis karena hari belum selesai. Jelaskan secara ramah bahwa langkah masih terus berproses seiring sisa waktu sebelum jam tidur, dan perbedaannya masih wajar.
         10. ATURAN KUALITAS TIDUR & STANDAR SEHAT 7–8 JAM:
            - Standar kebutuhan tidur sehat manusia (termasuk lansia) adalah 7 hingga 8 jam per malam.
@@ -326,11 +438,17 @@ final class GeminiService: Sendable {
         
         let finalActions = safeActions.isEmpty ? input.allowedActions : safeActions
         
+        let unifiedTitle = RuleEngine.unifiedOverviewTitle(
+            conditionStatus: conditionStatus,
+            statusBadge: output.todayOverview.statusLabel
+        )
+        let cleanedSummary = RuleEngine.sanitizeSummaryNarrative(output.todayOverview.summary)
+        
         let todayOverview = TodayOverviewInsight(
             conditionStatus: conditionStatus,
-            statusLabel: output.todayOverview.statusLabel,
-            deltaPercentage: output.todayOverview.deltaPercentage,
-            summary: output.todayOverview.summary
+            statusLabel: unifiedTitle,
+            deltaPercentage: nil,
+            summary: cleanedSummary
         )
         
         return LLMInsightOutput(

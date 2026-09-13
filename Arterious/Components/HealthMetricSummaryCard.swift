@@ -13,6 +13,7 @@ struct HealthMetricSummaryCard: View {
     let subtitle: String
     var dateString: String = "9 Sep"
     var chartValues: [CGFloat] = [0.4, 0.7, 0.5, 0.9, 0.8, 0.6]
+    var isLoading: Bool = false
 
     var body: some View {
         HStack(alignment: .center, spacing: AppSpacing.md) {
@@ -34,14 +35,20 @@ struct HealthMetricSummaryCard: View {
                     .foregroundStyle(AppColor.textPrimary)
 
                 HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(value)
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundStyle(AppColor.textPrimary)
+                    if isLoading && value == "-" {
+                        ProgressView()
+                            .controlSize(.small)
+                            .frame(height: 28)
+                    } else {
+                        Text(value)
+                            .font(.system(size: 24, weight: .bold))
+                            .foregroundStyle(AppColor.textPrimary)
 
-                    if let unit {
-                        Text(unit)
-                            .font(AppTypography.captionRegular)
-                            .foregroundStyle(AppColor.textSecondary)
+                        if let unit, value != "-" {
+                            Text(unit)
+                                .font(AppTypography.captionRegular)
+                                .foregroundStyle(AppColor.textSecondary)
+                        }
                     }
                 }
 

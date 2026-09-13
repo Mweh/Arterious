@@ -511,25 +511,38 @@ final class HealthKitManager: @unchecked Sendable {
         let now = Date()
         let startOfDay = calendar.startOfDay(for: now)
         let sevenDaysAgo = calendar.date(byAdding: .day, value: -7, to: startOfDay) ?? startOfDay
+        let endOfDay = calendar.date(byAdding: .day, value: 1, to: startOfDay) ?? now
         
         if let stepType = HKQuantityType.quantityType(forIdentifier: .stepCount) {
-            data.steps = await fetchCumulativeSum(for: stepType, start: startOfDay, end: now, unit: .count())
+            let steps = await fetchCumulativeSum(for: stepType, start: startOfDay, end: now, unit: .count())
+            if let steps = steps, steps > 0 {
+                data.steps = steps
+            } else {
+                let predicate = HKQuery.predicateForSamples(withStart: startOfDay, end: now, options: [])
+                data.steps = await withCheckedContinuation { continuation in
+                    let query = HKStatisticsQuery(quantityType: stepType, quantitySamplePredicate: predicate, options: .cumulativeSum) { _, stats, _ in
+                        continuation.resume(returning: stats?.sumQuantity()?.doubleValue(for: .count()))
+                    }
+                    self.healthStore.execute(query)
+                }
+            }
+            print("📊 [HealthKitManager] Today's step count fetched: \(data.steps ?? -1)")
         }
         
         if let moveType = HKQuantityType.quantityType(forIdentifier: .appleMoveTime) {
-            data.activeMins = await fetchCumulativeSum(for: moveType, start: startOfDay, end: now, unit: .minute())
+            data.activeMins = await fetchCumulativeSum(for: moveType, start: startOfDay, end: endOfDay, unit: .minute())
         }
         
         if let exerciseType = HKQuantityType.quantityType(forIdentifier: .appleExerciseTime) {
-            data.exerciseMinsWeek = await fetchCumulativeSum(for: exerciseType, start: sevenDaysAgo, end: now, unit: .minute())
+            data.exerciseMinsWeek = await fetchCumulativeSum(for: exerciseType, start: sevenDaysAgo, end: endOfDay, unit: .minute())
         }
         
         if let energyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned) {
-            data.activeEnergyKcal = await fetchCumulativeSum(for: energyType, start: startOfDay, end: now, unit: .kilocalorie())
+            data.activeEnergyKcal = await fetchCumulativeSum(for: energyType, start: startOfDay, end: endOfDay, unit: .kilocalorie())
         }
         
         if let standType = HKCategoryType.categoryType(forIdentifier: .appleStandHour) {
-            let samples = await fetchCategorySamples(for: standType, start: startOfDay, end: now)
+            let samples = await fetchCategorySamples(for: standType, start: startOfDay, end: endOfDay)
             data.standHours = samples.filter { $0.value == HKCategoryValueAppleStandHour.stood.rawValue }.count
         }
         

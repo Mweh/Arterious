@@ -36,7 +36,7 @@ final class LLMInsightViewModel {
     var isUsingLocalRuleFallback: Bool = false
     
     /// Nama orang tua yang dipantau
-    var parentName: String = "anda"
+    var parentName: String = "orang tua"
     
     // MARK: - Real-time Heart Rate State
     
@@ -53,6 +53,7 @@ final class LLMInsightViewModel {
     @ObservationIgnored private var heartRateObserverQuery: HKQuery?
     @ObservationIgnored private var refreshTimer: Timer?
     @ObservationIgnored private var hasExecutedInitialAICall: Bool = false
+    @ObservationIgnored private var geminiCooldownUntil: Date?
     
     // MARK: - Initialization
     
@@ -106,15 +107,25 @@ final class LLMInsightViewModel {
         self.baseline14Days = overview.baseline
         
         // 3. Panggil Gemini API hanya 1x saat awal aplikasi dijalankan, atau forceRefresh manual
+        self.hasExecutedInitialAICall = true
         let shouldCallAI = shouldCallGeminiAPI(for: overview, forceRefresh: forceRefresh)
         if shouldCallAI && APIConfig.isConfigured {
-            self.hasExecutedInitialAICall = true
             do {
                 let (output, _) = try await geminiService.generateInsight(input: promptInput)
                 self.insightOutput = sanitizeInsightOutput(output, overview: overview)
                 self.isUsingLocalRuleFallback = false
                 UserDefaults.standard.set(Date(), forKey: "arterious.lastGeminiCallDate")
+                self.geminiCooldownUntil = nil
             } catch {
+                let errorStr = "\(error)"
+                let isQuota429 = errorStr.contains("429") || errorStr.contains("RESOURCE_EXHAUSTED")
+                if isQuota429 {
+                    print("⚠️ [LLMInsightViewModel] Kuota free-tier Gemini habis (HTTP 429). Menggunakan RuleEngine fallback (cooldown 15 menit).")
+                    self.geminiCooldownUntil = Date().addingTimeInterval(900)
+                } else {
+                    self.geminiCooldownUntil = Date().addingTimeInterval(180)
+                }
+                UserDefaults.standard.set(Date(), forKey: "arterious.lastGeminiCallDate")
                 self.errorMessage = error.localizedDescription
                 // Fallback: Buat insight dari rule engine jika API error / key palsu
                 self.isUsingLocalRuleFallback = true
@@ -127,6 +138,12 @@ final class LLMInsightViewModel {
             // Jika kondisi stabil dan sudah ada evaluasi harian, gunakan kalkulasi aturan lokal
             self.isUsingLocalRuleFallback = true
             self.insightOutput = makeLocalFallbackInsight(from: overview)
+        }
+
+        // Simpan status kondisi ke UserDefaults agar tidak terjadi false escalation
+        UserDefaults.standard.set(overview.conditionStatus, forKey: "arterious.lastKnownConditionStatus")
+        if let pushClass = overview.pushDecision?.pushClass.rawValue {
+            UserDefaults.standard.set(pushClass, forKey: "arterious.lastKnownPushClass")
         }
         
         isLoading = false
@@ -260,26 +277,47 @@ final class LLMInsightViewModel {
         // 1. Force refresh / Caregiver bertanya/meminta penjelasan
         if forceRefresh { return true }
         
-        // 2. Urgent event (P4): Jangan panggil LLM untuk pesan utama; gunakan template tetap
+        // 2. Cooldown check: Jika kuota habis (429) atau sedang error, jangan spam API
+        if let cooldown = geminiCooldownUntil, Date() < cooldown {
+            return false
+        }
+        
+        // 3. Urgent event (P4): Jangan panggil LLM untuk pesan utama; gunakan template tetap
         if let push = overview.pushDecision, push.pushClass == .p4 {
             return false
         }
         
-        // 3. Daily overview: Maksimal 1 kali per hari
         let calendar = Calendar.current
         let lastCall = UserDefaults.standard.object(forKey: "arterious.lastGeminiCallDate") as? Date
         let isNewDay: Bool
         if let lastCall = lastCall {
             isNewDay = !calendar.isDate(lastCall, inSameDayAs: Date())
         } else {
-            isNewDay = true
+            isNewDay = (self.insightOutput == nil)
         }
         
-        if !hasExecutedInitialAICall || isNewDay {
+        // 4. Jika sudah ada insight untuk hari ini, jangan panggil Gemini lagi jika status sama
+        if let existing = self.insightOutput, !isNewDay {
+            let lastKnownStatus = UserDefaults.standard.string(forKey: "arterious.lastKnownConditionStatus") ?? existing.todayOverview.conditionStatus
+            let currentStatus = overview.conditionStatus
+            
+            let hasSeverityEscalated = (lastKnownStatus != "DECLINED" && currentStatus == "DECLINED")
+            
+            let lastKnownPushClass = UserDefaults.standard.string(forKey: "arterious.lastKnownPushClass") ?? "P0"
+            let currentPushClass = overview.pushDecision?.pushClass.rawValue ?? "P0"
+            let hasPushEscalated = (currentPushClass != lastKnownPushClass && (currentPushClass == "P2" || currentPushClass == "P3"))
+            
+            if !hasSeverityEscalated && !hasPushEscalated {
+                return false
+            }
+        }
+        
+        // 5. Daily overview: Maksimal 1 kali per hari
+        if !hasExecutedInitialAICall || isNewDay || self.insightOutput == nil {
             return true
         }
         
-        // 4. Deteksi Concern Baru atau Eskalasi (Severity memburuk / Domain baru terdampak)
+        // 6. Deteksi Concern Baru atau Eskalasi
         let lastKnownStatus = UserDefaults.standard.string(forKey: "arterious.lastKnownConditionStatus") ?? "STABLE"
         let lastKnownPushClass = UserDefaults.standard.string(forKey: "arterious.lastKnownPushClass") ?? "P0"
         let currentPushClass = overview.pushDecision?.pushClass.rawValue ?? "P0"
@@ -288,12 +326,10 @@ final class LLMInsightViewModel {
         let hasPushEscalated = (currentPushClass != lastKnownPushClass && (currentPushClass == "P2" || currentPushClass == "P3"))
         
         if hasSeverityChanged || hasPushEscalated {
-            UserDefaults.standard.set(overview.conditionStatus, forKey: "arterious.lastKnownConditionStatus")
-            UserDefaults.standard.set(currentPushClass, forKey: "arterious.lastKnownPushClass")
             return true
         }
         
-        // 5. Kondisi tetap sama atau fluktuasi ringan: Gunakan cached insight atau template lokal
+        // 7. Kondisi tetap sama: Gunakan cached insight
         return false
     }
 }

@@ -93,6 +93,7 @@ struct HistoryView: View {
                     calendarToolbarButton
                 }
             }
+            .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
             .navigationDestination(for: DetailDestination.self) { destination in
                 switch destination {
                 case .heartRate: HeartRateDetailView()

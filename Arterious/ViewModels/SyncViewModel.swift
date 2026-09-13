@@ -29,6 +29,9 @@ final class SyncViewModel {
     var insightOutput: LLMInsightOutput?
     var isUsingLocalRuleFallback: Bool = false
 
+    /// AI Insight yang tersimpan per tanggal ("yyyy-MM-dd")
+    var historicalInsights: [String: LLMInsightOutput] = [:]
+
     /// Deep link trigger to open parent share flow when requested by child
     var shouldShowParentShareFlow: Bool = false
     var pendingParentShareName: String = "Anak"
@@ -90,12 +93,17 @@ final class SyncViewModel {
     // MARK: - Persistence Keys
 
     private let syncStateKey = "arterious.syncState"
+    private let historicalInsightsKey = "arterious.historicalInsights"
 
     init(cloudKit: CloudKitSyncManager? = nil,
          healthKit: HealthKitManager? = nil) {
         self.cloudKit = cloudKit ?? .shared
         self.healthKit = healthKit ?? .shared
         loadPersistedState()
+        loadHistoricalInsights()
+        if self.insightOutput == nil {
+            self.insightOutput = historicalInsights[dateKey(for: Date())]
+        }
         startPeriodicAutoRefresh()
         Task {
             _ = await resolveUserDisplayName()
@@ -250,6 +258,9 @@ final class SyncViewModel {
         self.healthRecord = record
         self.historicalSummaries = history
         self.lastSyncDate = Date()
+        if let currentInsight = self.insightOutput {
+            self.saveDailyInsight(currentInsight, for: summary.date)
+        }
         print("✅ [SyncViewModel] Synced parent health data: HR=\(record.displayHeartRate ?? -1), Steps=\(record.stepCount ?? -1), Sleep=\(record.sleepHours ?? -1), Title=\(record.summaryTitle)")
 
         // Auto-push to CloudKit if parent is sharing and autoPush is enabled
@@ -691,6 +702,9 @@ final class SyncViewModel {
             lastSyncDate = Date()
             syncState.lastSyncDate = lastSyncDate
             healthRecord = record
+            if let currentInsight = self.insightOutput {
+                self.saveDailyInsight(currentInsight, for: summary.date)
+            }
             errorMessage = nil
             persistState()
             print("✅ Successfully pushed HealthRecord for code: \(code) on date: \(record.formattedDate)")
@@ -769,6 +783,7 @@ final class SyncViewModel {
             if let hr = try await cloudKit.fetchLatestHealthRecord(inviteCode: code) {
                 self.healthRecord = hr
                 self.insightOutput = hr.insightOutput ?? makeInsightOutput(from: hr)
+                self.saveDailyInsight(self.insightOutput, for: hr.recordDate)
                 self.synthesizeHistoryIfEmpty(from: hr)
                 self.parentName = hr.parentName
                 self.lastSyncDate = hr.updatedAt
@@ -788,6 +803,7 @@ final class SyncViewModel {
                 if let rec = result.record {
                     self.healthRecord = rec
                     self.insightOutput = rec.insightOutput ?? makeInsightOutput(from: rec)
+                    self.saveDailyInsight(self.insightOutput, for: rec.recordDate)
                     self.synthesizeHistoryIfEmpty(from: rec)
                 } else if self.healthRecord == nil {
                     let (overview, _) = RuleEngine.shared.evaluate(
@@ -797,6 +813,7 @@ final class SyncViewModel {
                     )
                     let fallback = RuleEngine.shared.makeLocalFallbackInsight(from: overview, parentName: result.parentName)
                     self.insightOutput = fallback
+                    self.saveDailyInsight(fallback, for: result.summary.date)
                     self.healthRecord = HealthRecord.create(
                         from: result.summary,
                         inviteCode: code,
@@ -814,6 +831,14 @@ final class SyncViewModel {
                         Task {
                             await PushNotificationService.shared.processAndDeliver(push)
                         }
+                    }
+                }
+            }
+
+            if let historyRecords = try? await cloudKit.fetchHealthRecordHistory(inviteCode: code, days: 14) {
+                for hRec in historyRecords {
+                    if let ins = hRec.insightOutput {
+                        self.saveDailyInsight(ins, for: hRec.recordDate)
                     }
                 }
             }
@@ -1071,6 +1096,7 @@ final class SyncViewModel {
         parentSnapshot = nil
         healthRecord = nil
         insightOutput = nil
+        historicalInsights = [:]
         evaluatedOverview = nil
         baseline = nil
         historicalSummaries = []
@@ -1079,6 +1105,7 @@ final class SyncViewModel {
         lastSyncDate = nil
         parentName = ""
         UserDefaults.standard.removeObject(forKey: "savedParentName")
+        UserDefaults.standard.removeObject(forKey: historicalInsightsKey)
         persistState()
     }
 
@@ -1111,6 +1138,88 @@ final class SyncViewModel {
         } else if let saved = UserDefaults.standard.string(forKey: "savedParentName"), !saved.isEmpty {
             self.parentName = saved
         }
+    }
+
+    // MARK: - Historical AI Insights Management
+
+    func dateKey(for date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        return formatter.string(from: date)
+    }
+
+    func saveDailyInsight(_ insight: LLMInsightOutput?, for date: Date) {
+        guard let insight = insight else { return }
+        let key = dateKey(for: date)
+        historicalInsights[key] = insight
+        persistHistoricalInsights()
+    }
+
+    func insight(for date: Date) -> LLMInsightOutput? {
+        let key = dateKey(for: date)
+        if Calendar.current.isDateInToday(date) {
+            return insightOutput ?? historicalInsights[key]
+        }
+        return historicalInsights[key]
+    }
+
+    func hasSavedInsight(for date: Date) -> Bool {
+        let key = dateKey(for: date)
+        if Calendar.current.isDateInToday(date) {
+            return insightOutput != nil || historicalInsights[key] != nil
+        }
+        return historicalInsights[key] != nil
+    }
+
+    func summaryTitle(for date: Date) -> String {
+        if Calendar.current.isDateInToday(date) {
+            if let title = healthRecord?.summaryTitle, !title.isEmpty {
+                return title
+            }
+            if let ins = insight(for: date) {
+                return ins.todayOverview.statusLabel
+            }
+            return "Kondisi Cukup Stabil"
+        }
+
+        if let ins = insight(for: date) {
+            return ins.todayOverview.statusLabel
+        }
+
+        return "Belum Ada Insight Tersimpan"
+    }
+
+    func summaryBody(for date: Date) -> String {
+        if Calendar.current.isDateInToday(date) {
+            if let body = healthRecord?.summaryBody, !body.isEmpty {
+                return body
+            }
+            if let ins = insight(for: date) {
+                return ins.todayOverview.summary
+            }
+            return "Data detak jantung, tidur, dan langkah tercatat dari Apple Health hari ini."
+        }
+
+        if let ins = insight(for: date) {
+            return ins.todayOverview.summary
+        }
+
+        return "Pada tanggal ini belum ada insight yang tersimpan, hanya data kesehatan yang tercatat."
+    }
+
+    private func persistHistoricalInsights() {
+        if let data = try? JSONEncoder().encode(historicalInsights) {
+            UserDefaults.standard.set(data, forKey: historicalInsightsKey)
+        }
+    }
+
+    private func loadHistoricalInsights() {
+        guard let data = UserDefaults.standard.data(forKey: historicalInsightsKey),
+              let decoded = try? JSONDecoder().decode([String: LLMInsightOutput].self, from: data) else {
+            return
+        }
+        self.historicalInsights = decoded
     }
 
     // MARK: - Smart AI Rate-Limiting & Alert Triggering (PRD Section 9)

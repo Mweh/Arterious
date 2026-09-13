@@ -100,6 +100,7 @@ struct HistoryView: View {
                 case .sleep: SleepDetailView()
                 case .activity: ActivityDetailView()
                 case .llmInsight: LLMInsightView()
+                case .historicalInsight(let date): LLMInsightView(targetDate: date)
                 case .personalDetails(let name): PersonalDetailsView(name: name)
                 }
             }
@@ -240,7 +241,7 @@ struct HistoryView: View {
     // MARK: - Summary Card
     
     private var summaryCard: some View {
-        NavigationLink(value: DetailDestination.llmInsight) {
+        NavigationLink(value: isViewingToday ? DetailDestination.llmInsight : DetailDestination.historicalInsight(date: selectedDate)) {
             VStack(alignment: .leading, spacing: AppSpacing.xs) {
                 HStack {
                     Text("Ringkasan")
@@ -455,32 +456,30 @@ struct HistoryView: View {
     }
     
     private var summaryTitleText: String {
-        if isViewingToday {
-            if hasDataForSelectedDate {
-                return syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil"
-            }
-            return "Belum ada data"
-        }
-        return hasDataForSelectedDate ? (syncViewModel.healthRecord?.summaryTitle ?? "Kondisi cukup stabil") : "Belum ada data"
+        guard hasDataForSelectedDate else { return "Belum ada data" }
+        return syncViewModel.summaryTitle(for: selectedDate)
     }
     
     private var summaryBodyText: String {
-        if isViewingToday {
-            if hasDataForSelectedDate {
-                return syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya."
-            }
-            return "Data detak jantung, tidur, dan langkah belum tersedia di Apple Health hari ini."
+        guard hasDataForSelectedDate else {
+            return isViewingToday
+                ? "Data detak jantung, tidur, dan langkah belum tersedia di Apple Health hari ini."
+                : "Data detak jantung, tidur, dan langkah tidak tercatat pada tanggal ini."
         }
-        return hasDataForSelectedDate
-        ? (syncViewModel.healthRecord?.summaryBody ?? "Pola tidur baik, detak jantung dalam rentang normal, dan aktivitas sedikit lebih baik dari biasanya.")
-        : "Data detak jantung, tidur, dan langkah tidak tercatat pada tanggal ini."
+        return syncViewModel.summaryBody(for: selectedDate)
     }
     
     private var heartRateChartValues: [CGFloat] {
         guard hasDataForSelectedDate else {
             return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
         }
-        let pts = syncViewModel.healthRecord?.recentHeartRatePoints ?? []
+        let pts: [Double]
+        if isViewingToday {
+            pts = syncViewModel.healthRecord?.recentHeartRatePoints ?? []
+        } else {
+            let upToSelected = syncViewModel.historicalSummaries.filter { $0.date <= selectedDate }.suffix(7)
+            pts = upToSelected.compactMap { $0.latestHeartRate ?? $0.restingHeartRate }
+        }
         if pts.count >= 3 {
             let maxVal = pts.max() ?? 1
             return pts.map { CGFloat(maxVal > 0 ? $0 / maxVal : 0.5) }
@@ -492,7 +491,13 @@ struct HistoryView: View {
         guard hasDataForSelectedDate else {
             return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
         }
-        let pts = syncViewModel.healthRecord?.recentSleepPoints ?? []
+        let pts: [Double]
+        if isViewingToday {
+            pts = syncViewModel.healthRecord?.recentSleepPoints ?? []
+        } else {
+            let upToSelected = syncViewModel.historicalSummaries.filter { $0.date <= selectedDate }.suffix(7)
+            pts = upToSelected.compactMap { $0.sleepHours }
+        }
         if pts.count >= 3 {
             let maxVal = pts.max() ?? 1
             return pts.map { CGFloat(maxVal > 0 ? $0 / maxVal : 0.5) }
@@ -504,7 +509,13 @@ struct HistoryView: View {
         guard hasDataForSelectedDate else {
             return [0.08, 0.08, 0.08, 0.08, 0.08, 0.08, 0.08]
         }
-        let pts = syncViewModel.healthRecord?.recentStepPoints ?? []
+        let pts: [Double]
+        if isViewingToday {
+            pts = syncViewModel.healthRecord?.recentStepPoints ?? []
+        } else {
+            let upToSelected = syncViewModel.historicalSummaries.filter { $0.date <= selectedDate }.suffix(7)
+            pts = upToSelected.compactMap { $0.stepCount }
+        }
         if pts.count >= 3 {
             let maxVal = pts.max() ?? 1
             return pts.map { CGFloat(maxVal > 0 ? $0 / maxVal : 0.5) }

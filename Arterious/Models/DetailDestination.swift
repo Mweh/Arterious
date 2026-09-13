@@ -8,5 +8,6 @@ enum DetailDestination: Hashable {
     case sleep
     case activity
     case llmInsight
+    case historicalInsight(date: Date)
     case personalDetails(name: String)
 }

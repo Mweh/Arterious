@@ -78,6 +78,7 @@ struct HomeView: View {
                 case .sleep: SleepDetailView()
                 case .activity: ActivityDetailView()
                 case .llmInsight: LLMInsightView()
+                case .historicalInsight(let date): LLMInsightView(targetDate: date)
                 case .personalDetails(let name): PersonalDetailsView(name: name)
                 }
             }

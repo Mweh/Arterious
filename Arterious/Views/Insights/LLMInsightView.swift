@@ -13,14 +13,24 @@
 import SwiftUI
 
 struct LLMInsightView: View {
+    var targetDate: Date? = nil
+    
     @Environment(SyncViewModel.self) private var syncViewModel
     @State private var localViewModel = LLMInsightViewModel(autoFetch: false)
+    
+    private var isViewingToday: Bool {
+        guard let targetDate else { return true }
+        return Calendar.current.isDateInToday(targetDate)
+    }
     
     private var isChild: Bool {
         syncViewModel.syncState.role == .child
     }
     
     private var activeOutput: LLMInsightOutput? {
+        if !isViewingToday, let targetDate {
+            return syncViewModel.insight(for: targetDate)
+        }
         if isChild {
             return syncViewModel.insightOutput ?? syncViewModel.fallbackInsightFromCurrentRecord
         }
@@ -28,6 +38,9 @@ struct LLMInsightView: View {
     }
     
     private var isFallback: Bool {
+        if !isViewingToday {
+            return true
+        }
         if isChild {
             return syncViewModel.isUsingLocalRuleFallback
         }
@@ -40,10 +53,37 @@ struct LLMInsightView: View {
     }
     
     private var isCurrentlyLoading: Bool {
+        if !isViewingToday {
+            return false
+        }
         if isChild {
             return syncViewModel.isLoading && activeOutput == nil
         }
         return (localViewModel.isLoading || syncViewModel.isLoading) && activeOutput == nil
+    }
+    
+    private var overviewCardBadge: String {
+        if isViewingToday {
+            return "RINGKASAN HARI INI"
+        } else if let date = targetDate {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "id_ID")
+            df.dateFormat = "d MMMM yyyy"
+            return "RINGKASAN \(df.string(from: date).uppercased())"
+        }
+        return "RINGKASAN HARI INI"
+    }
+    
+    private var navigationBarTitle: String {
+        if isViewingToday {
+            return "Insight Kesehatan \(parentDisplayName)"
+        } else if let date = targetDate {
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "id_ID")
+            df.dateFormat = "d MMM"
+            return "Insight (\(df.string(from: date))) \(parentDisplayName)"
+        }
+        return "Insight Kesehatan \(parentDisplayName)"
     }
     
     var body: some View {
@@ -92,7 +132,7 @@ struct LLMInsightView: View {
                     } else if isCurrentlyLoading {
                         loadingCard
                     } else {
-                        loadingCard
+                        noDataCard
                     }
                 }
                 .padding(.horizontal, 16)
@@ -102,9 +142,10 @@ struct LLMInsightView: View {
             }
             .scrollBounceBehavior(.basedOnSize, axes: .horizontal)
         }
-        .navigationTitle("Insight Kesehatan \(parentDisplayName)")
+        .navigationTitle(navigationBarTitle)
         .navigationBarTitleDisplayMode(.inline)
         .refreshable {
+            guard isViewingToday else { return }
             if isChild {
                 await syncViewModel.fetchSharedParentSnapshot()
             } else {
@@ -113,6 +154,7 @@ struct LLMInsightView: View {
             }
         }
         .task {
+            guard isViewingToday else { return }
             if isChild {
                 if syncViewModel.insightOutput == nil {
                     await syncViewModel.fetchSharedParentSnapshot()
@@ -130,7 +172,7 @@ struct LLMInsightView: View {
     private func todayOverviewCard(_ overview: TodayOverviewInsight) -> some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .center, spacing: 8) {
-                Text("TODAY'S OVERVIEW")
+                Text(overviewCardBadge)
                     .font(.caption.weight(.bold))
                     .foregroundStyle(.secondary)
                     .tracking(1)
@@ -244,7 +286,7 @@ struct LLMInsightView: View {
             // Numbers Comparison Row (Clean & Non-Technical Table/Box)
             HStack(spacing: 8) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Hari ini")
+                    Text(isViewingToday ? "Hari ini" : "Tercatat")
                         .font(.caption2)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
@@ -348,6 +390,28 @@ struct LLMInsightView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 40)
+        .background(Color(.secondarySystemGroupedBackground))
+        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+    }
+    
+    // MARK: - No Data Card
+    
+    private var noDataCard: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "chart.bar.xaxis")
+                .font(.system(size: 36))
+                .foregroundStyle(.secondary)
+            Text("Belum Ada Data Insight")
+                .font(.headline)
+                .foregroundStyle(.primary)
+            Text("Data kesehatan belum tercatat di Apple Health untuk tanggal ini.")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 16)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 48)
         .background(Color(.secondarySystemGroupedBackground))
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
     }

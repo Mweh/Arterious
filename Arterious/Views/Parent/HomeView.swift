@@ -13,6 +13,7 @@ struct HomeView: View {
     @State private var showingManualPasteSheet: Bool = false
     @State private var showingParentSelectorSheet: Bool = false
     @State private var manualPastedText: String = ""
+    @State private var navigationPath = NavigationPath()
 
     private let parentOptions = ["Orang Tua 1", "Orang Tua 2", "Ibu", "Ayah"]
 
@@ -42,7 +43,7 @@ struct HomeView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ScrollView {
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
                     HStack {
@@ -72,6 +73,16 @@ struct HomeView: View {
                 syncViewModel.checkClipboardForInvitation()
             }
             .toolbar(.hidden, for: .navigationBar)
+            .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
+            .navigationDestination(for: DetailDestination.self) { destination in
+                switch destination {
+                case .heartRate: HeartRateDetailView()
+                case .sleep: SleepDetailView()
+                case .activity: ActivityDetailView()
+                case .llmInsight: LLMInsightView()
+                case .personalDetails(let name): PersonalDetailsView(name: name)
+                }
+            }
             .sheet(isPresented: $showingShareSheet) {
                 ActivityViewController(items: [childInvitationMessage])
                     .presentationDetents([.medium, .large])
@@ -299,9 +310,7 @@ struct HomeView: View {
     private var connectedDashboardContent: some View {
         VStack(alignment: .leading, spacing: AppSpacing.lg) {
             // "Ringkasan Hari Ini" Blue Tinted Card with direct access to Caregiver AI Insights
-            NavigationLink {
-                LLMInsightView()
-            } label: {
+            NavigationLink(value: DetailDestination.llmInsight) {
                 VStack(alignment: .leading, spacing: AppSpacing.xs) {
                     HStack {
                         Text("Ringkasan Hari Ini")
@@ -354,9 +363,7 @@ struct HomeView: View {
                     .foregroundStyle(AppColor.textPrimary)
 
                 // 1. Detak Jantung / Heart Rate
-                NavigationLink {
-                    HeartRateDetailView()
-                } label: {
+                NavigationLink(value: DetailDestination.heartRate) {
                     HealthMetricSummaryCard(
                         iconName: "heart.fill",
                         iconColor: AppColor.Accent.red,
@@ -372,9 +379,7 @@ struct HomeView: View {
                 .buttonStyle(.plain)
 
                 // 2. Waktu Tidur / Sleep
-                NavigationLink {
-                    SleepDetailView()
-                } label: {
+                NavigationLink(value: DetailDestination.sleep) {
                     HealthMetricSummaryCard(
                         iconName: "bed.double.fill",
                         iconColor: Color(red: 0.55, green: 0.45, blue: 0.9),
@@ -389,9 +394,7 @@ struct HomeView: View {
                 .buttonStyle(.plain)
 
                 // 3. Langkah & Aktivitas / Steps
-                NavigationLink {
-                    ActivityDetailView()
-                } label: {
+                NavigationLink(value: DetailDestination.activity) {
                     HealthMetricSummaryCard(
                         iconName: "figure.walk",
                         iconColor: AppColor.Accent.green,

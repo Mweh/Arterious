@@ -232,7 +232,6 @@ struct SleepDetailView: View {
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
         .navigationTitle("Tidur")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
     }
 
     // MARK: - Condition Header

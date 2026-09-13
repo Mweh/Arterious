@@ -9,6 +9,7 @@ struct HistoryView: View {
     @State private var selectedDate: Date = Calendar.current.startOfDay(for: Date())
     @State private var showingCalendarPicker: Bool = false
     @State private var tempCalendarDate: Date = Date()
+    @State private var navigationPath = NavigationPath()
     
     private var isChildEmpty: Bool {
         userRole == UserRole.child.rawValue && (syncViewModel.syncState.status != .accepted || syncViewModel.healthRecord == nil)
@@ -77,7 +78,7 @@ struct HistoryView: View {
     }
     
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             Group {
                 if isChildEmpty {
                     childEmptyStateView
@@ -87,6 +88,16 @@ struct HistoryView: View {
             }
             .background(AppColor.backgroundPrimary.ignoresSafeArea())
             .toolbar(.hidden, for: .navigationBar)
+            .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
+            .navigationDestination(for: DetailDestination.self) { destination in
+                switch destination {
+                case .heartRate: HeartRateDetailView()
+                case .sleep: SleepDetailView()
+                case .activity: ActivityDetailView()
+                case .llmInsight: LLMInsightView()
+                case .personalDetails(let name): PersonalDetailsView(name: name)
+                }
+            }
             .sheet(isPresented: $showingCalendarPicker) {
                 calendarPickerSheet
                     .presentationDetents([.height(350)])
@@ -130,9 +141,7 @@ struct HistoryView: View {
                         .foregroundStyle(AppColor.textPrimary)
                     
                     // 1. Detak Jantung Card
-                    NavigationLink {
-                        HeartRateDetailView()
-                    } label: {
+                    NavigationLink(value: DetailDestination.heartRate) {
                         HealthMetricSummaryCard(
                             iconName: "heart.fill",
                             iconColor: AppColor.Accent.red,
@@ -148,9 +157,7 @@ struct HistoryView: View {
                     .buttonStyle(.plain)
                     
                     // 2. Tidur Card
-                    NavigationLink {
-                        SleepDetailView()
-                    } label: {
+                    NavigationLink(value: DetailDestination.sleep) {
                         HealthMetricSummaryCard(
                             iconName: "bed.double.fill",
                             iconColor: Color(red: 0.35, green: 0.35, blue: 0.85),
@@ -165,9 +172,7 @@ struct HistoryView: View {
                     .buttonStyle(.plain)
                     
                     // 3. Aktivitas Card
-                    NavigationLink {
-                        ActivityDetailView()
-                    } label: {
+                    NavigationLink(value: DetailDestination.activity) {
                         HealthMetricSummaryCard(
                             iconName: "figure.walk",
                             iconColor: AppColor.Accent.green,
@@ -232,9 +237,7 @@ struct HistoryView: View {
     // MARK: - Summary Card
     
     private var summaryCard: some View {
-        NavigationLink {
-            LLMInsightView()
-        } label: {
+        NavigationLink(value: DetailDestination.llmInsight) {
             VStack(alignment: .leading, spacing: AppSpacing.xs) {
                 HStack {
                     Text("Ringkasan")

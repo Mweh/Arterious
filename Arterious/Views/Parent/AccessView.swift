@@ -16,6 +16,7 @@ struct AccessView: View {
     @State private var showingShareSheet: Bool = false
     @State private var showingManualPasteSheet: Bool = false
     @State private var manualPastedText: String = ""
+    @State private var navigationPath = NavigationPath()
 
     private var isConnected: Bool {
         syncViewModel.syncState.status == .accepted && (syncViewModel.syncState.partnerName != nil || !syncViewModel.parentName.isEmpty)
@@ -38,7 +39,7 @@ struct AccessView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             ZStack {
                 AppColor.backgroundPrimary.ignoresSafeArea()
 
@@ -68,6 +69,16 @@ struct AccessView: View {
                 }
             }
             .toolbar(.hidden, for: .navigationBar)
+            .toolbar(navigationPath.isEmpty ? .visible : .hidden, for: .tabBar)
+            .navigationDestination(for: DetailDestination.self) { destination in
+                switch destination {
+                case .heartRate: HeartRateDetailView()
+                case .sleep: SleepDetailView()
+                case .activity: ActivityDetailView()
+                case .llmInsight: LLMInsightView()
+                case .personalDetails(let name): PersonalDetailsView(name: name)
+                }
+            }
             .refreshable {
                 await syncViewModel.refreshIfNeeded()
                 syncViewModel.checkClipboardForInvitation()
@@ -266,9 +277,7 @@ struct AccessView: View {
             }
             .buttonStyle(.plain)
         } else {
-            NavigationLink {
-                PersonalDetailsView(name: name)
-            } label: {
+            NavigationLink(value: DetailDestination.personalDetails(name: name)) {
                 HStack {
                     Text(name)
                         .font(.system(size: 16, weight: .medium))

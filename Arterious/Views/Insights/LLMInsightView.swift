@@ -91,7 +91,6 @@ struct LLMInsightView: View {
         }
         .navigationTitle("Insight Kesehatan \(parentDisplayName)")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 if isChild ? syncViewModel.isLoading : (localViewModel.isLoading || syncViewModel.isLoading) {

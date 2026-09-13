@@ -195,7 +195,6 @@ struct ActivityDetailView: View {
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
         .navigationTitle("Aktivitas")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
     }
 
     // MARK: - Condition Header

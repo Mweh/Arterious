@@ -182,7 +182,6 @@ struct HeartRateDetailView: View {
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
         .navigationTitle("Detak Jantung")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar(.hidden, for: .tabBar)
     }
 
     // MARK: - Condition Header

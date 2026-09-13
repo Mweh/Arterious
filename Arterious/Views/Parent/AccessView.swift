@@ -169,6 +169,7 @@ struct AccessView: View {
                         handlePlusButtonTapped()
                     } label: {
                         Image(systemName: "plus")
+                            .foregroundStyle(AppColor.textPrimary)
                     }
 
                     Button {
@@ -185,6 +186,7 @@ struct AccessView: View {
                 handlePlusButtonTapped()
             } label: {
                 Image(systemName: "plus")
+                    .foregroundStyle(AppColor.textPrimary)
             }
         }
     }

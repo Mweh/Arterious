@@ -21,8 +21,7 @@ struct HomeView: View {
         if userRole == UserRole.parent.rawValue {
             return true
         }
-        guard hasConnectedParent else { return false }
-        return syncViewModel.syncState.status == .accepted && syncViewModel.healthRecord != nil
+        return (syncViewModel.syncState.status == .accepted && syncViewModel.healthRecord != nil) || hasConnectedParent
     }
 
     private var displayName: String {

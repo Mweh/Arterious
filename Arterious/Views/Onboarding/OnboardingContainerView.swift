@@ -34,8 +34,19 @@ struct OnboardingContainerView: View {
                 case 2:
                     OnboardingRoleView(selectedRole: $selectedRole) {
                         storedUserRole = selectedRole.rawValue
-                        withAnimation(.easeInOut(duration: 0.3)) {
-                            currentStep = 3
+                        UserDefaults.standard.set(selectedRole.rawValue, forKey: "userRole")
+                        if selectedRole == .child {
+                            // Anak tidak perlu akses HealthKit, langsung selesai onboarding
+                            Task {
+                                _ = try? await UNUserNotificationCenter.current().requestAuthorization(
+                                    options: [.alert, .badge, .sound]
+                                )
+                            }
+                            completeOnboarding()
+                        } else {
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                currentStep = 3
+                            }
                         }
                     }
                     .transition(.asymmetric(

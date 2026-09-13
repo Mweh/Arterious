@@ -167,11 +167,14 @@ struct OnboardingHealthView: View {
         errorMessage = nil
 
         Task {
-            // 1. Request Apple HealthKit access
-            do {
-                try await HealthKitManager.shared.requestAuthorization()
-            } catch {
-                // Simulator fallback
+            // 1. Request Apple HealthKit access (Khusus Orang Tua)
+            let userRole = UserDefaults.standard.string(forKey: "userRole") ?? UserRole.parent.rawValue
+            if userRole == UserRole.parent.rawValue {
+                do {
+                    try await HealthKitManager.shared.requestAuthorization()
+                } catch {
+                    // Simulator fallback
+                }
             }
 
             // 2. Request Notification permissions

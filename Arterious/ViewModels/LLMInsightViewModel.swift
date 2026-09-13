@@ -80,8 +80,11 @@ final class LLMInsightViewModel {
         isLoading = true
         errorMessage = nil
         
-        // 0. Minta izin akses HealthKit jika belum
-        try? await healthKitManager.requestAuthorization()
+        // 0. Minta izin akses HealthKit HANYA jika peran adalah Orang Tua
+        let isParent = (UserDefaults.standard.string(forKey: "userRole") ?? UserRole.parent.rawValue) == UserRole.parent.rawValue
+        if isParent {
+            try? await healthKitManager.requestAuthorization()
+        }
         
         // 1. Ambil data hari ini dan riwayat 14 hari dari HealthKit
         let today = await healthKitManager.fetchTodaySummary()

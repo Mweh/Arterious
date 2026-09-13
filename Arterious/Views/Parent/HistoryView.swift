@@ -25,7 +25,7 @@ struct HistoryView: View {
     
     private var weekDays: [DayItem] {
         var calendar = Calendar(identifier: .gregorian)
-        calendar.firstWeekday = 1 // 1 = Sunday (MIN)
+        calendar.firstWeekday = 2 // 2 = Senin (SEN), standar kalender Indonesia
         calendar.locale = Locale(identifier: "id_ID")
         
         let startOfDay = calendar.startOfDay(for: selectedDate)
@@ -109,6 +109,7 @@ struct HistoryView: View {
                     .presentationDragIndicator(.visible)
             }
             .task {
+                selectedDate = Calendar.current.startOfDay(for: Date())
                 await syncViewModel.refreshIfNeeded()
             }
         }
@@ -201,8 +202,10 @@ struct HistoryView: View {
         HStack(spacing: 0) {
             ForEach(weekDays) { item in
                 let isSelected = Calendar.current.isDate(item.date, inSameDayAs: selectedDate)
+                let isFuture = Calendar.current.startOfDay(for: item.date) > Calendar.current.startOfDay(for: Date())
                 
                 Button {
+                    guard !isFuture else { return }
                     withAnimation(.spring(response: 0.28, dampingFraction: 0.75)) {
                         selectedDate = item.date
                     }
@@ -210,7 +213,7 @@ struct HistoryView: View {
                     VStack(spacing: 6) {
                         Text(item.dayName)
                             .font(.system(size: 12, weight: .medium))
-                            .foregroundStyle(AppColor.textSecondary)
+                            .foregroundStyle(isFuture ? AppColor.textSecondary.opacity(0.35) : AppColor.textSecondary)
                         
                         ZStack {
                             if isSelected {
@@ -221,13 +224,14 @@ struct HistoryView: View {
                             
                             Text("\(item.dayNumber)")
                                 .font(.system(size: 17, weight: isSelected ? .bold : .regular))
-                                .foregroundStyle(isSelected ? AppColor.Brand.primaryBlue : AppColor.textPrimary)
+                                .foregroundStyle(isFuture ? AppColor.textPrimary.opacity(0.3) : (isSelected ? AppColor.Brand.primaryBlue : AppColor.textPrimary))
                         }
                         .frame(width: 36, height: 36)
                     }
                     .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.plain)
+                .disabled(isFuture)
             }
         }
         .padding(.vertical, AppSpacing.xs)
@@ -315,6 +319,7 @@ struct HistoryView: View {
             DatePicker(
                 "",
                 selection: $tempCalendarDate,
+                in: ...Date(),
                 displayedComponents: .date
             )
             .datePickerStyle(.wheel)

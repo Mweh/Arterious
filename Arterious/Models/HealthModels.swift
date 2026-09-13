@@ -257,24 +257,85 @@ struct ParentProfile: Identifiable {
     var age: Int
 }
 
-/// Model representasi data Baseline 14 Hari yang dihitung dari Apple HealthKit
-struct HealthBaseline {
-    let periodDays: Int = 14
-    let steps: Double               // Rata-rata langkah 14 hari
-    let sleepHours: Double          // Rata-rata tidur (jam) 14 hari
-    let heartRate: Double           // Rata-rata detak jantung 14 hari
+// MARK: - Robust Baseline & Anomaly Types (PRD BaselineNew.md)
+
+/// Status siklus hidup baseline per domain (PRD Section 4.1)
+enum BaselineLifecycleStatus: String, Codable, Sendable {
+    case collectingEarly = "COLLECTING_EARLY"         // 0–2 valid days
+    case insufficientData = "INSUFFICIENT_DATA"       // 3–6 valid days
+    case provisionalBaseline = "PROVISIONAL_BASELINE" // 7–9 valid days
+    case activeBaseline = "ACTIVE_BASELINE"           // >=10 valid days
+}
+
+/// Tingkat keyakinan statistik baseline (PRD Section 15)
+enum BaselineConfidence: String, Codable, Sendable {
+    case none = "NONE"             // < 7 valid days
+    case low = "LOW"               // 7–9 valid days
+    case moderate = "MODERATE"     // 10–12 valid days
+    case high = "HIGHER"           // 13–14 valid days
+}
+
+/// Rangkuman statistik robust (Median, MAD, IQR, Fences) per domain (PRD Section 7, 8, 16)
+struct RobustSummary: Codable, Equatable, Sendable {
+    let n: Int
+    let median: Double
+    let q1: Double
+    let q3: Double
+    let iqr: Double
+    let mad: Double
+    let robustSigma: Double?
+    let zeroVariability: Bool
+    let lowerFence: Double
+    let upperFence: Double
+    let status: BaselineLifecycleStatus
+    let confidence: BaselineConfidence
+}
+
+/// Hasil evaluasi nilai observasi hari ini terhadap baseline reference (PRD Section 16)
+struct RobustEvaluation: Codable, Equatable, Sendable {
+    let delta: Double
+    let robustZ: Double?
+    let robustFlag: Bool
+    let iqrFlag: Bool
+    let lowerFence: Double
+    let upperFence: Double
+    let anomalyScale: String // "MAD" or "FALLBACK_REQUIRED"
+}
+
+/// Model representasi data Baseline 14 Hari yang dihitung dari Apple HealthKit (PRD BaselineNew.md & PRD Bab 10)
+struct HealthBaseline: Sendable, Codable {
+    var periodDays: Int = 14
+    let steps: Double               // Median langkah 14 hari
+    let sleepHours: Double          // Median tidur (jam) 14 hari
+    let heartRate: Double           // Median detak jantung 14 hari
+    
+    // Milestones Ritme Langkah Harian (Time-of-day step checkpoints)
+    var stepsAt1200: Double = 710.0      // Median langkah siang (jam 12:00)
+    var stepsAt1800: Double = 2000.0     // Median langkah sore (jam 18:00)
+    
+    // Tahapan & Kualitas Tidur (Sleep Stages)
     var sleepEfficiency: Double = 88.4   // Median efisiensi tidur (%) dari baseline PRD
     var awakeMinutes: Double = 50.0      // Median waktu terbangun (menit) dari baseline PRD
+    var deepSleepMinutes: Double = 70.0  // Median deep sleep (menit)
+    var remSleepMinutes: Double = 88.0   // Median REM sleep (menit)
+    var coreSleepMinutes: Double = 238.0 // Median core sleep (menit)
     var bedtimeString: String = "22:45"  // Median jam tidur dari baseline PRD
     var wakeTimeString: String = "06:10" // Median jam bangun dari baseline PRD
     
-    // Backwards-compatible alias
-    var restingHeartRate: Double { heartRate }
+    // Kebiasaan Kardiovaskular & Olahraga
+    var restingHeartRate: Double = 67.0  // Median resting HR
+    var hrvSDNN: Double = 29.0           // Median HRV (ms)
+    var typicalWorkoutTimeRange: String? = nil // e.g. "Pagi hari (06:00 - 08:00)"
+    var typicalRestingHRRange: String = "64 - 70 BPM"
+    
+    var stepsSummary: RobustSummary? = nil
+    var sleepSummary: RobustSummary? = nil
+    var heartSummary: RobustSummary? = nil
     
     var formattedSteps: String { "\(Int(steps)) langkah" }
     var formattedSleep: String { String(format: "%.1f jam", sleepHours) }
     var formattedHeartRate: String { "\(Int(heartRate)) BPM" }
-    var formattedRHR: String { "\(Int(heartRate)) BPM" }
+    var formattedRHR: String { "\(Int(restingHeartRate)) BPM" }
     var formattedEfficiency: String { String(format: "%.1f%%", sleepEfficiency) }
 }
 

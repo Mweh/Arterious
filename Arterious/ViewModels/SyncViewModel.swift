@@ -733,6 +733,12 @@ final class SyncViewModel {
                         heartStatusBadge: overview.heart.status,
                         insightOutput: fallback
                     )
+                    
+                    if let push = overview.pushDecision, push.shouldPush {
+                        Task {
+                            await PushNotificationService.shared.processAndDeliver(push)
+                        }
+                    }
                 }
                 
                 syncState.partnerName = result.parentName
@@ -803,6 +809,12 @@ final class SyncViewModel {
                         heartStatusBadge: overview.heart.status,
                         insightOutput: fallback
                     )
+                    
+                    if let push = overview.pushDecision, push.shouldPush {
+                        Task {
+                            await PushNotificationService.shared.processAndDeliver(push)
+                        }
+                    }
                 }
             }
 
@@ -1101,7 +1113,7 @@ final class SyncViewModel {
         }
     }
 
-    // MARK: - Smart AI Rate-Limiting & Alert Triggering
+    // MARK: - Smart AI Rate-Limiting & Alert Triggering (PRD Section 9)
 
     var lastGeminiCallDate: Date? {
         get { UserDefaults.standard.object(forKey: "arterious.lastGeminiCallDate") as? Date }
@@ -1110,14 +1122,43 @@ final class SyncViewModel {
 
     func shouldCallGeminiAPI(for overview: EvaluatedHealthOverview, forceRefresh: Bool = false) -> Bool {
         guard APIConfig.isConfigured else { return false }
+
+        // 1. Force refresh / Caregiver meminta penjelasan eksplisit
         if forceRefresh { return true }
 
-        // Hanya panggil 1x saat pertama kali aplikasi dijalankan (initial run)
-        if !hasExecutedInitialAICall {
+        // 2. Urgent event (P4): Jangan panggil LLM untuk pesan utama; gunakan template tetap
+        if let push = overview.pushDecision, push.pushClass == .p4 {
+            return false
+        }
+
+        // 3. Daily overview: Maksimal 1 kali per hari
+        let calendar = Calendar.current
+        let isNewDay: Bool
+        if let lastCall = lastGeminiCallDate {
+            isNewDay = !calendar.isDate(lastCall, inSameDayAs: Date())
+        } else {
+            isNewDay = true
+        }
+
+        if !hasExecutedInitialAICall || isNewDay {
             return true
         }
 
-        // Pada setiap refresh berikutnya (pull to refresh, background timer, dsb), jangan hit API
+        // 4. Deteksi Concern Baru atau Eskalasi (Severity memburuk / Domain baru terdampak)
+        let lastKnownStatus = UserDefaults.standard.string(forKey: "arterious.lastKnownConditionStatus") ?? "STABLE"
+        let lastKnownPushClass = UserDefaults.standard.string(forKey: "arterious.lastKnownPushClass") ?? "P0"
+        let currentPushClass = overview.pushDecision?.pushClass.rawValue ?? "P0"
+
+        let hasSeverityChanged = (overview.conditionStatus != lastKnownStatus && overview.conditionStatus == "DECLINED")
+        let hasPushEscalated = (currentPushClass != lastKnownPushClass && (currentPushClass == "P2" || currentPushClass == "P3"))
+
+        if hasSeverityChanged || hasPushEscalated {
+            UserDefaults.standard.set(overview.conditionStatus, forKey: "arterious.lastKnownConditionStatus")
+            UserDefaults.standard.set(currentPushClass, forKey: "arterious.lastKnownPushClass")
+            return true
+        }
+
+        // 5. Kondisi tetap sama atau fluktuasi ringan: Gunakan cached insight atau template lokal
         return false
     }
 

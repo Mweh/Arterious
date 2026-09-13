@@ -15,6 +15,15 @@ struct DomainMetricInsight: Codable {
     let deltaPercentage: Double
     let status: String
     let insight: String
+    var points: [String]? = nil
+    
+    var allInsights: [String] {
+        if let points = points, !points.isEmpty {
+            return points
+        }
+        let lines = insight.components(separatedBy: "\n").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+        return lines.isEmpty ? [insight] : lines
+    }
     
     enum CodingKeys: String, CodingKey {
         case currentValue = "current_value"
@@ -22,6 +31,33 @@ struct DomainMetricInsight: Codable {
         case deltaPercentage = "delta_percentage"
         case status
         case insight
+        case points
+    }
+    
+    init(
+        currentValue: String,
+        baselineValue: String,
+        deltaPercentage: Double,
+        status: String,
+        insight: String,
+        points: [String]? = nil
+    ) {
+        self.currentValue = currentValue
+        self.baselineValue = baselineValue
+        self.deltaPercentage = deltaPercentage
+        self.status = status
+        self.insight = insight
+        self.points = points
+    }
+    
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        currentValue = try container.decode(String.self, forKey: .currentValue)
+        baselineValue = try container.decode(String.self, forKey: .baselineValue)
+        deltaPercentage = try container.decode(Double.self, forKey: .deltaPercentage)
+        status = try container.decode(String.self, forKey: .status)
+        insight = try container.decodeIfPresent(String.self, forKey: .insight) ?? ""
+        points = try container.decodeIfPresent([String].self, forKey: .points)
     }
 }
 

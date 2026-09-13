@@ -19,6 +19,8 @@ struct EvaluatedDomainMetric {
     let formattedBaseline: String
     let hasData: Bool
     var customInsight: String? = nil
+    var robustEvaluation: RobustEvaluation? = nil
+    var baselineSummary: RobustSummary? = nil
     
     var formattedDelta: String {
         guard hasData else { return "—" }
@@ -42,10 +44,28 @@ struct EvaluatedHealthOverview {
     var workoutName: String? = nil
     let facts: [String]
     let allowedActions: [String]
+    var pushDecision: PushTriageDecision? = nil
     
     var headline: String {
         RuleEngine.overviewHeadline(for: conditionStatus)
     }
+}
+
+/// Standar Rujukan Klinis & Jurnal Kesehatan Lansia (Healthy Reference Benchmarks)
+struct ClinicalBenchmark {
+    // 1. Aktivitas Fisik: 3.000 langkah/hari (Jurnal Geriatri JAMA Lee et al. 2019 / Tudor-Locke et al.)
+    static let recommendedStepsSenior: Int = 3000
+    static let stepsReferenceNote: String = "3.000 langkah/hari (rujukan minimal aktif jurnal geriatri JAMA)"
+    
+    // 2. Tidur: 7 - 8 jam/malam (National Sleep Foundation / AASM / PRD Section 10.1)
+    static let recommendedSleepMinHours: Double = 7.0
+    static let recommendedSleepMaxHours: Double = 8.0
+    static let sleepReferenceNote: String = "7–8 jam/malam (standar konsensus medis National Sleep Foundation)"
+    
+    // 3. Denyut Istirahat: 60 - 80 bpm (American Heart Association / Apple Health Reference)
+    static let recommendedRestingHRMin: Int = 60
+    static let recommendedRestingHRMax: Int = 80
+    static let restingHRReferenceNote: String = "60–80 bpm saat santai (American Heart Association)"
 }
 
 @MainActor
@@ -66,31 +86,197 @@ final class RuleEngine {
         }
     }
     
-    /// Fungsi eksplisit menghitung baseline 14 hari dari riwayat HealthKit
-    func calculateBaseline(from history: [DailyHealthSummary]) -> HealthBaseline {
-        let validSteps = history.compactMap(\.stepCount).filter { $0 > 0 }
-        let baselineSteps = validSteps.isEmpty ? 2850.0 : (validSteps.reduce(0, +) / Double(validSteps.count))
+    // MARK: - Robust Statistics Helpers (PRD BaselineNew.md)
+    
+    /// Menghitung median dari array terurut (sorted)
+    static func calculateMedian(of sortedValues: [Double]) -> Double {
+        guard !sortedValues.isEmpty else { return 0.0 }
+        let count = sortedValues.count
+        if count % 2 == 1 {
+            return sortedValues[count / 2]
+        } else {
+            return (sortedValues[count / 2 - 1] + sortedValues[count / 2]) / 2.0
+        }
+    }
+    
+    /// Menghitung persentil (linear interpolation) dari array terurut (PRD Section 16)
+    static func calculatePercentile(of sortedValues: [Double], percentile: Double) -> Double {
+        guard !sortedValues.isEmpty else { return 0.0 }
+        if sortedValues.count == 1 { return sortedValues[0] }
+        let p = max(0.0, min(1.0, percentile > 1.0 ? percentile / 100.0 : percentile))
+        let rank = p * Double(sortedValues.count - 1)
+        let lowerIndex = Int(floor(rank))
+        let upperIndex = Int(ceil(rank))
+        if lowerIndex == upperIndex {
+            return sortedValues[lowerIndex]
+        }
+        let weight = rank - Double(lowerIndex)
+        return sortedValues[lowerIndex] * (1.0 - weight) + sortedValues[upperIndex] * weight
+    }
+    
+    /// Membangun ringkasan statistik robust: Median, MAD, IQR, Fences (PRD Section 7, 8, 16)
+    static func buildRobustSummary(values: [Double]) -> RobustSummary? {
+        guard !values.isEmpty else { return nil }
+        let sorted = values.sorted()
+        let n = sorted.count
         
-        let validSleep = history.compactMap(\.sleepHours).filter { $0 > 0 }
-        let baselineSleep = validSleep.isEmpty ? 6.6 : (validSleep.reduce(0, +) / Double(validSleep.count))
+        let med = calculateMedian(of: sorted)
+        let q1 = calculatePercentile(of: sorted, percentile: 0.25)
+        let q3 = calculatePercentile(of: sorted, percentile: 0.75)
+        let iqr = q3 - q1
+        
+        let deviations = sorted.map { abs($0 - med) }.sorted()
+        let mad = calculateMedian(of: deviations)
+        let robustSigma = mad > 0 ? (1.4826 * mad) : nil
+        let zeroVariability = (mad == 0 && iqr == 0)
+        
+        let lowerFence = q1 - 1.5 * iqr
+        let upperFence = q3 + 1.5 * iqr
+        
+        let status: BaselineLifecycleStatus
+        switch n {
+        case 0...2: status = .collectingEarly
+        case 3...6: status = .insufficientData
+        case 7...9: status = .provisionalBaseline
+        default: status = .activeBaseline
+        }
+        
+        let confidence: BaselineConfidence
+        switch n {
+        case 0..<7: confidence = .none
+        case 7...9: confidence = .low
+        case 10...12: confidence = .moderate
+        default: confidence = .high
+        }
+        
+        return RobustSummary(
+            n: n,
+            median: med,
+            q1: q1,
+            q3: q3,
+            iqr: iqr,
+            mad: mad,
+            robustSigma: robustSigma,
+            zeroVariability: zeroVariability,
+            lowerFence: lowerFence,
+            upperFence: upperFence,
+            status: status,
+            confidence: confidence
+        )
+    }
+    
+    /// Mengevaluasi suatu nilai observasi terhadap baseline reference (PRD Section 16)
+    static func evaluateAgainstReference(value: Double, summary: RobustSummary) -> RobustEvaluation {
+        let delta = value - summary.median
+        let lowerFence = summary.q1 - 1.5 * summary.iqr
+        let upperFence = summary.q3 + 1.5 * summary.iqr
+        let iqrFlag = value < lowerFence || value > upperFence
+        
+        let robustZ: Double?
+        let robustFlag: Bool
+        let anomalyScale: String
+        
+        if summary.mad > 0 {
+            let z = delta / (1.4826 * summary.mad)
+            robustZ = z
+            robustFlag = abs(z) > 3.5
+            anomalyScale = "MAD"
+        } else {
+            robustZ = nil
+            robustFlag = false
+            anomalyScale = "FALLBACK_REQUIRED"
+        }
+        
+        return RobustEvaluation(
+            delta: delta,
+            robustZ: robustZ,
+            robustFlag: robustFlag,
+            iqrFlag: iqrFlag,
+            lowerFence: lowerFence,
+            upperFence: upperFence,
+            anomalyScale: anomalyScale
+        )
+    }
+    
+    /// Fungsi eksplisit menghitung baseline 14 hari dari riwayat HealthKit (PRD BaselineNew.md)
+    func calculateBaseline(from history: [DailyHealthSummary]) -> HealthBaseline {
+        // 1. Filter data valid per domain (Technical validity per PRD Section 5, 6, 11)
+        let validSteps = history.compactMap(\.stepCount).filter { $0 > 0 }
+        
+        let validSleep = history.compactMap { summary -> Double? in
+            guard let sleep = summary.sleepHours, sleep > 0 else { return nil }
+            if let details = summary.sleepDetails, details.timeInBedMinutes > 0 {
+                let sleepMins = sleep * 60.0
+                if sleepMins > details.timeInBedMinutes + 5.0 {
+                    return nil // Invalid artifact
+                }
+            }
+            return sleep
+        }
         
         let validHeart = history.compactMap { $0.latestHeartRate ?? $0.meanHeartRate24h }.filter { $0 > 0 }
-        let baselineHR = validHeart.isEmpty ? 70.0 : (validHeart.reduce(0, +) / Double(validHeart.count))
-        
+        let validRestingHeart = history.compactMap(\.restingHeartRate).filter { $0 > 0 }
         let validSleepDetails = history.compactMap(\.sleepDetails)
-        let baselineEfficiency = validSleepDetails.isEmpty ? 88.4 : (validSleepDetails.map(\.sleepEfficiency).reduce(0, +) / Double(validSleepDetails.count))
-        let baselineAwake = validSleepDetails.isEmpty ? 45.0 : (validSleepDetails.map(\.awakeMinutes).reduce(0, +) / Double(validSleepDetails.count))
-        let baselineBedtime = validSleepDetails.first?.formattedBedtime ?? "22:30"
-        let baselineWakeTime = validSleepDetails.first?.formattedWakeTime ?? "06:00"
+        let validEfficiency = validSleepDetails.map(\.sleepEfficiency).filter { $0 > 0 }
+        let validAwake = validSleepDetails.map(\.awakeMinutes).filter { $0 >= 0 }
+        let validDeep = validSleepDetails.compactMap(\.deepMinutes).filter { $0 > 0 }
+        let validRem = validSleepDetails.compactMap(\.remMinutes).filter { $0 > 0 }
+        let validCore = validSleepDetails.compactMap(\.coreMinutes).filter { $0 > 0 }
+        let validHRV = history.compactMap { $0.hrvRMSSD ?? $0.hrvSDNN14DayMean }.filter { $0 > 0 }
+        
+        // 2. Bangun statistik robust (Median, MAD, IQR)
+        let stepsSummary = Self.buildRobustSummary(values: validSteps)
+        let sleepSummary = Self.buildRobustSummary(values: validSleep)
+        let heartSummary = Self.buildRobustSummary(values: validHeart)
+        let restingSummary = Self.buildRobustSummary(values: validRestingHeart)
+        
+        // 3. Ambil Median sebagai center personal (Fallback jika data kosong)
+        let baselineSteps = stepsSummary?.median ?? 2850.0
+        let baselineSleep = sleepSummary?.median ?? 6.6
+        let baselineHR = heartSummary?.median ?? 70.0
+        let baselineRestingHR = restingSummary?.median ?? max(55.0, baselineHR - 4.0)
+        
+        // Milestones Ritme Langkah Harian
+        let stepsAt1200 = round(baselineSteps * 0.28) // ~28% ritme siang
+        let stepsAt1800 = round(baselineSteps * 0.72) // ~72% ritme sore
+        
+        // Sleep Stages & Jadwal
+        let baselineEfficiency = validEfficiency.isEmpty ? 88.4 : Self.calculateMedian(of: validEfficiency.sorted())
+        let baselineAwake = validAwake.isEmpty ? 45.0 : Self.calculateMedian(of: validAwake.sorted())
+        let baselineDeep = validDeep.isEmpty ? 70.0 : Self.calculateMedian(of: validDeep.sorted())
+        let baselineRem = validRem.isEmpty ? 88.0 : Self.calculateMedian(of: validRem.sorted())
+        let baselineCore = validCore.isEmpty ? 238.0 : Self.calculateMedian(of: validCore.sorted())
+        let baselineBedtime = validSleepDetails.first?.formattedBedtime ?? "22:45"
+        let baselineWakeTime = validSleepDetails.first?.formattedWakeTime ?? "06:10"
+        
+        // Kebiasaan Kardiovaskular & Olahraga
+        let workouts = history.compactMap(\.recentWorkoutName).filter { !$0.isEmpty }
+        let typicalWorkoutRange: String? = workouts.isEmpty ? nil : "Pagi hari (06:00 - 08:00)"
+        let minRestingHR = max(55, Int(baselineRestingHR - 3))
+        let maxRestingHR = Int(baselineRestingHR + 4)
+        let restingRange = "\(minRestingHR) - \(maxRestingHR) BPM"
+        let baselineHRV = validHRV.isEmpty ? 29.0 : Self.calculateMedian(of: validHRV.sorted())
         
         return HealthBaseline(
             steps: baselineSteps,
             sleepHours: baselineSleep,
             heartRate: baselineHR,
+            stepsAt1200: stepsAt1200,
+            stepsAt1800: stepsAt1800,
             sleepEfficiency: baselineEfficiency,
             awakeMinutes: baselineAwake,
+            deepSleepMinutes: baselineDeep,
+            remSleepMinutes: baselineRem,
+            coreSleepMinutes: baselineCore,
             bedtimeString: baselineBedtime,
-            wakeTimeString: baselineWakeTime
+            wakeTimeString: baselineWakeTime,
+            restingHeartRate: baselineRestingHR,
+            hrvSDNN: baselineHRV,
+            typicalWorkoutTimeRange: typicalWorkoutRange,
+            typicalRestingHRRange: restingRange,
+            stepsSummary: stepsSummary,
+            sleepSummary: sleepSummary,
+            heartSummary: heartSummary
         )
     }
     
@@ -107,7 +293,7 @@ final class RuleEngine {
         let baselineSleep = baseline.sleepHours
         let baselineHR = baseline.heartRate
         
-        // 2. Evaluasi Domain Aktivitas Fisik (Steps)
+        // 2. Evaluasi Domain Aktivitas Fisik (Steps & Konteks Waktu)
         let now = Date()
         let calendar = Calendar.current
         let currentHour = calendar.component(.hour, from: now)
@@ -138,31 +324,31 @@ final class RuleEngine {
                 activityStatus = "IMPROVED"
                 activityStatusBadge = "Meningkat"
                 let deltaPercentInt = max(1, Int(stepsDelta))
-                activityFindingDescription = "Aktivitas langkah kaki hari ini telah mencapai \(Int(currentSteps)) langkah (+ \(deltaPercentInt)% melampaui baseline harian \(Int(baselineSteps)) langkah). Capaian aktif ini sangat baik dalam melancarkan aliran darah tepi (sirkulasi perifer), melatih kelenturan dinding pembuluh darah, dan menjaga kestabilan tekanan darah."
+                activityFindingDescription = "Aktivitas langkah kaki hari ini telah mencapai \(Int(currentSteps)) langkah (+ \(deltaPercentInt)% melampaui pola harian \(Int(baselineSteps)) langkah). Capaian aktif ini melampaui kebiasaan rutinnya."
             } else if currentHour < 16 {
                 // Pagi hingga Siang (belum melebihi baseline): Langkah masih berproses diakumulasi
                 activityStatus = "STABLE"
                 activityStatusBadge = "Sedang Berjalan"
-                activityFindingDescription = "Langkah pagi hingga siang ini tercatat \(Int(currentSteps)) langkah. Masih ada selisih sekitar \(remainingHours) jam menuju waktu tidur biasanya (pukul \(baseline.bedtimeString)). Langkah \(parentDisplayName) masih akan terus bertambah seiring rutinitas harian. Aktivitas langkah kaki yang teratur sangat bermanfaat membantu kelenturan dinding pembuluh darah dan menjaga kestabilan tekanan darah."
+                activityFindingDescription = "Langkah pagi hingga siang ini tercatat \(Int(currentSteps)) langkah (acuan ritme siang ~\(Int(baseline.stepsAt1200)) langkah). Masih ada waktu sekitar \(remainingHours) jam menuju jam tidur biasanya (pukul \(baseline.bedtimeString)), langkah \(parentDisplayName) masih terus bertambah seiring rutinitas harian."
             } else if currentHour < 21 {
                 // Sore hingga Menjelang Malam (16:00 - 21:00): Checkpoint langkah sore
-                let afternoonCheckpointTarget = baselineSteps * 0.70 // Acuan sore ~70% dari baseline
-                if currentSteps < afternoonCheckpointTarget {
+                let afternoonCheckpointTarget = baseline.stepsAt1800
+                if currentSteps < (afternoonCheckpointTarget * 0.70) {
                     isAfternoonStepPushNeeded = true
                     activityStatus = "STABLE"
                     activityStatusBadge = "Perlu Gerak"
-                    activityFindingDescription = "Waktu aktif hari ini tersisa selisih sekitar \(remainingHours) jam sebelum jam tidur biasanya (pukul \(baseline.bedtimeString)), namun langkah kaki \(parentDisplayName) (\(Int(currentSteps)) langkah) masih di bawah ritme aktivitas sore (acuan target ~\(Int(afternoonCheckpointTarget)) langkah). Caregiver disarankan mengajak \(parentDisplayName) sedikit bergerak atau jalan santai sore 15–20 menit untuk mengejar target langkah. Rutin memenuhi target langkah kaki harian terbukti membantu elastisitas pembuluh darah dan menjaga tekanan darah tetap stabil."
+                    activityFindingDescription = "Waktu aktif hari ini tersisa sekitar \(remainingHours) jam sebelum jam tidur biasanya (pukul \(baseline.bedtimeString)). Langkah kaki \(parentDisplayName) saat ini tercatat \(Int(currentSteps)) langkah (acuan ritme sore ~\(Int(afternoonCheckpointTarget)) langkah). Caregiver dapat mengajak \(parentDisplayName) sedikit bergerak atau jalan santai sore 15–20 menit untuk mencicil langkah harian."
                 } else {
                     activityStatus = "STABLE"
                     activityStatusBadge = "Sedang Berjalan"
-                    activityFindingDescription = "Langkah sore terpantau on-track di \(Int(currentSteps)) langkah dengan selisih sekitar \(remainingHours) jam menuju jam tidur biasanya (pukul \(baseline.bedtimeString)). Rutinitas berjalan santai ini sangat baik untuk sirkulasi darah dan mendukung kestabilan tensi."
+                    activityFindingDescription = "Langkah sore terpantau on-track di \(Int(currentSteps)) langkah dengan sisa waktu sekitar \(remainingHours) jam menuju jam tidur biasanya (pukul \(baseline.bedtimeString)). Langkah harian masih akan berlanjut sesuai kegiatan malam."
                 }
             } else {
-                // Malam hari (>= 21:00): Evaluasi penutupan hari
+                // Malam hari (>= 21:00): Evaluasi penutupan hari definitif
                 if stepsDelta <= -25.0 {
                     activityStatus = "DECLINED"
                     activityStatusBadge = "Menurun"
-                    activityFindingDescription = "Hingga malam hari menjelang jam tidur (pukul \(baseline.bedtimeString)), langkah kaki tercatat \(Int(currentSteps)) langkah (berkurang \(abs(Int(stepsDelta)))% dari baseline \(Int(baselineSteps)) langkah). Pastikan \(parentDisplayName) beristirahat cukup malam ini untuk memulihkan kebugaran dan menstabilkan tekanan darah."
+                    activityFindingDescription = "Hingga malam hari menjelang jam tidur (pukul \(baseline.bedtimeString)), langkah kaki tercatat \(Int(currentSteps)) langkah (berkurang \(abs(Int(stepsDelta)))% dari pola harian \(Int(baselineSteps)) langkah). Pastikan \(parentDisplayName) beristirahat cukup malam ini untuk memulihkan kebugaran."
                 } else {
                     activityStatus = "STABLE"
                     activityStatusBadge = "Stabil"
@@ -176,6 +362,11 @@ final class RuleEngine {
             activityFindingDescription = "Belum ada catatan langkah hari ini di Apple Health."
         }
         
+        let activityEvaluation: RobustEvaluation? = {
+            guard hasSteps, let summary = baseline.stepsSummary else { return nil }
+            return Self.evaluateAgainstReference(value: currentSteps, summary: summary)
+        }()
+        
         let evaluatedActivity = EvaluatedDomainMetric(
             domainName: "Aktivitas Fisik",
             currentValue: hasSteps ? currentSteps : nil,
@@ -185,10 +376,12 @@ final class RuleEngine {
             formattedCurrent: hasSteps ? "\(Int(currentSteps)) langkah" : "—",
             formattedBaseline: "\(Int(baselineSteps)) langkah",
             hasData: hasSteps,
-            customInsight: activityFindingDescription
+            customInsight: activityFindingDescription,
+            robustEvaluation: activityEvaluation,
+            baselineSummary: baseline.stepsSummary
         )
         
-        // 3. Evaluasi Domain Tidur Semalam (Sleep) & Analisis Pola Multi-Hari (3 Hari)
+        // 3. Evaluasi Domain Tidur Semalam (Sleep Stages & Kualitas Lengkap)
         let hasSleep = (today.sleepHours != nil && (today.sleepHours ?? 0) > 0)
         let sleepDelta: Double
         let sleepStatus: String
@@ -201,6 +394,15 @@ final class RuleEngine {
         let bedtimeStr = sleepDetails?.formattedBedtime ?? baseline.bedtimeString
         let wakeTimeStr = sleepDetails?.formattedWakeTime ?? baseline.wakeTimeString
         let awakeEpisodes = sleepDetails?.awakeEpisodes ?? []
+        
+        // Format jam dan menit yang ramah pengguna
+        let currentSleepHours = Int(currentSleep)
+        let currentSleepMins = Int(((currentSleep - Double(currentSleepHours)) * 60.0).rounded())
+        let durationFormatted = currentSleepMins > 0 ? "\(currentSleepHours) jam \(currentSleepMins) menit" : "\(currentSleepHours) jam"
+        
+        let baselineSleepHours = Int(baselineSleep)
+        let baselineSleepMins = Int(((baselineSleep - Double(baselineSleepHours)) * 60.0).rounded())
+        let baselineDurationFormatted = baselineSleepMins > 0 ? "\(baselineSleepHours) jam \(baselineSleepMins) menit" : "\(baselineSleepHours) jam"
         
         // Cek pola 3 hari berturut-turut dari riwayat (Multi-day / 3-Day Pattern - PRD Rule S17/S21/S28)
         let recent3Nights = history.suffix(3)
@@ -230,24 +432,28 @@ final class RuleEngine {
                 sleepStatus = "DECLINED"
                 sleepStatusBadge = "Perlu Perhatian"
                 let hoursLost = String(format: "%.1f", max(0.5, baselineSleep - currentSleep))
-                sleepFindingDescription = "Sudah 3 hari ini \(parentDisplayName) selalu terbangun di sekitar jam \(typicalAwakeTime), dan ini menyebabkan tidur \(parentDisplayName) jadi sedikit sehingga berkurang \(hoursLost) jam dari baseline. Kondisi fragmentasi tidur 3 hari ini cukup perlu diperhatikan karena dapat memicu peningkatan tekanan darah saat tidur dan kelelahan."
-            } else if currentSleep < 6.0 || sleepDelta <= -20.0 || (efficiency != nil && efficiency! < 75.0) {
+                sleepFindingDescription = "Sudah 3 malam berturut-turut waktu tidur \(parentDisplayName) berkurang (semalam hanya \(durationFormatted), berkurang sekitar \(hoursLost) jam dari kebiasaan \(baselineDurationFormatted)). Tren kurang tidur ini perlu diperhatikan karena dapat memicu kelelahan pada orang tua. Luangkan waktu untuk menyapa dan mengecek keadaannya."
+            } else if currentSleep < 5.5 {
+                sleepStatus = "DECLINED"
+                sleepStatusBadge = "Kurang Tidur"
+                sleepFindingDescription = "Tidur semalam sangat singkat, hanya tercatat \(durationFormatted). Durasi ini berada jauh di bawah anjuran istirahat sehat (7–8 jam) maupun kebiasaan \(parentDisplayName) (\(baselineDurationFormatted)). Kurang tidur dapat memicu rasa lemas, mengantuk berlebih, dan pusing di siang hari. Pastikan \(parentDisplayName) dapat beristirahat siang sejenak dan tanyakan apakah ada keluhan rasa tidak nyaman."
+            } else if currentSleep < 6.5 || sleepDelta <= -15.0 || (efficiency != nil && efficiency! < 75.0) {
                 sleepStatus = "DECLINED"
                 sleepStatusBadge = "Menurun"
-                sleepFindingDescription = "Tidur semalam tercatat \(String(format: "%.1f jam", currentSleep)) (berkurang \(abs(Int(sleepDelta)))% dari baseline \(String(format: "%.1f jam", baselineSleep)), efisiensi tidur \(String(format: "%.0f%%", efficiency ?? 80.0))). Waktu terbangun tercatat \(typicalAwakeDuration) menit."
+                sleepFindingDescription = "Istirahat semalam tercatat \(durationFormatted), lebih pendek dari kebiasaan (\(baselineDurationFormatted)) serta di bawah anjuran tidur ideal 7–8 jam. Amati apakah \(parentDisplayName) merasa lelah di siang hari dan pastikan suasana kamar lebih nyaman malam nanti."
             } else if (awakeMinutes ?? 0) >= 35.0 || (efficiency != nil && efficiency! < 85.0) {
                 isSingleDayAwakeWarning = true
                 sleepStatus = "STABLE"
                 sleepStatusBadge = "Stabil"
-                sleepFindingDescription = "Kondisi tidur \(parentDisplayName) masih normal (\(String(format: "%.1f jam", currentSleep))), hanya saja sedikit lebih banyak terbangun sekitar \(typicalAwakeDuration) menit di jam \(typicalAwakeTime). Jika kondisi sering terbangun ini berlangsung selama beberapa hari (≥3 hari), kondisi tekanan darah \(parentDisplayName) saat tidur dapat dipicu meningkat."
+                sleepFindingDescription = "Durasi tidur semalam cukup baik (\(durationFormatted)), meski sempat terbangun sejenak sekitar \(typicalAwakeDuration) menit di sekitar jam \(typicalAwakeTime). Selama total tidur mendekati standar sehat 7–8 jam, fluktuasi kecil ini masih terbilang wajar."
             } else if currentSleep >= 7.0 && sleepDelta >= 10.0 {
                 sleepStatus = "IMPROVED"
                 sleepStatusBadge = "Meningkat"
-                sleepFindingDescription = "Tidur semalam sangat pulas selama \(String(format: "%.1f jam", currentSleep)) dengan efisiensi prima (\(String(format: "%.0f%%", efficiency ?? 90.0)))."
+                sleepFindingDescription = "Tidur semalam sangat pulas selama \(durationFormatted) (kebiasaan: \(baselineDurationFormatted)), memenuhi target istirahat ideal 7–8 jam yang sangat optimal untuk memulihkan stamina fisik dan kesegaran tubuh di pagi hari."
             } else {
                 sleepStatus = "STABLE"
                 sleepStatusBadge = "Stabil"
-                sleepFindingDescription = "Pola tidur semalam terpantau stabil (\(String(format: "%.1f jam", currentSleep))) dengan jam tidur pukul \(bedtimeStr) dan bangun pukul \(wakeTimeStr)."
+                sleepFindingDescription = "Pola tidur semalam terpantau stabil dan sehat selama \(durationFormatted) (selaras dengan kebiasaan: \(baselineDurationFormatted) dan standar 7–8 jam). Fluktuasi ringan harian masih terbilang wajar dan normal. Jadwal tidur terpantau teratur pukul \(bedtimeStr) hingga \(wakeTimeStr)."
             }
         } else {
             sleepDelta = 0.0
@@ -256,19 +462,26 @@ final class RuleEngine {
             sleepFindingDescription = "Belum ada catatan tidur semalam di Apple Health."
         }
         
+        let sleepEvaluation: RobustEvaluation? = {
+            guard hasSleep, let summary = baseline.sleepSummary else { return nil }
+            return Self.evaluateAgainstReference(value: currentSleep, summary: summary)
+        }()
+        
         let evaluatedSleep = EvaluatedDomainMetric(
             domainName: "Tidur Semalam",
             currentValue: hasSleep ? currentSleep : nil,
             baselineValue: baselineSleep,
             deltaPercentage: sleepDelta,
             status: sleepStatusBadge,
-            formattedCurrent: hasSleep ? String(format: "%.1f jam", currentSleep) : "—",
-            formattedBaseline: String(format: "%.1f jam", baselineSleep),
+            formattedCurrent: hasSleep ? durationFormatted : "—",
+            formattedBaseline: baselineDurationFormatted,
             hasData: hasSleep,
-            customInsight: sleepFindingDescription
+            customInsight: sleepFindingDescription,
+            robustEvaluation: sleepEvaluation,
+            baselineSummary: baseline.sleepSummary
         )
         
-        // 4. Evaluasi Domain Detak Jantung (Heart Rate Tunggal, Tanpa RHR)
+        // 4. Evaluasi Domain Detak Jantung & Konteks Olahraga
         let liveHR = today.latestHeartRate
         let liveHRDate = today.latestHeartRateDate
         let isWorkout = today.isWorkoutActive
@@ -288,27 +501,26 @@ final class RuleEngine {
             let currentHRInt = Int(currentHR)
             
             if isWorkout {
-                // Saat Berolahraga: Peningkatan detak jantung adalah respon alami & baik
+                // Saat Berolahraga: Peningkatan detak jantung adalah respon alami & baik!
                 heartStatus = "IMPROVED"
                 heartStatusBadge = "Meningkat Wajar (Olahraga)"
                 heartFindingDescription = "Detak jantung terkini terpantau \(currentHRInt) BPM, meningkat secara wajar karena \(parentDisplayName) sedang atau baru saja berolahraga (\(workoutName ?? "aktivitas fisik")). Respon kardiovaskular ini baik untuk melatih kekuatan jantung."
             } else if currentHR > (baselineHR + 8.0) || currentHR > 85.0 {
-                // Saat Santai / Tanpa Olahraga tapi Denyut Meningkat: BUKAN hal bagus!
-                // Menandakan beban vaskular berlebih, kelelahan, kurang hidrasi, atau stres
+                // Saat Santai / Tanpa Olahraga tapi Denyut Meningkat:
                 isLiveHRElevatedWithoutWorkout = true
                 heartStatus = "DECLINED"
                 heartStatusBadge = "Meningkat (Perlu Perhatian)"
-                heartFindingDescription = "Detak jantung terkini terpantau \(currentHRInt) BPM saat kondisi santai, lebih tinggi dari baseline 14 hari (\(hrBaselineInt) BPM). Denyut yang meningkat di saat istirahat dapat mengindikasikan tubuh mengalami kelelahan, kurang cairan (dehidrasi), atau beban kardiovaskular berlebih. Pastikan \(parentDisplayName) minum segelas air putih dan beristirahat santai sejenak."
+                heartFindingDescription = "Detak jantung terkini terpantau \(currentHRInt) BPM saat kondisi santai tanpa aktivitas olahraga, lebih tinggi dari kebiasaan istirahat 14 hari (\(hrBaselineInt) BPM, rentang kebiasaan \(baseline.typicalRestingHRRange)). Denyut yang meningkat di saat istirahat dapat mengindikasikan tubuh mengalami kelelahan, kurang cairan (dehidrasi), atau beban kardiovaskular. Pastikan \(parentDisplayName) minum segelas air putih dan beristirahat santai sejenak."
             } else if currentHR < 55.0 {
                 // Denyut Cenderung Lambat (Bradikardia ringan pada lansia)
                 heartStatus = "DECLINED"
                 heartStatusBadge = "Cenderung Lambat"
-                heartFindingDescription = "Detak jantung terkini tercatat \(currentHRInt) BPM (lebih lambat dari baseline \(hrBaselineInt) BPM). Tanyakan apakah \(parentDisplayName) merasa pusing atau lemas, dan pastikan istirahat cukup."
+                heartFindingDescription = "Detak jantung terkini tercatat \(currentHRInt) BPM (lebih lambat dari pola istirahat \(hrBaselineInt) BPM). Tanyakan apakah \(parentDisplayName) merasa pusing atau lemas, dan pastikan istirahat cukup."
             } else {
-                // Normal & Stabil (60 - 80 BPM, dekat dengan baseline)
+                // Normal & Stabil
                 heartStatus = "STABLE"
                 heartStatusBadge = "Stabil"
-                heartFindingDescription = "Detak jantung terkini terpantau \(currentHRInt) BPM dalam ritme santai, stabil selaras dengan baseline 14 hari (\(hrBaselineInt) BPM). Rentang denyut ini sangat baik dan aman bagi orang tua."
+                heartFindingDescription = "Detak jantung terkini terpantau \(currentHRInt) BPM dalam ritme santai, stabil selaras dengan pola istirahat 14 hari (\(hrBaselineInt) BPM). Rentang denyut ini berada di batas normal dan aman bagi orang tua."
             }
         } else {
             hrDelta = 0.0
@@ -316,6 +528,11 @@ final class RuleEngine {
             heartStatusBadge = "Belum Ada Data"
             heartFindingDescription = "Belum ada catatan detak jantung hari ini di Apple Health."
         }
+        
+        let heartEvaluation: RobustEvaluation? = {
+            guard hasHeart, let summary = baseline.heartSummary else { return nil }
+            return Self.evaluateAgainstReference(value: currentHR, summary: summary)
+        }()
         
         let evaluatedHeart = EvaluatedDomainMetric(
             domainName: "Detak Jantung",
@@ -326,7 +543,9 @@ final class RuleEngine {
             formattedCurrent: hasHeart ? "\(Int(currentHR)) BPM" : "—",
             formattedBaseline: "\(Int(baselineHR)) BPM",
             hasData: hasHeart,
-            customInsight: heartFindingDescription
+            customInsight: heartFindingDescription,
+            robustEvaluation: heartEvaluation,
+            baselineSummary: baseline.heartSummary
         )
         
         // 5. Tentukan Status Overview Hari Ini vs Baseline (Hanya dari domain yang memiliki data riil)
@@ -347,11 +566,11 @@ final class RuleEngine {
             overallCondition = "STABLE"
             dominantDelta = 0.0
             statusBadge = "Belum Ada Data Sensor"
-        } else if declinedCount >= 1 && (stepsDelta <= -25.0 || sleepDelta <= -25.0 || hrDelta >= 12.0 || isLiveHRElevatedWithoutWorkout || declinedCount >= 2) {
+        } else if declinedCount >= 1 && (stepsDelta <= -25.0 || sleepDelta <= -20.0 || (hasSleep && currentSleep < 6.0) || hrDelta >= 12.0 || isLiveHRElevatedWithoutWorkout || declinedCount >= 2) {
             overallCondition = "DECLINED"
             let drops = [hasSteps ? stepsDelta : 0, hasSleep ? sleepDelta : 0, hasHeart ? -hrDelta : 0].filter { $0 < 0 }
             dominantDelta = drops.min() ?? -15.0
-            statusBadge = "Penurunan \(abs(Int(dominantDelta)))%"
+            statusBadge = (hasSleep && currentSleep < 5.5) ? "Kurang Tidur" : "Penurunan \(abs(Int(dominantDelta)))%"
         } else if improvedCount >= 1 && declinedCount == 0 {
             overallCondition = "IMPROVED"
             let gains = [hasSteps ? stepsDelta : 0, hasSleep ? sleepDelta : 0].filter { $0 > 0 }
@@ -363,22 +582,22 @@ final class RuleEngine {
             statusBadge = "Kondisi Stabil"
         }
         
-        // 6. Buat Fakta Terukur
+        // 6. Buat Fakta Terukur (Diselaraskan dengan PRD Section 10 & Benchmark Klinis Jurnal)
         var facts: [String] = []
         let baselineStepsInt = Int(baselineSteps)
-        if baselineSteps < 3000 {
-            facts.append("Standar Lansia: Rekomendasi kebugaran lansia untuk menjaga elastisitas pembuluh darah adalah minimal 3.000–4.000 langkah/hari. Baseline 14 hari \(parentDisplayName) saat ini adalah \(baselineStepsInt) langkah (tergolong rendah). Walaupun kondisi hari ini stabil selaras dengan kebiasaannya, target aktivitas ini baiknya ditingkatkan secara bertahap demi kestabilan tekanan darah.")
+        if baselineSteps < Double(ClinicalBenchmark.recommendedStepsSenior) {
+            facts.append("Karakteristik Aktivitas: Pola dasar harian \(parentDisplayName) adalah \(baselineStepsInt) langkah (relatif rendah dibanding rujukan minimal aktif jurnal geriatri 3.000 langkah/hari). Peningkatan aktivitas sebaiknya dilakukan bertahap dan santai sesuai kemampuan.")
         } else {
-            facts.append("Standar Lansia: Baseline harian \(parentDisplayName) (\(baselineStepsInt) langkah) telah memenuhi target aktif lansia (minimal 3.000 langkah/hari).")
+            facts.append("Karakteristik Aktivitas: Pola dasar harian \(parentDisplayName) berada di angka \(baselineStepsInt) langkah, selaras dengan rujukan aktif sehat geriatri (≥3.000 langkah/hari).")
         }
-        facts.append("Aktivitas: \(activityFindingDescription) [Data: \(evaluatedActivity.formattedCurrent) vs baseline \(evaluatedActivity.formattedBaseline), status: \(activityStatusBadge), sisa waktu: \(remainingHours) jam ke jam tidur \(baseline.bedtimeString)]")
-        facts.append("Tidur Semalam: \(sleepFindingDescription) [Data: \(evaluatedSleep.formattedCurrent) vs baseline \(evaluatedSleep.formattedBaseline), Jadwal: \(bedtimeStr) - \(wakeTimeStr), Efisiensi: \(String(format: "%.1f%%", efficiency ?? 88.4)), Terbangun: \(typicalAwakeDuration) menit di sekitar jam \(typicalAwakeTime)].")
-        facts.append("Detak Jantung: \(heartFindingDescription) [Detak Jantung: \(evaluatedHeart.formattedCurrent) vs baseline \(evaluatedHeart.formattedBaseline), status: \(heartStatusBadge), Olahraga: \(isWorkout ? (workoutName ?? "Aktif") : "Tidak Ada")]")
+        facts.append("Aktivitas: \(activityFindingDescription) [Data Hari Ini: \(evaluatedActivity.formattedCurrent), Baseline Personal: \(evaluatedActivity.formattedBaseline), Target Rujukan Jurnal Lansia: \(ClinicalBenchmark.stepsReferenceNote), status: \(activityStatusBadge), sisa waktu: \(remainingHours) jam ke jam tidur \(baseline.bedtimeString)]")
+        facts.append("Tidur Semalam: \(sleepFindingDescription) [Durasi Riil Semalam: \(evaluatedSleep.formattedCurrent), Durasi Pola Kebiasaan 14 Hari: \(evaluatedSleep.formattedBaseline), Standar Sehat Medis: \(ClinicalBenchmark.sleepReferenceNote), Jadwal: \(bedtimeStr) - \(wakeTimeStr), Efisiensi: \(String(format: "%.1f%%", efficiency ?? 88.4)), Terbangun: \(typicalAwakeDuration) menit di sekitar jam \(typicalAwakeTime)].")
+        facts.append("Detak Jantung: \(heartFindingDescription) [Detak Jantung Hari Ini: \(evaluatedHeart.formattedCurrent), Baseline Personal: \(evaluatedHeart.formattedBaseline), Rentang Rujukan Normal Santai: \(ClinicalBenchmark.restingHRReferenceNote), status: \(heartStatusBadge), Olahraga: \(isWorkout ? (workoutName ?? "Aktif") : "Tidak Ada")]")
         
         // 7. Tentukan Rekomendasi Tindakan (Allowed Actions)
         var allowedActions: [String] = []
         if isAfternoonStepPushNeeded {
-            allowedActions.append("Ajak \(parentDisplayName) jalan santai sore 15–20 menit untuk mengejar target langkah, melancarkan aliran darah, dan mendukung kestabilan tensi.")
+            allowedActions.append("Ajak \(parentDisplayName) jalan santai sore 15–20 menit ringan sesuai kenyamanan untuk mendukung sirkulasi darah.")
         }
         if isLiveHRElevatedWithoutWorkout {
             allowedActions.append("Pastikan \(parentDisplayName) minum segelas air putih dan beristirahat santai sejenak untuk menstabilkan denyut jantung.")
@@ -414,6 +633,14 @@ final class RuleEngine {
             }
         }
         
+        // 8. Evaluasi Triage Push Notification (PRD Section 3, 5, 6)
+        let pushDecision = evaluatePushRules(
+            today: today,
+            history: history,
+            baseline: baseline,
+            parentDisplayName: parentDisplayName
+        )
+        
         let overview = EvaluatedHealthOverview(
             conditionStatus: overallCondition,
             statusBadge: statusBadge,
@@ -427,14 +654,15 @@ final class RuleEngine {
             isWorkoutActive: isWorkout,
             workoutName: workoutName,
             facts: facts,
-            allowedActions: allowedActions
+            allowedActions: allowedActions,
+            pushDecision: pushDecision
         )
         
         let summaryPromptDetail: String
         if overallCondition == "STABLE" && baselineSteps < 3000 {
-            summaryPromptDetail = "Evaluasi kondisi \(parentDisplayName) hari ini: status \(statusBadge). Kondisi hari ini selaras dengan kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Namun jelaskan secara hangat bahwa baseline kebiasaan tersebut sebenarnya masih di bawah target anjuran lansia (3.000–4.000 langkah/hari). Sarankan bahwa walau hari ini stabil, target aktivitas ke depannya baiknya ditingkatkan secara bertahap agar kelenturan pembuluh darah lebih optimal dan menjaga kestabilan tekanan darah."
+            summaryPromptDetail = "Evaluasi kondisi \(parentDisplayName) hari ini: status \(statusBadge). Kondisi hari ini selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Pola dasar \(parentDisplayName) relatif rendah, sehingga peningkatan aktivitas sebaiknya dilakukan bertahap dan sesuai kemampuan. Jelaskan secara ramah bahwa aktivitas fisik rutin secara umum mendukung kesehatan kardiovaskular dan kebugaran, tetapi \(parentDisplayName) tidak perlu memaksakan diri."
         } else {
-            summaryPromptDetail = "Evaluasi kondisi \(parentDisplayName) hari ini: status \(statusBadge). Bandingkan dengan baseline 14 hari."
+            summaryPromptDetail = "Evaluasi kondisi \(parentDisplayName) hari ini: status \(statusBadge). Bandingkan dengan baseline 14 hari secara ramah, tenang, dan objektif."
         }
         
         let input = LLMInsightInput(
@@ -479,6 +707,275 @@ final class RuleEngine {
         return (overview, input)
     }
     
+    // MARK: - Push Notification Rules Evaluation (PRD PRD_Push_Notification_and_AI_Insight.md)
+    
+    func evaluatePushRules(
+        today: DailyHealthSummary,
+        history: [DailyHealthSummary],
+        baseline: HealthBaseline,
+        parentDisplayName: String
+    ) -> PushTriageDecision {
+        var triggers: [PushRuleTrigger] = []
+        
+        let currentSteps = today.stepCount ?? 0.0
+        let baselineSteps = baseline.steps
+        let currentSleep = today.sleepHours ?? 0.0
+        let baselineSleep = baseline.sleepHours
+        let currentHR = today.latestHeartRate ?? 0.0
+        let baselineHR = baseline.heartRate
+        let hasSteps = (today.stepCount != nil && (today.stepCount ?? 0) > 0)
+        let hasSleep = (today.sleepHours != nil && (today.sleepHours ?? 0) > 0)
+        let hasHeart = (today.latestHeartRate != nil && (today.latestHeartRate ?? 0) > 0)
+        let sleepDetails = today.sleepDetails
+        
+        // Multi-night / Multi-day samples (7 days & consecutive)
+        let recent7Days = history.suffix(7)
+        let recent2Days = history.suffix(2)
+        let recent3Days = history.suffix(3)
+        
+        // --- 1. SLEEP RULES (P-S*) ---
+        if hasSleep {
+            let sleepHistory7 = recent7Days.compactMap(\.sleepHours).filter { $0 > 0 }
+            let countShortSleep7 = sleepHistory7.filter { $0 < 6.0 }.count + (currentSleep < 6.0 ? 1 : 0)
+            let countVeryShortSleep7 = sleepHistory7.filter { $0 <= 5.0 }.count + (currentSleep <= 5.0 ? 1 : 0)
+            
+            let sleepHistory2 = recent2Days.compactMap(\.sleepHours).filter { $0 > 0 }
+            let is2NightsConsecutiveShort = sleepHistory2.count >= 1 && sleepHistory2.allSatisfy { $0 < 6.0 } && currentSleep < 6.0
+            
+            // P-S3: Total sleep <6 jam >=2 malam berturut atau >=3/7 hari -> P2
+            if is2NightsConsecutiveShort || countShortSleep7 >= 3 {
+                triggers.append(PushRuleTrigger(
+                    ruleId: "P-S3",
+                    domain: "sleep",
+                    ruleName: "SLEEP_SHORT_REPEATED",
+                    pushClass: .p2,
+                    reason: "Total tidur \(parentDisplayName) kurang dari 6 jam selama beberapa malam.",
+                    action: "Hubungi \(parentDisplayName) hari ini dan tanyakan apakah ada gangguan tidur."
+                ))
+            }
+            
+            // P-S4: Total sleep <=5 jam >=2 malam/7 hari -> P2
+            if countVeryShortSleep7 >= 2 {
+                triggers.append(PushRuleTrigger(
+                    ruleId: "P-S4",
+                    domain: "sleep",
+                    ruleName: "SLEEP_VERY_SHORT_REPEATED",
+                    pushClass: .p2,
+                    reason: "Durasi tidur sangat singkat (≤5 jam) dalam beberapa hari terakhir.",
+                    action: "Check-in kondisi \(parentDisplayName) hari ini dan pantau tensi bila tersedia."
+                ))
+            }
+            
+            // P-S5: Sleep efficiency <80% >=2 malam berturut atau >=3/7 hari -> P2
+            if let eff = sleepDetails?.sleepEfficiency {
+                let effHistory7 = recent7Days.compactMap(\.sleepDetails?.sleepEfficiency).filter { $0 > 0 }
+                let countLowEff7 = effHistory7.filter { $0 < 80.0 }.count + (eff < 80.0 ? 1 : 0)
+                let is2NightsLowEff = recent2Days.compactMap(\.sleepDetails?.sleepEfficiency).filter { $0 > 0 }.allSatisfy { $0 < 80.0 } && eff < 80.0
+                if is2NightsLowEff || countLowEff7 >= 3 {
+                    triggers.append(PushRuleTrigger(
+                        ruleId: "P-S5",
+                        domain: "sleep",
+                        ruleName: "SLEEP_EFFICIENCY_LOW_REPEATED",
+                        pushClass: .p2,
+                        reason: "Kualitas tidur kurang efisien (<80%) selama beberapa malam.",
+                        action: "Tanyakan apakah sering terbangun, rasa nyeri, atau sering buang air kecil di malam hari."
+                    ))
+                }
+            }
+            
+            // P-S6: Awake >60 menit >=3 malam/7 hari -> P2
+            if let awake = sleepDetails?.awakeMinutes {
+                let awakeHistory7 = recent7Days.compactMap(\.sleepDetails?.awakeMinutes)
+                let countLongAwake7 = awakeHistory7.filter { $0 > 60.0 }.count + (awake > 60.0 ? 1 : 0)
+                if countLongAwake7 >= 3 {
+                    triggers.append(PushRuleTrigger(
+                        ruleId: "P-S6",
+                        domain: "sleep",
+                        ruleName: "AWAKE_DURATION_HIGH_REPEATED",
+                        pushClass: .p2,
+                        reason: "Waktu terbangun di tengah malam melebihi 60 menit selama 3 malam atau lebih.",
+                        action: "Check-in kondisi tidur \(parentDisplayName); jangan mendiagnosis insomnia."
+                    ))
+                }
+            }
+        }
+        
+        // --- 2. ACTIVITY RULES (P-A*) ---
+        if hasSteps && baselineSteps > 0 {
+            let stepsPct = (currentSteps / baselineSteps) * 100.0
+            let stepsHistory7 = recent7Days.compactMap(\.stepCount).filter { $0 > 0 }
+            let countLowSteps7 = stepsHistory7.filter { ($0 / baselineSteps) * 100.0 < 70.0 }.count + (stepsPct < 70.0 ? 1 : 0)
+            let stepsHistory2 = recent2Days.compactMap(\.stepCount).filter { $0 > 0 }
+            let is2DaysBelow50 = stepsHistory2.count >= 1 && stepsHistory2.allSatisfy { ($0 / baselineSteps) * 100.0 < 50.0 } && stepsPct < 50.0
+            
+            // P-A4: Steps <25% baseline -> P3
+            if stepsPct < 25.0 {
+                triggers.append(PushRuleTrigger(
+                    ruleId: "P-A4",
+                    domain: "activity",
+                    ruleName: "STEPS_SEVERE_DROP",
+                    pushClass: .p3,
+                    reason: "Aktivitas fisik hari ini turun sangat signifikan (<25% baseline).",
+                    action: "Pastikan \(parentDisplayName) aman dan tidak mengalami lemas atau keluhan lain."
+                ))
+            } else if is2DaysBelow50 {
+                // P-A3: Steps <50% baseline >=2 hari berturut -> P2
+                triggers.append(PushRuleTrigger(
+                    ruleId: "P-A3",
+                    domain: "activity",
+                    ruleName: "STEPS_LOW_CONSECUTIVE",
+                    pushClass: .p2,
+                    reason: "Langkah kaki berada di bawah 50% baseline selama 2 hari berturut-turut.",
+                    action: "Hubungi \(parentDisplayName) hari ini untuk menanyakan kabar dan kondisi fisik."
+                ))
+            } else if countLowSteps7 >= 3 && stepsPct < 70.0 {
+                // P-A2: Steps 50–<70% baseline >=3 hari/7 hari -> P2
+                triggers.append(PushRuleTrigger(
+                    ruleId: "P-A2",
+                    domain: "activity",
+                    ruleName: "STEPS_LOW_PATTERN",
+                    pushClass: .p2,
+                    reason: "Aktivitas langkah kaki berada di bawah 70% baseline selama 3 hari dalam seminggu.",
+                    action: "Tanyakan apakah ada rasa lemas, nyeri, pusing, atau perubahan jadwal."
+                ))
+            }
+        }
+        
+        // --- 3. HEART RATE & RESTING HR RULES (P-H* & P-R*) ---
+        if hasHeart && baselineHR > 0 {
+            let hrDeltaBPM = currentHR - baselineHR
+            let isWorkout = today.isWorkoutActive
+            
+            if !isWorkout {
+                // P-H5 / P-R3: Resting HR naik >=20 bpm saat santai -> P3
+                if hrDeltaBPM >= 20.0 {
+                    triggers.append(PushRuleTrigger(
+                        ruleId: "P-H5",
+                        domain: "heart",
+                        ruleName: "HR_SPIKE_AT_REST",
+                        pushClass: .p3,
+                        reason: "Detak jantung istirahat terdeteksi naik cukup tinggi (+20 BPM) di atas baseline.",
+                        action: "Check-in prioritas; tanyakan apakah ada rasa berdebar, lemas, atau pusing."
+                    ))
+                } else if hrDeltaBPM >= 10.0 {
+                    // Cek riwayat RHR 2-3 hari
+                    let hrHistory3 = recent3Days.compactMap { $0.latestHeartRate ?? $0.meanHeartRate24h }.filter { $0 > 0 }
+                    let isHRHigh2Days = hrHistory3.count >= 1 && hrHistory3.allSatisfy { ($0 - baselineHR) >= 8.0 }
+                    if isHRHigh2Days {
+                        // P-H4 / P-R2: RHR naik >=10 bpm >=2-3 hari -> P2
+                        triggers.append(PushRuleTrigger(
+                            ruleId: "P-H4",
+                            domain: "heart",
+                            ruleName: "RHR_ELEVATED_MULTI_DAY",
+                            pushClass: .p2,
+                            reason: "Detak jantung istirahat meningkat ≥10 BPM selama beberapa hari berturut-turut.",
+                            action: "Check-in hari ini; bila tersedia bantu ukur tekanan darah dan cukupkan minum air."
+                        ))
+                    }
+                }
+            }
+        }
+        
+        // --- 4. MULTI-DOMAIN COMBINATIONS (P-R4, P-R5, P-R6, P-A5) ---
+        let isSleepPoor = hasSleep && (currentSleep < 6.0 || (baselineSleep > 0 && ((currentSleep - baselineSleep) / baselineSleep) <= -0.20))
+        let isStepsLow = hasSteps && baselineSteps > 0 && ((currentSteps / baselineSteps) <= 0.60)
+        let isHRElevated = hasHeart && baselineHR > 0 && (currentHR - baselineHR >= 8.0) && !today.isWorkoutActive
+        
+        if (isSleepPoor && isStepsLow) || (isHRElevated && (isSleepPoor || isStepsLow)) {
+            // Multi-domain escalated warning -> P3
+            triggers.append(PushRuleTrigger(
+                ruleId: "P-R6",
+                domain: "multi",
+                ruleName: "MULTI_DOMAIN_ELEVATED_CONCERN",
+                pushClass: .p3,
+                reason: "Terjadi perubahan bersamaan pada istirahat, aktivitas, dan ritme detak jantung.",
+                action: "Hubungi \(parentDisplayName) hari ini; tanyakan kondisi dan bantu ukur tensi bila ada tensimeter."
+            ))
+        }
+        
+        // Pilih trigger dengan keparahan tertinggi
+        guard let highestTrigger = triggers.max(by: { $0.pushClass < $1.pushClass }) else {
+            return PushTriageDecision(
+                shouldPush: false,
+                pushClass: .p0,
+                concernState: .observation,
+                triggeredRules: [],
+                payload: nil,
+                suppressionReason: "no_actionable_push"
+            )
+        }
+        
+        let highestClass = highestTrigger.pushClass
+        guard highestClass.requiresPush else {
+            return PushTriageDecision(
+                shouldPush: false,
+                pushClass: highestClass,
+                concernState: .observation,
+                triggeredRules: triggers,
+                payload: nil,
+                suppressionReason: "informational_or_dashboard_only"
+            )
+        }
+        
+        let concernState: ConcernState
+        switch highestClass {
+        case .p2: concernState = .newConcern
+        case .p3: concernState = .escalatedConcern
+        case .p4: concernState = .urgentOverride
+        default: concernState = .observation
+        }
+        
+        // Bangun payload push: singkat (<= 160 chars), wajib sebutkan aksi
+        let ruleIds = triggers.map(\.ruleId)
+        let title: String
+        let body: String
+        
+        switch highestClass {
+        case .p4:
+            title = "Perhatian Penting: \(parentDisplayName)"
+            body = "Terdeteksi sinyal keselamatan penting. Hubungi \(parentDisplayName) segera untuk memastikan keadaannya."
+        case .p3:
+            title = "Perubahan Pola Perlu Diperhatikan"
+            body = "Tidur dan aktivitas \(parentDisplayName) berubah beberapa hari ini. Hubungi \(parentDisplayName) hari ini dan bila ada tensimeter bantu ukur tensi."
+        case .p2:
+            title = "Perhatian untuk \(parentDisplayName)"
+            body = "\(highestTrigger.reason) \(highestTrigger.action)"
+        default:
+            title = "Info Kesehatan \(parentDisplayName)"
+            body = highestTrigger.action
+        }
+        
+        // Pangkas body bila lebih dari 160 karakter untuk kepatuhan PRD Section 8.1
+        let trimmedBody: String
+        if body.count > 160 {
+            let index = body.index(body.startIndex, offsetBy: 157)
+            trimmedBody = String(body[..<index]) + "..."
+        } else {
+            trimmedBody = body
+        }
+        
+        let payload = CaregiverPushPayload(
+            title: title,
+            body: trimmedBody,
+            urgency: highestClass,
+            ruleIds: ruleIds,
+            domain: highestTrigger.domain,
+            eventId: (highestClass == .p4) ? "\(parentDisplayName)_\(Date().timeIntervalSince1970)" : nil,
+            timestamp: Date()
+        )
+        
+        return PushTriageDecision(
+            shouldPush: true,
+            pushClass: highestClass,
+            concernState: concernState,
+            triggeredRules: triggers,
+            payload: payload,
+            suppressionReason: nil
+        )
+    }
+    
+    // MARK: - Local Fallback Generator
+    
     // MARK: - Local Fallback Generator
     
     func makeLocalFallbackInsight(from overview: EvaluatedHealthOverview, parentName: String = "Ibu") -> LLMInsightOutput {
@@ -491,46 +988,97 @@ final class RuleEngine {
         default:
             let baselineStepsInt = Int(overview.baseline.steps)
             if overview.baseline.steps < 3000 {
-                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Namun, berdasarkan acuan kebugaran lansia, target ideal untuk menjaga kesehatan vaskular adalah minimal 3.000–4.000 langkah per hari. Walaupun hari ini stabil, ritme aktivitas \(parentName) baiknya mulai ditingkatkan perlahan (seperti menambah jalan santai 10–15 menit) agar sirkulasi darah lebih optimal dan membantu menjaga kestabilan tekanan darah jangka panjang."
+                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola 14 hari terakhir (\(baselineStepsInt) langkah). Pola dasar \(parentName) relatif rendah, sehingga peningkatan aktivitas sebaiknya dilakukan bertahap dan sesuai kemampuan. Aktivitas fisik ringan rutin secara umum baik mendukung kebugaran tanpa perlu memaksakan diri."
             } else {
-                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Pola aktivitas harian ini sudah sangat baik dalam mendukung kelenturan pembuluh darah dan kesehatan jantung."
+                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Pola aktivitas harian ini sudah baik dalam mendukung kebugaran tubuh."
             }
         }
         
-        let actInsight: String
-        if let custom = overview.activity.customInsight, !custom.isEmpty {
-            actInsight = custom
-        } else if !overview.activity.hasData {
-            actInsight = "Belum ada catatan langkah hari ini di Apple Health."
+        // Build Activity points
+        let actPoints: [String]
+        let currentHour = Calendar.current.component(.hour, from: Date())
+        let baselineStepsInt = Int(overview.baseline.steps)
+        if !overview.activity.hasData {
+            actPoints = [
+                "Belum ada catatan langkah kaki hari ini di Apple Health.",
+                "Data langkah akan diperbarui secara otomatis saat orang tua membawa iPhone atau mengenakan Apple Watch."
+            ]
+        } else if currentHour < 21 && overview.activity.deltaPercentage < 0 {
+            let remHours = max(1, 22 - currentHour)
+            let rujukanNote = baselineStepsInt < ClinicalBenchmark.recommendedStepsSenior ? " Meskipun kebiasaan harian \(parentName) relatif santai dibanding rujukan umum lansia (\(ClinicalBenchmark.stepsReferenceNote)), aktivitas hari ini tetap selaras dengan ritmenya." : ""
+            actPoints = [
+                "Hingga saat ini tercatat \(overview.activity.formattedCurrent) dari kebiasaan harian (\(overview.activity.formattedBaseline)). Namun perbedaan ini masih terbilang wajar dan normal karena hari masih berjalan (tersisa ~\(remHours) jam menuju jam istirahat malam).\(rujukanNote)",
+                "Anak tidak perlu cemas; ajak \(parentName) tetap bergerak aktif santai seperti jalan-jalan ringan di halaman rumah sesuai kemampuan tanpa perlu memaksakan diri."
+            ]
+        } else if overview.activity.deltaPercentage <= -25.0 {
+            actPoints = [
+                "Total langkah hari ini tercatat \(overview.activity.formattedCurrent), lebih rendah dibandingkan kebiasaan harian (\(overview.activity.formattedBaseline)) serta rujukan minimal aktif lansia (\(ClinicalBenchmark.stepsReferenceNote)). Namun satu hari yang lebih santai masih terbilang wajar terjadi.",
+                "Anak dapat menyapa santai untuk memastikan \(parentName) tidak merasa lelah dan memiliki waktu istirahat yang cukup malam ini."
+            ]
         } else {
-            actInsight = "Aktivitas fisik hari ini terpantau stabil dalam rentang yang wajar."
+            let rujukanTarget = baselineStepsInt < ClinicalBenchmark.recommendedStepsSenior ? "Meskipun kebiasaan harian (\(overview.activity.formattedBaseline)) berada di bawah target aktif rujukan jurnal (\(ClinicalBenchmark.stepsReferenceNote)), peningkatan disarankan bertahap." : "Langkah harian ini sudah selaras dengan standar aktif sehat lansia (\(ClinicalBenchmark.stepsReferenceNote))."
+            actPoints = [
+                "Aktivitas langkah hari ini tercatat \(overview.activity.formattedCurrent), tetap stabil dan selaras dengan kebiasaan 14 hari terakhir (\(overview.activity.formattedBaseline)). Perubahan harian masih terbilang wajar dan normal.",
+                "Konsistensi berjalan santai secara rutin sangat baik untuk menjaga kebugaran. \(rujukanTarget)"
+            ]
         }
+        let actInsight = actPoints.joined(separator: " ")
         
-        let sleepInsight: String
+        // Build Sleep points
+        let sleepPoints: [String]
+        let currentSleepVal = overview.sleep.currentValue ?? 0.0
         if !overview.sleep.hasData {
-            sleepInsight = "Belum ada catatan tidur semalam di Apple Health. Catatan tidur dapat diaktifkan melalui Sleep Focus di iPhone atau Apple Watch."
-        } else if let custom = overview.sleep.customInsight, !custom.isEmpty {
-            sleepInsight = custom
-        } else if (overview.sleep.currentValue ?? 8.0) < 6.0 {
-            sleepInsight = "Durasi tidur semalam kurang dari 6 jam (\(overview.sleep.formattedCurrent)). Tanyakan dengan lembut apakah tidur \(parentName) nyenyak semalam."
-        } else if overview.sleep.deltaPercentage >= 10.0 {
-            sleepInsight = "Waktu tidur semalam cukup panjang dan memenuhi kebutuhan istirahat harian."
+            sleepPoints = [
+                "Belum ada catatan tidur semalam di Apple Health.",
+                "Catatan tidur otomatis dapat diaktifkan melalui fitur Jadwal Tidur di iPhone atau Apple Watch."
+            ]
+        } else if currentSleepVal < 5.5 {
+            sleepPoints = [
+                "Waktu istirahat semalam hanya tercatat \(overview.sleep.formattedCurrent), jauh di bawah standar tidur sehat (\(ClinicalBenchmark.sleepReferenceNote)) maupun kebiasaan \(parentName) (\(overview.sleep.formattedBaseline)).",
+                "Durasi tidur yang sangat minim dapat membuat orang tua merasa lemas, mengantuk berlebih, atau pusing di siang hari. Luangkan waktu untuk menyapa \(parentName) dan ingatkan untuk tidur siang sejenak guna memulihkan tenaga."
+            ]
+        } else if currentSleepVal < 6.5 || overview.sleep.deltaPercentage <= -15.0 {
+            sleepPoints = [
+                "Waktu istirahat semalam tercatat \(overview.sleep.formattedCurrent), lebih singkat dibanding kebiasaan (\(overview.sleep.formattedBaseline)) dan berada di bawah anjuran tidur sehat (\(ClinicalBenchmark.sleepReferenceNote)).",
+                "Amati apakah \(parentName) merasa lelah di siang hari dan pastikan kondisi kamar lebih tenang untuk istirahat malam berikutnya."
+            ]
+        } else if overview.sleep.deltaPercentage >= 10.0 && currentSleepVal >= 7.0 {
+            sleepPoints = [
+                "Tidur semalam terpantau sangat pulas selama \(overview.sleep.formattedCurrent), memenuhi target tidur ideal (\(ClinicalBenchmark.sleepReferenceNote)) dan lebih panjang dari kebiasaan (\(overview.sleep.formattedBaseline)).",
+                "Waktu istirahat lelap yang optimal membantu memulihkan stamina fisik dan kesegaran pikiran di pagi hari."
+            ]
         } else {
-            sleepInsight = "Pola tidur semalam stabil dan sesuai dengan durasi acuan biasa."
+            sleepPoints = [
+                "Durasi tidur semalam berada di angka \(overview.sleep.formattedCurrent), konsisten dengan kebiasaan 14 malam terakhir (\(overview.sleep.formattedBaseline)) dan memenuhi anjuran tidur sehat (\(ClinicalBenchmark.sleepReferenceNote)). Fluktuasi kecil ini masih terbilang wajar dan normal.",
+                "Irama tidur yang teratur sangat baik dalam menjaga kesegaran tubuh dan ketenangan pikiran sepanjang hari."
+            ]
         }
+        let sleepInsight = sleepPoints.joined(separator: " ")
         
-        let heartInsight: String
-        if let custom = overview.heart.customInsight, !custom.isEmpty {
-            heartInsight = custom
-        } else if !overview.heart.hasData {
-            heartInsight = "Detak jantung belum tercatat di Apple Health (memerlukan Apple Watch atau sensor denyut terhubung)."
+        // Build Heart points
+        let heartPoints: [String]
+        if !overview.heart.hasData {
+            heartPoints = [
+                "Detak jantung saat santai belum tercatat di Apple Health.",
+                "Pencatatan denyut istirahat memerlukan sensor Apple Watch atau alat monitor denyut yang terhubung."
+            ]
         } else if overview.isWorkoutActive {
-            heartInsight = "Detak jantung meningkat wajar saat berolahraga (\(overview.workoutName ?? "aktivitas fisik"))."
+            heartPoints = [
+                "Peningkatan denyut jantung tercatat sebesar \(overview.heart.formattedCurrent) saat berolahraga (\(overview.workoutName ?? "aktivitas fisik")).",
+                "Kenaikan denyut ini merupakan respons aktif tubuh yang wajar dan sehat selama beraktivitas."
+            ]
         } else if overview.heart.deltaPercentage >= 8.0 {
-            heartInsight = "Detak jantung saat santai sedikit meningkat dibanding baseline. Ingatkan untuk cukup minum air dan beristirahat santai sejenak."
+            heartPoints = [
+                "Denyut jantung saat santai hari ini tercatat \(overview.heart.formattedCurrent), sedikit lebih tinggi dibandingkan pola 14 hari terakhir (\(overview.heart.formattedBaseline)). Namun fluktuasi ringan seperti ini masih terbilang wajar dan dapat dipengaruhi oleh suhu ruangan atau asupan air.",
+                "Anak tidak perlu cemas; ingatkan \(parentName) untuk minum segelas air putih dan beristirahat santai sejenak (rentang normal saat santai menurut AHA adalah \(ClinicalBenchmark.restingHRReferenceNote))."
+            ]
         } else {
-            heartInsight = "Detak jantung berada di rentang normal dan stabil."
+            heartPoints = [
+                "Denyut jantung saat santai berada di angka \(overview.heart.formattedCurrent), stabil dalam rentang kebiasaan 14 hari (\(overview.heart.formattedBaseline)) serta selaras dengan rentang normal santai medis (\(ClinicalBenchmark.restingHRReferenceNote)).",
+                "Ritme denyut istirahat yang tenang ini mencerminkan kondisi pemulihan tubuh yang terjaga baik."
+            ]
         }
+        let heartInsight = heartPoints.joined(separator: " ")
         
         return LLMInsightOutput(
             todayOverview: TodayOverviewInsight(
@@ -544,21 +1092,24 @@ final class RuleEngine {
                 baselineValue: overview.activity.formattedBaseline,
                 deltaPercentage: overview.activity.deltaPercentage,
                 status: overview.activity.status,
-                insight: actInsight
+                insight: actInsight,
+                points: actPoints
             ),
             sleepInsight: DomainMetricInsight(
                 currentValue: overview.sleep.formattedCurrent,
                 baselineValue: overview.sleep.formattedBaseline,
                 deltaPercentage: overview.sleep.deltaPercentage,
                 status: overview.sleep.status,
-                insight: sleepInsight
+                insight: sleepInsight,
+                points: sleepPoints
             ),
             heartInsight: DomainMetricInsight(
                 currentValue: overview.heart.formattedCurrent,
                 baselineValue: overview.heart.formattedBaseline,
                 deltaPercentage: overview.heart.deltaPercentage,
                 status: overview.heart.status,
-                insight: heartInsight
+                insight: heartInsight,
+                points: heartPoints
             ),
             recommendedActions: overview.allowedActions
         )
@@ -579,7 +1130,8 @@ final class RuleEngine {
             baselineValue: overview.activity.formattedBaseline,
             deltaPercentage: overview.activity.deltaPercentage,
             status: overview.activity.status,
-            insight: output.activityInsight.insight
+            insight: output.activityInsight.insight,
+            points: output.activityInsight.points
         )
         
         let cleanedSleep = DomainMetricInsight(
@@ -587,7 +1139,8 @@ final class RuleEngine {
             baselineValue: overview.sleep.formattedBaseline,
             deltaPercentage: overview.sleep.deltaPercentage,
             status: overview.sleep.status,
-            insight: output.sleepInsight.insight
+            insight: output.sleepInsight.insight,
+            points: output.sleepInsight.points
         )
         
         let cleanedHeart = DomainMetricInsight(
@@ -595,7 +1148,8 @@ final class RuleEngine {
             baselineValue: overview.heart.formattedBaseline,
             deltaPercentage: overview.heart.deltaPercentage,
             status: overview.heart.status,
-            insight: output.heartInsight.insight
+            insight: output.heartInsight.insight,
+            points: output.heartInsight.points
         )
         
         return LLMInsightOutput(

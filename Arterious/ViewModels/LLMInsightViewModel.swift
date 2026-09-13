@@ -128,7 +128,14 @@ final class LLMInsightViewModel {
         
         isLoading = false
         
-        // 4. Mulai monitoring real-time Heart Rate (60s timer + HKObserverQuery)
+        // 4. Evaluasi Pengiriman Push Notification Caregiver (PRD Bab 6)
+        if let pushDecision = overview.pushDecision, pushDecision.shouldPush {
+            Task {
+                await PushNotificationService.shared.processAndDeliver(pushDecision)
+            }
+        }
+        
+        // 5. Mulai monitoring real-time Heart Rate (60s timer + HKObserverQuery)
         startRealtimeHeartMonitoring()
     }
     
@@ -191,84 +198,7 @@ final class LLMInsightViewModel {
     // MARK: - Local Fallback Generator
     
     private func makeLocalFallbackInsight(from overview: EvaluatedHealthOverview) -> LLMInsightOutput {
-        let overviewSummary: String
-        switch overview.conditionStatus {
-        case "DECLINED":
-            overviewSummary = "Kondisi \(parentName) hari ini menunjukkan penurunan \(overview.statusBadge.replacingOccurrences(of: "Penurunan ", with: "")) dibandingkan rata-rata 14 hari terakhir. Sebaiknya luangkan waktu untuk menghubungi atau mengecek keadaannya."
-        case "IMPROVED":
-            overviewSummary = "Kondisi \(parentName) hari ini menunjukkan perkembangan positif dibandingkan baseline 14 hari. Aktivitas dan kualitas istirahatnya terpantau lebih baik."
-        default:
-            let baselineStepsInt = Int(overview.baseline.steps)
-            if overview.baseline.steps < 3000 {
-                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Namun, berdasarkan acuan kebugaran lansia, target ideal untuk menjaga kesehatan vaskular adalah minimal 3.000–4.000 langkah per hari. Walaupun hari ini stabil, ritme aktivitas \(parentName) baiknya mulai ditingkatkan perlahan (seperti menambah jalan santai 10–15 menit) agar sirkulasi darah lebih optimal dan membantu menjaga kestabilan tekanan darah jangka panjang."
-            } else {
-                overviewSummary = "Kondisi \(parentName) hari ini terpantau stabil dan selaras dengan pola kebiasaan 14 hari terakhir (\(baselineStepsInt) langkah). Pola aktivitas harian ini sudah sangat baik dalam mendukung kelenturan pembuluh darah dan kesehatan jantung."
-            }
-        }
-        
-        let actInsight: String
-        if let custom = overview.activity.customInsight, !custom.isEmpty {
-            actInsight = custom
-        } else if !overview.activity.hasData {
-            actInsight = "Belum ada catatan langkah hari ini di Apple Health."
-        } else {
-            actInsight = "Aktivitas fisik hari ini terpantau stabil dalam rentang yang wajar."
-        }
-        
-        let sleepInsight: String
-        if !overview.sleep.hasData {
-            sleepInsight = "Belum ada catatan tidur semalam di Apple Health. Catatan tidur dapat diaktifkan melalui Sleep Focus di iPhone atau Apple Watch."
-        } else if let custom = overview.sleep.customInsight, !custom.isEmpty {
-            sleepInsight = custom
-        } else if (overview.sleep.currentValue ?? 8.0) < 6.0 {
-            sleepInsight = "Durasi tidur semalam kurang dari 6 jam (\(overview.sleep.formattedCurrent)). Tanyakan dengan lembut apakah tidur \(parentName) nyenyak semalam."
-        } else if overview.sleep.deltaPercentage >= 10.0 {
-            sleepInsight = "Waktu tidur semalam cukup panjang dan memenuhi kebutuhan istirahat harian."
-        } else {
-            sleepInsight = "Pola tidur semalam stabil dan sesuai dengan durasi acuan biasa."
-        }
-        
-        let heartInsight: String
-        if let custom = overview.heart.customInsight, !custom.isEmpty {
-            heartInsight = custom
-        } else if !overview.heart.hasData {
-            heartInsight = "Detak jantung belum tercatat di Apple Health (memerlukan Apple Watch atau sensor denyut terhubung)."
-        } else if overview.heart.deltaPercentage >= 10.0 {
-            heartInsight = "Detak jantung istirahat sedikit meningkat dibanding baseline. Ingatkan untuk cukup minum air dan jangan terlalu lelah."
-        } else {
-            heartInsight = "Denyut jantung istirahat berada di rentang normal dan stabil."
-        }
-        
-        return LLMInsightOutput(
-            todayOverview: TodayOverviewInsight(
-                conditionStatus: overview.conditionStatus,
-                statusLabel: overview.statusBadge,
-                deltaPercentage: overview.dominantDeltaPercentage,
-                summary: overviewSummary
-            ),
-            activityInsight: DomainMetricInsight(
-                currentValue: overview.activity.formattedCurrent,
-                baselineValue: overview.activity.formattedBaseline,
-                deltaPercentage: overview.activity.deltaPercentage,
-                status: overview.activity.status,
-                insight: actInsight
-            ),
-            sleepInsight: DomainMetricInsight(
-                currentValue: overview.sleep.formattedCurrent,
-                baselineValue: overview.sleep.formattedBaseline,
-                deltaPercentage: overview.sleep.deltaPercentage,
-                status: overview.sleep.status,
-                insight: sleepInsight
-            ),
-            heartInsight: DomainMetricInsight(
-                currentValue: overview.heart.formattedCurrent,
-                baselineValue: overview.heart.formattedBaseline,
-                deltaPercentage: overview.heart.deltaPercentage,
-                status: overview.heart.status,
-                insight: heartInsight
-            ),
-            recommendedActions: overview.allowedActions
-        )
+        ruleEngine.makeLocalFallbackInsight(from: overview, parentName: parentName)
     }
     
     // MARK: - Output Sanitizer
@@ -319,18 +249,48 @@ final class LLMInsightViewModel {
         )
     }
     
-    // MARK: - Smart AI Rate-Limiting & Alert Triggering
+    // MARK: - Smart AI Rate-Limiting & Alert Triggering (PRD Section 9)
     
     private func shouldCallGeminiAPI(for overview: EvaluatedHealthOverview, forceRefresh: Bool = false) -> Bool {
         guard APIConfig.isConfigured else { return false }
+        
+        // 1. Force refresh / Caregiver bertanya/meminta penjelasan
         if forceRefresh { return true }
         
-        // Hanya panggil 1x saat pertama kali aplikasi dijalankan (initial run)
-        if !hasExecutedInitialAICall {
+        // 2. Urgent event (P4): Jangan panggil LLM untuk pesan utama; gunakan template tetap
+        if let push = overview.pushDecision, push.pushClass == .p4 {
+            return false
+        }
+        
+        // 3. Daily overview: Maksimal 1 kali per hari
+        let calendar = Calendar.current
+        let lastCall = UserDefaults.standard.object(forKey: "arterious.lastGeminiCallDate") as? Date
+        let isNewDay: Bool
+        if let lastCall = lastCall {
+            isNewDay = !calendar.isDate(lastCall, inSameDayAs: Date())
+        } else {
+            isNewDay = true
+        }
+        
+        if !hasExecutedInitialAICall || isNewDay {
             return true
         }
         
-        // Pada setiap refresh berikutnya, jangan hit API
+        // 4. Deteksi Concern Baru atau Eskalasi (Severity memburuk / Domain baru terdampak)
+        let lastKnownStatus = UserDefaults.standard.string(forKey: "arterious.lastKnownConditionStatus") ?? "STABLE"
+        let lastKnownPushClass = UserDefaults.standard.string(forKey: "arterious.lastKnownPushClass") ?? "P0"
+        let currentPushClass = overview.pushDecision?.pushClass.rawValue ?? "P0"
+        
+        let hasSeverityChanged = (overview.conditionStatus != lastKnownStatus && overview.conditionStatus == "DECLINED")
+        let hasPushEscalated = (currentPushClass != lastKnownPushClass && (currentPushClass == "P2" || currentPushClass == "P3"))
+        
+        if hasSeverityChanged || hasPushEscalated {
+            UserDefaults.standard.set(overview.conditionStatus, forKey: "arterious.lastKnownConditionStatus")
+            UserDefaults.standard.set(currentPushClass, forKey: "arterious.lastKnownPushClass")
+            return true
+        }
+        
+        // 5. Kondisi tetap sama atau fluktuasi ringan: Gunakan cached insight atau template lokal
         return false
     }
 }

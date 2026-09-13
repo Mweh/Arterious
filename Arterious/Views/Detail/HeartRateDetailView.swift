@@ -6,101 +6,196 @@ struct HeartRateDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SyncViewModel.self) private var syncViewModel
     @State private var selectedRange: TimeRangeOption = .week
+    @State private var selectedIndex: Int? = nil
 
     private struct HRChartItem: Identifiable {
         let id = UUID()
         let label: String
+        let fullDateString: String
         let minBPM: Double
         let maxBPM: Double
-    }
 
-    private var currentChartData: [HRChartItem] {
-        let history = syncViewModel.historicalSummaries
-        let baseline = syncViewModel.healthRecord?.displayHeartRate ?? 72
+        var hasData: Bool {
+            minBPM > 0 && maxBPM > 0
+        }
 
-        switch selectedRange {
-        case .hour:
-            return [
-                HRChartItem(label: "00", minBPM: max(45, baseline - 18), maxBPM: max(55, baseline - 5)),
-                HRChartItem(label: "04", minBPM: max(42, baseline - 22), maxBPM: max(50, baseline - 10)),
-                HRChartItem(label: "08", minBPM: max(55, baseline - 8), maxBPM: min(150, baseline + 32)),
-                HRChartItem(label: "12", minBPM: max(60, baseline - 2), maxBPM: min(165, baseline + 48)),
-                HRChartItem(label: "16", minBPM: max(58, baseline - 4), maxBPM: min(155, baseline + 36)),
-                HRChartItem(label: "20", minBPM: max(52, baseline - 12), maxBPM: min(120, baseline + 15))
-            ]
-
-        case .day:
-            return [
-                HRChartItem(label: "Pagi", minBPM: max(52, baseline - 14), maxBPM: min(145, baseline + 38)),
-                HRChartItem(label: "Siang", minBPM: max(58, baseline - 6), maxBPM: min(160, baseline + 52)),
-                HRChartItem(label: "Sore", minBPM: max(56, baseline - 8), maxBPM: min(140, baseline + 35)),
-                HRChartItem(label: "Malam", minBPM: max(46, baseline - 20), maxBPM: max(68, baseline + 2))
-            ]
-
-        case .week:
-            let df = DateFormatter()
-            df.locale = Locale(identifier: "id_ID")
-            df.dateFormat = "EEE"
-
-            if history.isEmpty {
-                return [
-                    HRChartItem(label: "Min", minBPM: 36, maxBPM: 142),
-                    HRChartItem(label: "Sen", minBPM: 44, maxBPM: 86),
-                    HRChartItem(label: "Sel", minBPM: 45, maxBPM: 80),
-                    HRChartItem(label: "Rab", minBPM: 44, maxBPM: 98),
-                    HRChartItem(label: "Kam", minBPM: 48, maxBPM: 146),
-                    HRChartItem(label: "Jum", minBPM: 43, maxBPM: 132),
-                    HRChartItem(label: "Sab", minBPM: 45, maxBPM: 140)
-                ]
-            }
-
-            let slice = history.suffix(7)
-            return slice.map { summary in
-                let latest = summary.latestHeartRate
-                let minVal = summary.minHeartRate24h ?? (latest.map { max(35, $0 - 15) } ?? 42)
-                let maxVal = summary.maxHeartRate24h ?? (latest.map { min(180, $0 + 20) } ?? 145)
-
-                return HRChartItem(
-                    label: df.string(from: summary.date).capitalized,
-                    minBPM: minVal,
-                    maxBPM: max(maxVal, minVal)
-                )
-            }
-
-        case .month:
-            return [
-                HRChartItem(label: "Mg 1", minBPM: max(38, baseline - 28), maxBPM: min(158, baseline + 55)),
-                HRChartItem(label: "Mg 2", minBPM: max(44, baseline - 18), maxBPM: min(150, baseline + 45)),
-                HRChartItem(label: "Mg 3", minBPM: max(36, baseline - 30), maxBPM: min(167, baseline + 62)),
-                HRChartItem(label: "Mg 4", minBPM: max(42, baseline - 20), maxBPM: min(142, baseline + 40))
-            ]
-
-        case .year:
-            return [
-                HRChartItem(label: "Jan", minBPM: 45, maxBPM: 148),
-                HRChartItem(label: "Feb", minBPM: 42, maxBPM: 142),
-                HRChartItem(label: "Mar", minBPM: 40, maxBPM: 155),
-                HRChartItem(label: "Apr", minBPM: 44, maxBPM: 145),
-                HRChartItem(label: "Mei", minBPM: 46, maxBPM: 158),
-                HRChartItem(label: "Jun", minBPM: 44, maxBPM: 150),
-                HRChartItem(label: "Jul", minBPM: 42, maxBPM: 165),
-                HRChartItem(label: "Agu", minBPM: 45, maxBPM: 156),
-                HRChartItem(label: "Sep", minBPM: 36, maxBPM: 167),
-                HRChartItem(label: "Okt", minBPM: 42, maxBPM: 148),
-                HRChartItem(label: "Nov", minBPM: 44, maxBPM: 144),
-                HRChartItem(label: "Des", minBPM: 45, maxBPM: 152)
-            ]
+        var rangeString: String {
+            hasData ? "\(Int(minBPM))-\(Int(maxBPM)) BPM" : "Tidak ada data"
         }
     }
 
-    private var currentMinBPM: Int {
-        let valid = currentChartData.map(\.minBPM).filter { $0 > 0 }
-        return Int(valid.min() ?? 36)
+    private var allSummaries: [DailyHealthSummary] {
+        var list = syncViewModel.historicalSummaries
+        if let rec = syncViewModel.healthRecord {
+            let calendar = Calendar.current
+            if !list.contains(where: { calendar.isDate($0.date, inSameDayAs: rec.recordDate) }) {
+                list.append(DailyHealthSummary(
+                    date: rec.recordDate,
+                    latestHeartRate: rec.displayHeartRate,
+                    restingHeartRate: rec.restingHeartRate,
+                    minHeartRate24h: rec.displayHeartRate,
+                    maxHeartRate24h: rec.displayHeartRate,
+                    sleepHours: rec.sleepHours,
+                    stepCount: rec.stepCount.map { Double($0) }
+                ))
+            }
+        }
+        return list
     }
 
-    private var currentMaxBPM: Int {
+    private var currentChartData: [HRChartItem] {
+        let calendar = Calendar.current
+        let today = Date()
+
+        switch selectedRange {
+        case .hour:
+            let currentHour = calendar.component(.hour, from: today)
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "id_ID")
+            df.dateFormat = "d MMM yyyy"
+            let todayStr = df.string(from: today)
+
+            let todaySummary = allSummaries.first(where: { calendar.isDateInToday($0.date) })
+            let hr = todaySummary?.latestHeartRate ?? 0
+
+            let hourSlots = [0, 4, 8, 12, 16, 20]
+            return hourSlots.map { slot in
+                let slotLabel = String(format: "%02d:00", slot)
+                let isReached = currentHour >= slot
+                let hasData = isReached && hr > 0
+                let minVal = hasData ? (todaySummary?.minHeartRate24h ?? hr) : 0
+                let maxVal = hasData ? (todaySummary?.maxHeartRate24h ?? hr) : 0
+                return HRChartItem(
+                    label: String(format: "%02d", slot),
+                    fullDateString: "\(slotLabel), \(todayStr)",
+                    minBPM: minVal,
+                    maxBPM: maxVal
+                )
+            }
+
+        case .day:
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "id_ID")
+            df.dateFormat = "d MMM yyyy"
+            let todayStr = df.string(from: today)
+
+            let currentHour = calendar.component(.hour, from: today)
+            let todaySummary = allSummaries.first(where: { calendar.isDateInToday($0.date) })
+            let liveHR = todaySummary?.latestHeartRate ?? todaySummary?.restingHeartRate ?? 0
+            let minHR = todaySummary?.minHeartRate24h ?? (liveHR > 0 ? liveHR : 0)
+            let maxHR = todaySummary?.maxHeartRate24h ?? (liveHR > 0 ? liveHR : 0)
+
+            let segments: [(label: String, name: String, startHour: Int)] = [
+                ("Pagi", "Pagi (06:00 - 12:00)", 6),
+                ("Siang", "Siang (12:00 - 16:00)", 12),
+                ("Sore", "Sore (16:00 - 19:00)", 16),
+                ("Malam", "Malam (19:00 - 24:00)", 19)
+            ]
+
+            return segments.map { seg in
+                let isPastOrCurrent = currentHour >= seg.startHour
+                let hasData = isPastOrCurrent && liveHR > 0
+                return HRChartItem(
+                    label: seg.label,
+                    fullDateString: "\(seg.name), \(todayStr)",
+                    minBPM: hasData ? minHR : 0,
+                    maxBPM: hasData ? maxHR : 0
+                )
+            }
+
+        case .week:
+            let dayFormatter = DateFormatter()
+            dayFormatter.locale = Locale(identifier: "id_ID")
+            dayFormatter.dateFormat = "EEE"
+
+            let fullDateFormatter = DateFormatter()
+            fullDateFormatter.locale = Locale(identifier: "id_ID")
+            fullDateFormatter.dateFormat = "EEEE, d MMM yyyy"
+
+            return (0..<7).reversed().map { dayOffset in
+                let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) ?? today
+                let label = dayFormatter.string(from: targetDate).capitalized
+                let fullDate = fullDateFormatter.string(from: targetDate).capitalized
+
+                if let summary = allSummaries.first(where: { calendar.isDate($0.date, inSameDayAs: targetDate) }) {
+                    let minVal = summary.minHeartRate24h ?? summary.restingHeartRate ?? summary.latestHeartRate ?? 0
+                    let maxVal = summary.maxHeartRate24h ?? summary.latestHeartRate ?? summary.restingHeartRate ?? 0
+                    let realMin = min(minVal, maxVal)
+                    let realMax = max(minVal, maxVal)
+                    return HRChartItem(label: label, fullDateString: fullDate, minBPM: realMin, maxBPM: realMax)
+                } else {
+                    return HRChartItem(label: label, fullDateString: fullDate, minBPM: 0, maxBPM: 0)
+                }
+            }
+
+        case .month:
+            let dfMonth = DateFormatter()
+            dfMonth.locale = Locale(identifier: "id_ID")
+            dfMonth.dateFormat = "MMMM yyyy"
+            let monthStr = dfMonth.string(from: today)
+
+            return (1...4).map { weekNum in
+                let daysAgoEnd = (4 - weekNum) * 7
+                let daysAgoStart = daysAgoEnd + 6
+                let startDate = calendar.date(byAdding: .day, value: -daysAgoStart, to: today) ?? today
+                let endDate = calendar.date(byAdding: .day, value: -daysAgoEnd, to: today) ?? today
+
+                let weekSummaries = allSummaries.filter { $0.date >= startDate && $0.date <= endDate }
+                let mins = weekSummaries.compactMap { $0.minHeartRate24h ?? $0.restingHeartRate ?? $0.latestHeartRate }.filter { $0 > 0 }
+                let maxs = weekSummaries.compactMap { $0.maxHeartRate24h ?? $0.latestHeartRate ?? $0.restingHeartRate }.filter { $0 > 0 }
+
+                let minB = mins.min() ?? 0
+                let maxB = maxs.max() ?? 0
+
+                return HRChartItem(
+                    label: "Mg \(weekNum)",
+                    fullDateString: "Minggu \(weekNum) (\(monthStr))",
+                    minBPM: minB,
+                    maxBPM: maxB
+                )
+            }
+
+        case .year:
+            let dfYear = DateFormatter()
+            dfYear.dateFormat = "yyyy"
+            let yearStr = dfYear.string(from: today)
+
+            let monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+            let fullMonthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+
+            return (1...12).map { monthNum in
+                let monthSummaries = allSummaries.filter {
+                    let comps = calendar.dateComponents([.year, .month], from: $0.date)
+                    let currentComps = calendar.dateComponents([.year], from: today)
+                    return comps.year == currentComps.year && comps.month == monthNum
+                }
+
+                let mins = monthSummaries.compactMap { $0.minHeartRate24h ?? $0.restingHeartRate ?? $0.latestHeartRate }.filter { $0 > 0 }
+                let maxs = monthSummaries.compactMap { $0.maxHeartRate24h ?? $0.latestHeartRate ?? $0.restingHeartRate }.filter { $0 > 0 }
+
+                let minB = mins.min() ?? 0
+                let maxB = maxs.max() ?? 0
+
+                return HRChartItem(
+                    label: monthNames[monthNum - 1],
+                    fullDateString: "\(fullMonthNames[monthNum - 1]) \(yearStr)",
+                    minBPM: minB,
+                    maxBPM: maxB
+                )
+            }
+        }
+    }
+
+    private var currentMinBPM: Int? {
+        let valid = currentChartData.map(\.minBPM).filter { $0 > 0 }
+        guard let m = valid.min() else { return nil }
+        return Int(m)
+    }
+
+    private var currentMaxBPM: Int? {
         let valid = currentChartData.map(\.maxBPM).filter { $0 > 0 }
-        return Int(valid.max() ?? 167)
+        guard let m = valid.max() else { return nil }
+        return Int(m)
     }
 
     private var currentDateRangeString: String {
@@ -135,22 +230,15 @@ struct HeartRateDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // MARK: - Upper Section (Gray Canvas)
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    // Condition Header
-                    conditionHeader
-                }
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.md)
-                .padding(.bottom, AppSpacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
                 // MARK: - Middle Section (White Canvas)
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
                     // Time Range Segmented Picker
                     TimeRangePicker(selectedRange: $selectedRange)
+                        .onChange(of: selectedRange) { _, _ in
+                            selectedIndex = nil
+                        }
 
-                    // Metric Range Header
+                    // Metric Range Header (Updates with selection)
                     rangeHeader
 
                     // Heart Rate Range Chart
@@ -184,46 +272,53 @@ struct HeartRateDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    // MARK: - Condition Header
-
-    private var conditionHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(syncViewModel.healthRecord?.heartRateStatus ?? "Kondisi cukup stabil")
-                .font(AppTypography.title2Bold)
-                .foregroundStyle(AppColor.textPrimary)
-
-            Text("Detak jantung berada dalam rentang normal dan stabil.")
-                .font(AppTypography.subheadlineRegular)
-                .foregroundStyle(AppColor.textSecondary)
-        }
-    }
-
     // MARK: - Range Header
 
     private var rangeHeader: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("RENTANG")
+        let selectedItem: HRChartItem? = {
+            if let idx = selectedIndex, idx >= 0, idx < currentChartData.count {
+                return currentChartData[idx]
+            }
+            return nil
+        }()
+
+        let headerTitle = selectedItem != nil ? "TERPILIH" : "RENTANG"
+        let rangeText: String = {
+            if let sel = selectedItem {
+                return sel.hasData ? "\(Int(sel.minBPM))-\(Int(sel.maxBPM))" : "-"
+            }
+            if let minVal = currentMinBPM, let maxVal = currentMaxBPM {
+                return "\(minVal)-\(maxVal)"
+            }
+            return "-"
+        }()
+        let dateText = selectedItem?.fullDateString ?? currentDateRangeString
+
+        return VStack(alignment: .leading, spacing: 2) {
+            Text(headerTitle)
                 .font(AppTypography.footnoteRegular.weight(.semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text("\(currentMinBPM)-\(currentMaxBPM)")
+                Text(rangeText)
                     .font(AppTypography.largeTitleBold)
                     .foregroundStyle(AppColor.textPrimary)
                     .contentTransition(.numericText())
 
-                Text("BPM")
-                    .font(AppTypography.subheadlineBold)
-                    .foregroundStyle(AppColor.textSecondary)
+                if rangeText != "-" {
+                    Text("BPM")
+                        .font(AppTypography.subheadlineBold)
+                        .foregroundStyle(AppColor.textSecondary)
+                }
             }
 
-            Text(currentDateRangeString)
+            Text(dateText)
                 .font(AppTypography.captionRegular)
-                .foregroundStyle(AppColor.textSecondary)
+                .foregroundStyle(selectedItem != nil ? AppColor.Accent.red : AppColor.textSecondary)
         }
     }
 
-    // MARK: - Range Bar Chart (Responsive to TimeRangeOption)
+    // MARK: - Range Bar Chart (Responsive to TimeRangeOption + Interactive Hover)
 
     private var heartRateChart: some View {
         let data = currentChartData
@@ -254,14 +349,12 @@ struct HeartRateDetailView: View {
                     ForEach(yMarks, id: \.label) { mark in
                         let yPos = height - (mark.val / maxVal) * height
 
-                        // Grid line
                         Path { path in
                             path.move(to: CGPoint(x: 0, y: yPos))
                             path.addLine(to: CGPoint(x: chartWidth, y: yPos))
                         }
                         .stroke(Color.black.opacity(0.2), lineWidth: 1)
 
-                        // Y-Axis label on right
                         Text(mark.label)
                             .font(AppTypography.caption2)
                             .foregroundStyle(AppColor.textSecondary)
@@ -278,19 +371,28 @@ struct HeartRateDetailView: View {
                         .stroke(Color.black.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     }
 
+                    // Column Selection Highlight
+                    if let selIdx = selectedIndex, selIdx < data.count {
+                        let centerX = CGFloat(selIdx) * columnWidth + (columnWidth / 2)
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(AppColor.Accent.red.opacity(0.10))
+                            .frame(width: max(columnWidth - 4, 12), height: height)
+                            .position(x: centerX, y: height / 2)
+                    }
+
                     // Vertical Range Bars
                     ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                         let centerX = CGFloat(idx) * columnWidth + (columnWidth / 2)
 
-                        if item.maxBPM > 0 {
+                        if item.hasData {
                             let yTop = height - (CGFloat(item.maxBPM) / maxVal) * height
                             let yBottom = height - (CGFloat(item.minBPM) / maxVal) * height
                             let barHeight = max(yBottom - yTop, 6)
                             let barWidth: CGFloat = data.count > 7 ? 5 : 8
 
                             Capsule()
-                                .fill(AppColor.Accent.red)
-                                .frame(width: barWidth, height: barHeight)
+                                .fill(selectedIndex == idx ? AppColor.Accent.red : AppColor.Accent.red.opacity(0.85))
+                                .frame(width: selectedIndex == idx ? barWidth + 2 : barWidth, height: barHeight)
                                 .position(x: centerX, y: yTop + barHeight / 2)
                         } else {
                             Circle()
@@ -299,16 +401,39 @@ struct HeartRateDetailView: View {
                                 .position(x: centerX, y: height - 6)
                         }
                     }
+
+                    // Floating Callout Pill on Hover/Touch
+                    if let selIdx = selectedIndex, selIdx < data.count {
+                        let item = data[selIdx]
+                        let centerX = CGFloat(selIdx) * columnWidth + (columnWidth / 2)
+                        let yTop = item.hasData ? (height - (CGFloat(item.maxBPM) / maxVal) * height) : (height - 30)
+                        calloutTooltip(for: item, centerX: centerX, chartWidth: chartWidth, yTop: yTop)
+                    }
                 }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            let clampedX = max(0, min(gesture.location.x, chartWidth - 1))
+                            let newIdx = Int(clampedX / columnWidth)
+                            if newIdx >= 0 && newIdx < data.count {
+                                if selectedIndex != newIdx {
+                                    selectedIndex = newIdx
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            }
+                        }
+                )
             }
             .frame(height: 200)
 
             // X-Axis Labels
             HStack(spacing: 0) {
-                ForEach(data) { item in
+                ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                     Text(item.label)
                         .font(data.count > 7 ? AppTypography.caption2 : AppTypography.captionRegular)
-                        .foregroundStyle(AppColor.textSecondary)
+                        .fontWeight(selectedIndex == idx ? .bold : .regular)
+                        .foregroundStyle(selectedIndex == idx ? AppColor.Accent.red : AppColor.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -318,17 +443,42 @@ struct HeartRateDetailView: View {
         .padding(.vertical, AppSpacing.sm)
     }
 
+    @ViewBuilder
+    private func calloutTooltip(for item: HRChartItem, centerX: CGFloat, chartWidth: CGFloat, yTop: CGFloat) -> some View {
+        VStack(spacing: 2) {
+            Text(item.fullDateString)
+                .font(AppTypography.caption2)
+                .foregroundStyle(AppColor.textSecondary)
+                .lineLimit(1)
+            Text(item.rangeString)
+                .font(AppTypography.captionBold)
+                .foregroundStyle(item.hasData ? AppColor.Accent.red : AppColor.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.15), radius: 6, x: 0, y: 2)
+        )
+        .position(
+            x: min(max(centerX, 70), chartWidth - 70),
+            y: max(yTop - 28, 22)
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+    }
+
     // MARK: - Bottom Detail Cards
 
     private var bottomDetailCards: some View {
-        let lastHR = syncViewModel.healthRecord?.displayHeartRate.map { "\(Int($0))" } ?? "55"
-        let sleepHR = syncViewModel.healthRecord?.restingHeartRate.map { "\(Int($0))" } ?? "50"
+        let lastHR = syncViewModel.healthRecord?.displayHeartRate.map { "\(Int($0))" } ?? "-"
+        let sleepHR = syncViewModel.healthRecord?.restingHeartRate.map { "\(Int($0))" } ?? "-"
 
         let lastDateText: String = {
             if let dateStr = syncViewModel.healthRecord?.displayDate {
                 return "Terakhir: \(dateStr)"
             }
-            return "Terakhir: kemarin"
+            return "Terakhir"
         }()
 
         let rangeTitle: String = {
@@ -341,23 +491,30 @@ struct HeartRateDetailView: View {
             }
         }()
 
+        let rangeValue: String = {
+            if let minVal = currentMinBPM, let maxVal = currentMaxBPM {
+                return "\(minVal)-\(maxVal)"
+            }
+            return "-"
+        }()
+
         return VStack(spacing: AppSpacing.md) {
             metricInfoCard(
                 title: lastDateText,
                 value: lastHR,
-                unit: "BPM"
+                unit: lastHR != "-" ? "BPM" : ""
             )
 
             metricInfoCard(
                 title: rangeTitle,
-                value: "\(currentMinBPM)-\(currentMaxBPM)",
-                unit: "BPM"
+                value: rangeValue,
+                unit: rangeValue != "-" ? "BPM" : ""
             )
 
             metricInfoCard(
-                title: "Tidur",
+                title: "Detak Jantung Istirahat",
                 value: sleepHR,
-                unit: "BPM"
+                unit: sleepHR != "-" ? "BPM" : ""
             )
         }
     }
@@ -396,3 +553,4 @@ struct HeartRateDetailView: View {
             .environment(SyncViewModel())
     }
 }
+

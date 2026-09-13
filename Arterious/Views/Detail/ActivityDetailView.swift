@@ -6,86 +6,180 @@ struct ActivityDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SyncViewModel.self) private var syncViewModel
     @State private var selectedRange: TimeRangeOption = .week
+    @State private var selectedIndex: Int? = nil
 
     private let activityBarColor = Color(hex: "10B981")
 
     private struct DayActivityStep: Identifiable {
         let id = UUID()
         let day: String
+        let fullDateString: String
         let steps: Double
+
+        var hasData: Bool {
+            steps > 0
+        }
+
+        var stepText: String {
+            guard steps > 0 else { return "Tidak ada data" }
+            let nf = NumberFormatter()
+            nf.numberStyle = .decimal
+            nf.groupingSeparator = "."
+            let formatted = nf.string(from: NSNumber(value: Int(steps))) ?? "\(Int(steps))"
+            return "\(formatted) langkah"
+        }
+    }
+
+    private var allSummaries: [DailyHealthSummary] {
+        var list = syncViewModel.historicalSummaries
+        if let rec = syncViewModel.healthRecord {
+            let calendar = Calendar.current
+            if !list.contains(where: { calendar.isDate($0.date, inSameDayAs: rec.recordDate) }) {
+                list.append(DailyHealthSummary(
+                    date: rec.recordDate,
+                    latestHeartRate: rec.displayHeartRate,
+                    restingHeartRate: rec.restingHeartRate,
+                    minHeartRate24h: rec.displayHeartRate,
+                    maxHeartRate24h: rec.displayHeartRate,
+                    sleepHours: rec.sleepHours,
+                    stepCount: rec.stepCount.map { Double($0) }
+                ))
+            }
+        }
+        return list
     }
 
     private var currentStepData: [DayActivityStep] {
-        let history = syncViewModel.historicalSummaries
-        let todaySteps = Double(syncViewModel.healthRecord?.stepCount ?? 4690)
+        let calendar = Calendar.current
+        let today = Date()
 
         switch selectedRange {
         case .hour:
-            return [
-                DayActivityStep(day: "00", steps: 0),
-                DayActivityStep(day: "04", steps: 150),
-                DayActivityStep(day: "08", steps: todaySteps * 0.38),
-                DayActivityStep(day: "12", steps: todaySteps * 0.30),
-                DayActivityStep(day: "16", steps: todaySteps * 0.22),
-                DayActivityStep(day: "20", steps: todaySteps * 0.10)
-            ]
-
-        case .day:
-            return [
-                DayActivityStep(day: "Pagi", steps: todaySteps * 0.42),
-                DayActivityStep(day: "Siang", steps: todaySteps * 0.30),
-                DayActivityStep(day: "Sore", steps: todaySteps * 0.20),
-                DayActivityStep(day: "Malam", steps: todaySteps * 0.08)
-            ]
-
-        case .week:
             let df = DateFormatter()
             df.locale = Locale(identifier: "id_ID")
-            df.dateFormat = "EEE"
+            df.dateFormat = "d MMM yyyy"
+            let todayStr = df.string(from: today)
 
-            if history.isEmpty {
-                return [
-                    DayActivityStep(day: "Min", steps: 4280),
-                    DayActivityStep(day: "Sen", steps: 5100),
-                    DayActivityStep(day: "Sel", steps: 3900),
-                    DayActivityStep(day: "Rab", steps: 6200),
-                    DayActivityStep(day: "Kam", steps: 4800),
-                    DayActivityStep(day: "Jum", steps: 5600),
-                    DayActivityStep(day: "Sab", steps: 4500)
-                ]
-            }
+            let currentHour = calendar.component(.hour, from: today)
+            let todaySummary = allSummaries.first(where: { calendar.isDateInToday($0.date) })
+            let totalSteps = todaySummary?.stepCount ?? 0
 
-            let slice = history.suffix(7)
-            return slice.map { summary in
-                DayActivityStep(
-                    day: df.string(from: summary.date).capitalized,
-                    steps: summary.stepCount ?? 4000
+            let hourSlots = [0, 4, 8, 12, 16, 20]
+            return hourSlots.map { slot in
+                let slotLabel = String(format: "%02d:00", slot)
+                let isReached = currentHour >= slot
+                let slotSteps = isReached && totalSteps > 0 ? (totalSteps / 4.0) : 0
+                return DayActivityStep(
+                    day: String(format: "%02d", slot),
+                    fullDateString: "\(slotLabel), \(todayStr)",
+                    steps: slotSteps
                 )
             }
 
-        case .month:
-            return [
-                DayActivityStep(day: "Mg 1", steps: 4850),
-                DayActivityStep(day: "Mg 2", steps: 5200),
-                DayActivityStep(day: "Mg 3", steps: 4600),
-                DayActivityStep(day: "Mg 4", steps: 5100)
+        case .day:
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "id_ID")
+            df.dateFormat = "EEEE, d MMM yyyy"
+            let todayStr = df.string(from: today)
+
+            let currentHour = calendar.component(.hour, from: today)
+            let todaySummary = allSummaries.first(where: { calendar.isDateInToday($0.date) })
+            let totalSteps = todaySummary?.stepCount ?? 0
+
+            let segments: [(label: String, name: String, startHour: Int, fraction: Double)] = [
+                ("Pagi", "Pagi (06:00 - 12:00)", 6, 0.40),
+                ("Siang", "Siang (12:00 - 16:00)", 12, 0.30),
+                ("Sore", "Sore (16:00 - 19:00)", 16, 0.20),
+                ("Malam", "Malam (19:00 - 24:00)", 19, 0.10)
             ]
 
+            return segments.map { seg in
+                let isReached = currentHour >= seg.startHour
+                let stepsVal = isReached && totalSteps > 0 ? (totalSteps * seg.fraction) : 0
+                return DayActivityStep(
+                    day: seg.label,
+                    fullDateString: "\(seg.name), \(todayStr)",
+                    steps: stepsVal
+                )
+            }
+
+        case .week:
+            let dayFormatter = DateFormatter()
+            dayFormatter.locale = Locale(identifier: "id_ID")
+            dayFormatter.dateFormat = "EEE"
+
+            let fullDateFormatter = DateFormatter()
+            fullDateFormatter.locale = Locale(identifier: "id_ID")
+            fullDateFormatter.dateFormat = "EEEE, d MMM yyyy"
+
+            return (0..<7).reversed().map { dayOffset in
+                let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) ?? today
+                let label = dayFormatter.string(from: targetDate).capitalized
+                let fullDate = fullDateFormatter.string(from: targetDate).capitalized
+
+                if let summary = allSummaries.first(where: { calendar.isDate($0.date, inSameDayAs: targetDate) }),
+                   let st = summary.stepCount, st > 0 {
+                    return DayActivityStep(
+                        day: label,
+                        fullDateString: fullDate,
+                        steps: st
+                    )
+                } else {
+                    return DayActivityStep(
+                        day: label,
+                        fullDateString: fullDate,
+                        steps: 0
+                    )
+                }
+            }
+
+        case .month:
+            let dfMonth = DateFormatter()
+            dfMonth.locale = Locale(identifier: "id_ID")
+            dfMonth.dateFormat = "MMMM yyyy"
+            let monthStr = dfMonth.string(from: today)
+
+            return (1...4).map { weekNum in
+                let daysAgoEnd = (4 - weekNum) * 7
+                let daysAgoStart = daysAgoEnd + 6
+                let startDate = calendar.date(byAdding: .day, value: -daysAgoStart, to: today) ?? today
+                let endDate = calendar.date(byAdding: .day, value: -daysAgoEnd, to: today) ?? today
+
+                let weekSummaries = allSummaries.filter { $0.date >= startDate && $0.date <= endDate }
+                let validSteps = weekSummaries.compactMap(\.stepCount).filter { $0 > 0 }
+                let avgSteps = validSteps.isEmpty ? 0 : (validSteps.reduce(0, +) / Double(validSteps.count))
+
+                return DayActivityStep(
+                    day: "Mg \(weekNum)",
+                    fullDateString: "Minggu \(weekNum) (\(monthStr))",
+                    steps: avgSteps
+                )
+            }
+
         case .year:
-            return [
-                DayActivityStep(day: "Jan", steps: 4500),
-                DayActivityStep(day: "Feb", steps: 4800),
-                DayActivityStep(day: "Mar", steps: 5100),
-                DayActivityStep(day: "Apr", steps: 5300),
-                DayActivityStep(day: "Mei", steps: 4900),
-                DayActivityStep(day: "Jun", steps: 5200),
-                DayActivityStep(day: "Jul", steps: 5400),
-                DayActivityStep(day: "Agu", steps: 5100),
-                DayActivityStep(day: "Sep", steps: 4800),
-                DayActivityStep(day: "Okt", steps: 5000),
-                DayActivityStep(day: "Nov", steps: 4900),
-                DayActivityStep(day: "Des", steps: 5200)
-            ]
+            let dfYear = DateFormatter()
+            dfYear.dateFormat = "yyyy"
+            let yearStr = dfYear.string(from: today)
+
+            let monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+            let fullMonthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+
+            return (1...12).map { monthNum in
+                let monthSummaries = allSummaries.filter {
+                    let comps = calendar.dateComponents([.year, .month], from: $0.date)
+                    let currentComps = calendar.dateComponents([.year], from: today)
+                    return comps.year == currentComps.year && comps.month == monthNum
+                }
+
+                let validSteps = monthSummaries.compactMap(\.stepCount).filter { $0 > 0 }
+                let avgSteps = validSteps.isEmpty ? 0 : (validSteps.reduce(0, +) / Double(validSteps.count))
+
+                return DayActivityStep(
+                    day: monthNames[monthNum - 1],
+                    fullDateString: "\(fullMonthNames[monthNum - 1]) \(yearStr)",
+                    steps: avgSteps
+                )
+            }
         }
     }
 
@@ -148,22 +242,15 @@ struct ActivityDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // MARK: - Upper Section (Gray Canvas)
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    // Condition Header
-                    conditionHeader
-                }
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.md)
-                .padding(.bottom, AppSpacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
                 // MARK: - Middle Section (White Canvas)
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
                     // Time Range Segmented Picker
                     TimeRangePicker(selectedRange: $selectedRange)
+                        .onChange(of: selectedRange) { _, _ in
+                            selectedIndex = nil
+                        }
 
-                    // Average Steps Header
+                    // Average Steps Header (Updates with selection)
                     averageHeader
 
                     // Steps Bar Chart
@@ -197,49 +284,44 @@ struct ActivityDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
     }
 
-    // MARK: - Condition Header
-
-    private var conditionHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(syncViewModel.healthRecord?.activityStatus ?? "Cenderung santai hari ini")
-                .font(AppTypography.title2Bold)
-                .foregroundStyle(AppColor.textPrimary)
-
-            Text("Aktivitas harian dan jumlah langkah tercatat secara akurat dari Apple Health.")
-                .font(AppTypography.subheadlineRegular)
-                .foregroundStyle(AppColor.textSecondary)
-        }
-    }
-
     // MARK: - Average Header
 
     private var averageHeader: some View {
-        let avg = averageSteps
+        let selectedItem: DayActivityStep? = {
+            if let idx = selectedIndex, idx >= 0, idx < currentStepData.count {
+                return currentStepData[idx]
+            }
+            return nil
+        }()
+
+        let headerTitle = selectedItem != nil ? "TERPILIH" : "RERATA"
+        let stepsToDisplay = selectedItem != nil ? Int(selectedItem!.steps) : averageSteps
+        let dateText = selectedItem?.fullDateString ?? dateRangeString
 
         return VStack(alignment: .leading, spacing: 2) {
-            Text("RERATA")
+            Text(headerTitle)
                 .font(AppTypography.footnoteRegular.weight(.semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(avg > 0 ? formatNumber(avg) : "-")
+                Text(stepsToDisplay > 0 ? formatNumber(stepsToDisplay) : "-")
                     .font(AppTypography.largeTitleBold)
                     .foregroundStyle(AppColor.textPrimary)
 
-                if avg > 0 {
+                if stepsToDisplay > 0 {
                     Text("langkah")
                         .font(AppTypography.calloutBold)
                         .foregroundStyle(AppColor.textSecondary)
                 }
             }
 
-            Text(dateRangeString)
+            Text(dateText)
                 .font(AppTypography.captionRegular)
-                .foregroundStyle(AppColor.textSecondary)
+                .foregroundStyle(selectedItem != nil ? activityBarColor : AppColor.textSecondary)
         }
     }
 
-    // MARK: - Steps Bar Chart
+    // MARK: - Steps Bar Chart (Responsive + Interactive Hover)
 
     private var activityChart: some View {
         let data = currentStepData
@@ -288,6 +370,15 @@ struct ActivityDetailView: View {
                         .stroke(Color.black.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     }
 
+                    // Column Selection Highlight
+                    if let selIdx = selectedIndex, selIdx < data.count {
+                        let centerX = CGFloat(selIdx) * columnWidth + (columnWidth / 2)
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(activityBarColor.opacity(0.12))
+                            .frame(width: max(columnWidth - 4, 14), height: height)
+                            .position(x: centerX, y: height / 2)
+                    }
+
                     // Vertical Step Bars
                     ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                         let centerX = CGFloat(idx) * columnWidth + (columnWidth / 2)
@@ -297,7 +388,7 @@ struct ActivityDetailView: View {
                             let barHeight = max((CGFloat(item.steps) / chartMax) * height, 4)
 
                             Rectangle()
-                                .fill(activityBarColor)
+                                .fill(selectedIndex == idx ? activityBarColor : activityBarColor.opacity(0.85))
                                 .frame(width: barWidth, height: barHeight)
                                 .position(x: centerX, y: height - barHeight / 2)
                         } else {
@@ -307,16 +398,40 @@ struct ActivityDetailView: View {
                                 .position(x: centerX, y: height - 6)
                         }
                     }
+
+                    // Floating Callout Pill on Hover/Touch
+                    if let selIdx = selectedIndex, selIdx < data.count {
+                        let item = data[selIdx]
+                        let centerX = CGFloat(selIdx) * columnWidth + (columnWidth / 2)
+                        let barHeight = item.steps > 0 ? max((CGFloat(item.steps) / chartMax) * height, 4) : 0
+                        let yTop = height - barHeight
+                        calloutTooltip(for: item, centerX: centerX, chartWidth: chartWidth, yTop: yTop)
+                    }
                 }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            let clampedX = max(0, min(gesture.location.x, chartWidth - 1))
+                            let newIdx = Int(clampedX / columnWidth)
+                            if newIdx >= 0 && newIdx < data.count {
+                                if selectedIndex != newIdx {
+                                    selectedIndex = newIdx
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            }
+                        }
+                )
             }
             .frame(height: 200)
 
             // X-Axis Day Labels
             HStack(spacing: 0) {
-                ForEach(data) { item in
+                ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                     Text(item.day)
                         .font(AppTypography.captionRegular)
-                        .foregroundStyle(AppColor.textSecondary)
+                        .fontWeight(selectedIndex == idx ? .bold : .regular)
+                        .foregroundStyle(selectedIndex == idx ? activityBarColor : AppColor.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -324,6 +439,33 @@ struct ActivityDetailView: View {
             .padding(.top, 8)
         }
         .padding(.vertical, AppSpacing.sm)
+    }
+
+    @ViewBuilder
+    private func calloutTooltip(for item: DayActivityStep, centerX: CGFloat, chartWidth: CGFloat, yTop: CGFloat) -> some View {
+        let isPositive = item.steps > 0
+        let labelText = item.stepText
+        VStack(spacing: 2) {
+            Text(item.fullDateString)
+                .font(AppTypography.caption2)
+                .foregroundStyle(AppColor.textSecondary)
+                .lineLimit(1)
+            Text(labelText)
+                .font(AppTypography.captionBold)
+                .foregroundStyle(isPositive ? activityBarColor : AppColor.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.15), radius: 6, x: 0, y: 2)
+        )
+        .position(
+            x: min(max(centerX, 70), chartWidth - 70),
+            y: max(yTop - 28, 22)
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
     }
 
     // MARK: - Bottom Summary Cards
@@ -390,3 +532,4 @@ struct ActivityDetailView: View {
             .environment(SyncViewModel())
     }
 }
+

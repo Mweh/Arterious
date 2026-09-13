@@ -6,6 +6,7 @@ struct SleepDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(SyncViewModel.self) private var syncViewModel
     @State private var selectedRange: TimeRangeOption = .week
+    @State private var selectedIndex: Int? = nil
 
     // Sleep stages color palette matching Apple Health
     private let awakeColor = Color(hex: "FF6E52")
@@ -16,93 +17,206 @@ struct SleepDetailView: View {
     private struct DaySleepColumn: Identifiable {
         let id = UUID()
         let day: String
+        let fullDateString: String
         let totalHours: Double
         let awakeMinutes: Double
         let remMinutes: Double
         let coreMinutes: Double
         let deepMinutes: Double
+
+        var hasData: Bool {
+            totalHours > 0
+        }
+
+        var formattedDuration: String {
+            guard hasData else { return "Tidak ada data" }
+            let h = Int(totalHours)
+            let m = Int(((totalHours - Double(h)) * 60).rounded())
+            if h > 0 && m > 0 { return "\(h) jam \(m) mnt" }
+            if h > 0 { return "\(h) jam" }
+            return "\(m) mnt"
+        }
+    }
+
+    private var allSummaries: [DailyHealthSummary] {
+        var list = syncViewModel.historicalSummaries
+        if let rec = syncViewModel.healthRecord {
+            let calendar = Calendar.current
+            if !list.contains(where: { calendar.isDate($0.date, inSameDayAs: rec.recordDate) }) {
+                list.append(DailyHealthSummary(
+                    date: rec.recordDate,
+                    latestHeartRate: rec.displayHeartRate,
+                    restingHeartRate: rec.restingHeartRate,
+                    minHeartRate24h: rec.displayHeartRate,
+                    maxHeartRate24h: rec.displayHeartRate,
+                    sleepHours: rec.sleepHours,
+                    stepCount: rec.stepCount.map { Double($0) }
+                ))
+            }
+        }
+        return list
     }
 
     private var currentSleepData: [DaySleepColumn] {
-        let history = syncViewModel.historicalSummaries
-        let baseline = syncViewModel.healthRecord?.sleepHours ?? 7.6
+        let calendar = Calendar.current
+        let today = Date()
 
         switch selectedRange {
         case .hour:
-            return [
-                DaySleepColumn(day: "22", totalHours: 1.2, awakeMinutes: 15, remMinutes: 10, coreMinutes: 40, deepMinutes: 15),
-                DaySleepColumn(day: "00", totalHours: 1.8, awakeMinutes: 0, remMinutes: 25, coreMinutes: 50, deepMinutes: 35),
-                DaySleepColumn(day: "02", totalHours: 2.0, awakeMinutes: 5, remMinutes: 30, coreMinutes: 55, deepMinutes: 30),
-                DaySleepColumn(day: "04", totalHours: 1.6, awakeMinutes: 10, remMinutes: 25, coreMinutes: 45, deepMinutes: 15),
-                DaySleepColumn(day: "06", totalHours: 1.0, awakeMinutes: 10, remMinutes: 20, coreMinutes: 30, deepMinutes: 0)
-            ]
-
-        case .day:
-            return [
-                DaySleepColumn(day: "Bangun", totalHours: 0.6, awakeMinutes: 36, remMinutes: 0, coreMinutes: 0, deepMinutes: 0),
-                DaySleepColumn(day: "REM", totalHours: 1.8, awakeMinutes: 0, remMinutes: 108, coreMinutes: 0, deepMinutes: 0),
-                DaySleepColumn(day: "Inti", totalHours: 3.8, awakeMinutes: 0, remMinutes: 0, coreMinutes: 228, deepMinutes: 0),
-                DaySleepColumn(day: "Dalam", totalHours: 1.4, awakeMinutes: 0, remMinutes: 0, coreMinutes: 0, deepMinutes: 84)
-            ]
-
-        case .week:
             let df = DateFormatter()
             df.locale = Locale(identifier: "id_ID")
-            df.dateFormat = "EEE"
+            df.dateFormat = "d MMM yyyy"
+            let todayStr = df.string(from: today)
 
-            if history.isEmpty {
-                return [
-                    DaySleepColumn(day: "Min", totalHours: 7.2, awakeMinutes: 30, remMinutes: 90, coreMinutes: 220, deepMinutes: 90),
-                    DaySleepColumn(day: "Sen", totalHours: 6.8, awakeMinutes: 40, remMinutes: 80, coreMinutes: 210, deepMinutes: 80),
-                    DaySleepColumn(day: "Sel", totalHours: 7.5, awakeMinutes: 25, remMinutes: 95, coreMinutes: 230, deepMinutes: 100),
-                    DaySleepColumn(day: "Rab", totalHours: 7.0, awakeMinutes: 35, remMinutes: 85, coreMinutes: 215, deepMinutes: 85),
-                    DaySleepColumn(day: "Kam", totalHours: 8.0, awakeMinutes: 20, remMinutes: 110, coreMinutes: 240, deepMinutes: 110),
-                    DaySleepColumn(day: "Jum", totalHours: 7.3, awakeMinutes: 30, remMinutes: 90, coreMinutes: 225, deepMinutes: 95),
-                    DaySleepColumn(day: "Sab", totalHours: 7.8, awakeMinutes: 25, remMinutes: 100, coreMinutes: 235, deepMinutes: 105)
-                ]
-            }
+            let todaySummary = allSummaries.first(where: { calendar.isDateInToday($0.date) })
+            let total = todaySummary?.sleepHours ?? 0
 
-            let slice = history.suffix(7)
-            return slice.map { summary in
-                let total = summary.sleepHours ?? baseline
-                let awake = summary.awakeSleepMinutes ?? 30
-                let rem = summary.remSleepMinutes ?? 90
-                let deep = summary.deepSleepMinutes ?? 85
-                let core = summary.coreSleepMinutes ?? (total > 0 && rem == 0 && deep == 0 ? total * 60 : 220)
-
+            let hourSlots = [22, 0, 2, 4, 6]
+            return hourSlots.map { slot in
+                let slotLabel = String(format: "%02d:00", slot)
+                let slotHours = total > 0 ? (total / 5.0) : 0
                 return DaySleepColumn(
-                    day: df.string(from: summary.date).capitalized,
-                    totalHours: total,
-                    awakeMinutes: awake,
-                    remMinutes: rem,
-                    coreMinutes: core,
-                    deepMinutes: deep
+                    day: String(format: "%02d", slot),
+                    fullDateString: "\(slotLabel), \(todayStr)",
+                    totalHours: slotHours,
+                    awakeMinutes: slotHours > 0 ? 5 : 0,
+                    remMinutes: slotHours > 0 ? 15 : 0,
+                    coreMinutes: slotHours > 0 ? slotHours * 35 : 0,
+                    deepMinutes: slotHours > 0 ? 10 : 0
                 )
             }
 
-        case .month:
+        case .day:
+            let df = DateFormatter()
+            df.locale = Locale(identifier: "id_ID")
+            df.dateFormat = "EEEE, d MMM yyyy"
+            let todayStr = df.string(from: today)
+
+            let todaySummary = allSummaries.first(where: { calendar.isDateInToday($0.date) })
+            let details = todaySummary?.sleepDetails
+            let awake = todaySummary?.awakeSleepMinutes ?? (details?.awakeMinutes ?? 0)
+            let rem = todaySummary?.remSleepMinutes ?? (details?.remMinutes ?? 0)
+            let core = todaySummary?.coreSleepMinutes ?? (details?.coreMinutes ?? 0)
+            let deep = todaySummary?.deepSleepMinutes ?? (details?.deepMinutes ?? 0)
+
             return [
-                DaySleepColumn(day: "Mg 1", totalHours: 7.4, awakeMinutes: 32, remMinutes: 92, coreMinutes: 225, deepMinutes: 95),
-                DaySleepColumn(day: "Mg 2", totalHours: 7.1, awakeMinutes: 36, remMinutes: 88, coreMinutes: 218, deepMinutes: 84),
-                DaySleepColumn(day: "Mg 3", totalHours: 7.6, awakeMinutes: 28, remMinutes: 96, coreMinutes: 232, deepMinutes: 100),
-                DaySleepColumn(day: "Mg 4", totalHours: 7.5, awakeMinutes: 30, remMinutes: 94, coreMinutes: 228, deepMinutes: 98)
+                DaySleepColumn(day: "Bangun", fullDateString: "Terbangun, \(todayStr)", totalHours: awake / 60.0, awakeMinutes: awake, remMinutes: 0, coreMinutes: 0, deepMinutes: 0),
+                DaySleepColumn(day: "REM", fullDateString: "Tidur REM, \(todayStr)", totalHours: rem / 60.0, awakeMinutes: 0, remMinutes: rem, coreMinutes: 0, deepMinutes: 0),
+                DaySleepColumn(day: "Inti", fullDateString: "Tidur Inti, \(todayStr)", totalHours: core / 60.0, awakeMinutes: 0, remMinutes: 0, coreMinutes: core, deepMinutes: 0),
+                DaySleepColumn(day: "Dalam", fullDateString: "Tidur Nyenyak, \(todayStr)", totalHours: deep / 60.0, awakeMinutes: 0, remMinutes: 0, coreMinutes: 0, deepMinutes: deep)
             ]
 
+        case .week:
+            let dayFormatter = DateFormatter()
+            dayFormatter.locale = Locale(identifier: "id_ID")
+            dayFormatter.dateFormat = "EEE"
+
+            let fullDateFormatter = DateFormatter()
+            fullDateFormatter.locale = Locale(identifier: "id_ID")
+            fullDateFormatter.dateFormat = "EEEE, d MMM yyyy"
+
+            return (0..<7).reversed().map { dayOffset in
+                let targetDate = calendar.date(byAdding: .day, value: -dayOffset, to: today) ?? today
+                let label = dayFormatter.string(from: targetDate).capitalized
+                let fullDate = fullDateFormatter.string(from: targetDate).capitalized
+
+                if let summary = allSummaries.first(where: { calendar.isDate($0.date, inSameDayAs: targetDate) }),
+                   let total = summary.sleepHours, total > 0 {
+                    let details = summary.sleepDetails
+                    let awake = summary.awakeSleepMinutes ?? (details?.awakeMinutes ?? 0)
+                    let rem = summary.remSleepMinutes ?? (details?.remMinutes ?? 0)
+                    let deep = summary.deepSleepMinutes ?? (details?.deepMinutes ?? 0)
+                    let core = summary.coreSleepMinutes ?? (details?.coreMinutes ?? max(0, total * 60 - awake - rem - deep))
+
+                    return DaySleepColumn(
+                        day: label,
+                        fullDateString: fullDate,
+                        totalHours: total,
+                        awakeMinutes: awake,
+                        remMinutes: rem,
+                        coreMinutes: core,
+                        deepMinutes: deep
+                    )
+                } else {
+                    return DaySleepColumn(
+                        day: label,
+                        fullDateString: fullDate,
+                        totalHours: 0,
+                        awakeMinutes: 0,
+                        remMinutes: 0,
+                        coreMinutes: 0,
+                        deepMinutes: 0
+                    )
+                }
+            }
+
+        case .month:
+            let dfMonth = DateFormatter()
+            dfMonth.locale = Locale(identifier: "id_ID")
+            dfMonth.dateFormat = "MMMM yyyy"
+            let monthStr = dfMonth.string(from: today)
+
+            return (1...4).map { weekNum in
+                let daysAgoEnd = (4 - weekNum) * 7
+                let daysAgoStart = daysAgoEnd + 6
+                let startDate = calendar.date(byAdding: .day, value: -daysAgoStart, to: today) ?? today
+                let endDate = calendar.date(byAdding: .day, value: -daysAgoEnd, to: today) ?? today
+
+                let weekSummaries = allSummaries.filter { $0.date >= startDate && $0.date <= endDate }
+                let validSleep = weekSummaries.compactMap(\.sleepHours).filter { $0 > 0 }
+                let avgTotal = validSleep.isEmpty ? 0 : (validSleep.reduce(0, +) / Double(validSleep.count))
+
+                let validAwake = weekSummaries.compactMap(\.awakeSleepMinutes).filter { $0 > 0 }
+                let avgAwake = validAwake.isEmpty ? 0 : (validAwake.reduce(0, +) / Double(validAwake.count))
+
+                let validRem = weekSummaries.compactMap(\.remSleepMinutes).filter { $0 > 0 }
+                let avgRem = validRem.isEmpty ? 0 : (validRem.reduce(0, +) / Double(validRem.count))
+
+                let validCore = weekSummaries.compactMap(\.coreSleepMinutes).filter { $0 > 0 }
+                let avgCore = validCore.isEmpty ? 0 : (validCore.reduce(0, +) / Double(validCore.count))
+
+                let validDeep = weekSummaries.compactMap(\.deepSleepMinutes).filter { $0 > 0 }
+                let avgDeep = validDeep.isEmpty ? 0 : (validDeep.reduce(0, +) / Double(validDeep.count))
+
+                return DaySleepColumn(
+                    day: "Mg \(weekNum)",
+                    fullDateString: "Minggu \(weekNum) (\(monthStr))",
+                    totalHours: avgTotal,
+                    awakeMinutes: avgAwake,
+                    remMinutes: avgRem,
+                    coreMinutes: avgCore,
+                    deepMinutes: avgDeep
+                )
+            }
+
         case .year:
-            return [
-                DaySleepColumn(day: "Jan", totalHours: 7.3, awakeMinutes: 30, remMinutes: 90, coreMinutes: 220, deepMinutes: 90),
-                DaySleepColumn(day: "Feb", totalHours: 7.5, awakeMinutes: 28, remMinutes: 95, coreMinutes: 228, deepMinutes: 97),
-                DaySleepColumn(day: "Mar", totalHours: 7.2, awakeMinutes: 35, remMinutes: 88, coreMinutes: 216, deepMinutes: 85),
-                DaySleepColumn(day: "Apr", totalHours: 7.4, awakeMinutes: 31, remMinutes: 92, coreMinutes: 222, deepMinutes: 92),
-                DaySleepColumn(day: "Mei", totalHours: 7.6, awakeMinutes: 27, remMinutes: 98, coreMinutes: 232, deepMinutes: 102),
-                DaySleepColumn(day: "Jun", totalHours: 7.5, awakeMinutes: 29, remMinutes: 94, coreMinutes: 226, deepMinutes: 96),
-                DaySleepColumn(day: "Jul", totalHours: 7.7, awakeMinutes: 25, remMinutes: 102, coreMinutes: 238, deepMinutes: 108),
-                DaySleepColumn(day: "Agu", totalHours: 7.4, awakeMinutes: 32, remMinutes: 91, coreMinutes: 221, deepMinutes: 91),
-                DaySleepColumn(day: "Sep", totalHours: 7.6, awakeMinutes: 28, remMinutes: 96, coreMinutes: 230, deepMinutes: 98),
-                DaySleepColumn(day: "Okt", totalHours: 7.3, awakeMinutes: 33, remMinutes: 89, coreMinutes: 219, deepMinutes: 88),
-                DaySleepColumn(day: "Nov", totalHours: 7.5, awakeMinutes: 29, remMinutes: 94, coreMinutes: 227, deepMinutes: 95),
-                DaySleepColumn(day: "Des", totalHours: 7.6, awakeMinutes: 27, remMinutes: 97, coreMinutes: 231, deepMinutes: 99)
-            ]
+            let dfYear = DateFormatter()
+            dfYear.dateFormat = "yyyy"
+            let yearStr = dfYear.string(from: today)
+
+            let monthNames = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"]
+            let fullMonthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"]
+
+            return (1...12).map { monthNum in
+                let monthSummaries = allSummaries.filter {
+                    let comps = calendar.dateComponents([.year, .month], from: $0.date)
+                    let currentComps = calendar.dateComponents([.year], from: today)
+                    return comps.year == currentComps.year && comps.month == monthNum
+                }
+
+                let validSleep = monthSummaries.compactMap(\.sleepHours).filter { $0 > 0 }
+                let avgTotal = validSleep.isEmpty ? 0 : (validSleep.reduce(0, +) / Double(validSleep.count))
+
+                return DaySleepColumn(
+                    day: monthNames[monthNum - 1],
+                    fullDateString: "\(fullMonthNames[monthNum - 1]) \(yearStr)",
+                    totalHours: avgTotal,
+                    awakeMinutes: 0,
+                    remMinutes: 0,
+                    coreMinutes: avgTotal * 60,
+                    deepMinutes: 0
+                )
+            }
         }
     }
 
@@ -178,29 +292,23 @@ struct SleepDetailView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
-                // MARK: - Upper Section (Gray Canvas)
-                VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    // Condition Summary
-                    conditionHeader
-                }
-                .padding(.horizontal, AppSpacing.lg)
-                .padding(.top, AppSpacing.md)
-                .padding(.bottom, AppSpacing.lg)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
                 // Daily Sleep Score Card
                 dailyScoreSection
                     .padding(.horizontal, AppSpacing.lg)
+                    .padding(.top, AppSpacing.md)
                     .padding(.bottom, AppSpacing.lg)
 
                 // Time Range Segmented Control
                 TimeRangePicker(selectedRange: $selectedRange)
                     .padding(.horizontal, AppSpacing.lg)
                     .padding(.bottom, AppSpacing.lg)
+                    .onChange(of: selectedRange) { _, _ in
+                        selectedIndex = nil
+                    }
 
                 // MARK: - Chart Section (White Canvas)
                 VStack(alignment: .leading, spacing: AppSpacing.lg) {
-                    // Sleep Average Header
+                    // Sleep Average Header (Updates with selection)
                     averageSleepHeader
 
                     // Sleep Stages Stacked Bar Chart
@@ -232,28 +340,6 @@ struct SleepDetailView: View {
         .background(AppColor.backgroundPrimary.ignoresSafeArea())
         .navigationTitle("Tidur")
         .navigationBarTitleDisplayMode(.inline)
-    }
-
-    // MARK: - Condition Header
-
-    private var conditionHeader: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(syncViewModel.healthRecord?.summaryTitle ?? (syncViewModel.healthRecord?.sleepStatus ?? "Pola Istirahat Terpantau"))
-                .font(AppTypography.title2Bold)
-                .foregroundStyle(AppColor.textPrimary)
-
-            HStack(alignment: .top, spacing: 6) {
-                Image(systemName: "sparkles")
-                    .font(AppTypography.subheadlineBold)
-                    .foregroundStyle(AppColor.actionBlue)
-                    .padding(.top, 2)
-
-                Text(syncViewModel.healthRecord?.summaryBody ?? "Pola tidur dan waktu istirahat tercatat secara berkala dari Apple Health.")
-                    .font(AppTypography.subheadlineRegular)
-                    .foregroundStyle(AppColor.textSecondary)
-                    .lineSpacing(3)
-            }
-        }
     }
 
     // MARK: - Daily Sleep Score Section
@@ -289,32 +375,46 @@ struct SleepDetailView: View {
     // MARK: - Average Sleep Stat Header
 
     private var averageSleepHeader: some View {
-        let avgH = Int(averageSleepHours)
-        let avgM = Int(((averageSleepHours - Double(avgH)) * 60).rounded())
+        let selectedItem: DaySleepColumn? = {
+            if let idx = selectedIndex, idx >= 0, idx < currentSleepData.count {
+                return currentSleepData[idx]
+            }
+            return nil
+        }()
+
+        let headerTitle = selectedItem != nil ? "TERPILIH" : "RERATA WAKTU TIDUR"
+        let durationToDisplay = selectedItem?.totalHours ?? averageSleepHours
+        let avgH = Int(durationToDisplay)
+        let avgM = Int(((durationToDisplay - Double(avgH)) * 60).rounded())
+        let dateText = selectedItem?.fullDateString ?? dateRangeString
 
         return VStack(alignment: .leading, spacing: 2) {
-            Text("RERATA WAKTU TIDUR")
+            Text(headerTitle)
                 .font(AppTypography.footnoteRegular.weight(.semibold))
                 .foregroundStyle(AppColor.textSecondary)
 
             HStack(alignment: .firstTextBaseline, spacing: 4) {
-                if averageSleepHours > 0 {
-                    Text("\(avgH)")
-                        .font(AppTypography.largeTitleBold)
-                        .foregroundStyle(AppColor.textPrimary)
+                if durationToDisplay > 0 {
+                    if avgH > 0 {
+                        Text("\(avgH)")
+                            .font(AppTypography.largeTitleBold)
+                            .foregroundStyle(AppColor.textPrimary)
 
-                    Text("jam")
-                        .font(AppTypography.calloutBold)
-                        .foregroundStyle(AppColor.textSecondary)
-                        .padding(.trailing, 6)
+                        Text("jam")
+                            .font(AppTypography.calloutBold)
+                            .foregroundStyle(AppColor.textSecondary)
+                            .padding(.trailing, 6)
+                    }
 
-                    Text("\(avgM)")
-                        .font(AppTypography.largeTitleBold)
-                        .foregroundStyle(AppColor.textPrimary)
+                    if avgM > 0 || avgH == 0 {
+                        Text("\(avgM)")
+                            .font(AppTypography.largeTitleBold)
+                            .foregroundStyle(AppColor.textPrimary)
 
-                    Text("mnt")
-                        .font(AppTypography.calloutBold)
-                        .foregroundStyle(AppColor.textSecondary)
+                        Text("mnt")
+                            .font(AppTypography.calloutBold)
+                            .foregroundStyle(AppColor.textSecondary)
+                    }
                 } else {
                     Text("-")
                         .font(AppTypography.largeTitleBold)
@@ -322,13 +422,13 @@ struct SleepDetailView: View {
                 }
             }
 
-            Text(dateRangeString)
+            Text(dateText)
                 .font(AppTypography.captionRegular)
-                .foregroundStyle(AppColor.textSecondary)
+                .foregroundStyle(selectedItem != nil ? AppColor.actionBlue : AppColor.textSecondary)
         }
     }
 
-    // MARK: - Sleep Stages Stacked Bar Chart
+    // MARK: - Sleep Stages Stacked Bar Chart (Responsive + Interactive Hover)
 
     private var sleepStagesChart: some View {
         let data = currentSleepData
@@ -386,12 +486,21 @@ struct SleepDetailView: View {
                         .stroke(Color.black.opacity(0.15), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     }
 
+                    // Column Selection Highlight
+                    if let selIdx = selectedIndex, selIdx < data.count {
+                        let centerX = CGFloat(selIdx) * columnWidth + (columnWidth / 2)
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(coreColor.opacity(0.12))
+                            .frame(width: max(columnWidth - 4, 14), height: height)
+                            .position(x: centerX, y: height / 2)
+                    }
+
                     // Stacked Sleep Stage Bars
                     ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                         let centerX = CGFloat(idx) * columnWidth + (columnWidth / 2)
                         let barWidth: CGFloat = columnWidth * 0.72
 
-                        if item.totalHours > 0 {
+                        if item.hasData {
                             let totalBarHeight = min(height, (CGFloat(item.totalHours) / maxHours) * height)
 
                             // Render layered sleep intervals
@@ -421,23 +530,47 @@ struct SleepDetailView: View {
                             .frame(width: barWidth)
                             .position(x: centerX, y: height - totalBarHeight / 2)
                         } else {
-                            // Subtle placeholder dot on days with no data
+                            // Placeholder dot on days with no data
                             Circle()
                                 .fill(AppColor.textSecondary.opacity(0.25))
                                 .frame(width: 4, height: 4)
                                 .position(x: centerX, y: height - 6)
                         }
                     }
+
+                    // Floating Callout Pill on Hover/Touch
+                    if let selIdx = selectedIndex, selIdx < data.count {
+                        let item = data[selIdx]
+                        let centerX = CGFloat(selIdx) * columnWidth + (columnWidth / 2)
+                        let barHeight = item.hasData ? min(height, (CGFloat(item.totalHours) / maxHours) * height) : 0
+                        let yTop = height - barHeight
+                        calloutTooltip(for: item, centerX: centerX, chartWidth: chartWidth, yTop: yTop)
+                    }
                 }
+                .contentShape(Rectangle())
+                .gesture(
+                    DragGesture(minimumDistance: 0)
+                        .onChanged { gesture in
+                            let clampedX = max(0, min(gesture.location.x, chartWidth - 1))
+                            let newIdx = Int(clampedX / columnWidth)
+                            if newIdx >= 0 && newIdx < data.count {
+                                if selectedIndex != newIdx {
+                                    selectedIndex = newIdx
+                                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                                }
+                            }
+                        }
+                )
             }
             .frame(height: 220)
 
             // X-Axis Day Labels
             HStack(spacing: 0) {
-                ForEach(data) { item in
+                ForEach(Array(data.enumerated()), id: \.element.id) { idx, item in
                     Text(item.day)
                         .font(AppTypography.caption2)
-                        .foregroundStyle(AppColor.textSecondary)
+                        .fontWeight(selectedIndex == idx ? .bold : .regular)
+                        .foregroundStyle(selectedIndex == idx ? coreColor : AppColor.textSecondary)
                         .frame(maxWidth: .infinity)
                 }
             }
@@ -447,39 +580,77 @@ struct SleepDetailView: View {
         .padding(.vertical, AppSpacing.sm)
     }
 
+    @ViewBuilder
+    private func calloutTooltip(for item: DaySleepColumn, centerX: CGFloat, chartWidth: CGFloat, yTop: CGFloat) -> some View {
+        VStack(spacing: 2) {
+            Text(item.fullDateString)
+                .font(AppTypography.caption2)
+                .foregroundStyle(AppColor.textSecondary)
+                .lineLimit(1)
+            Text(item.formattedDuration)
+                .font(AppTypography.captionBold)
+                .foregroundStyle(item.hasData ? coreColor : AppColor.textSecondary)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.white)
+                .shadow(color: Color.black.opacity(0.15), radius: 6, x: 0, y: 2)
+        )
+        .position(
+            x: min(max(centerX, 70), chartWidth - 70),
+            y: max(yTop - 28, 22)
+        )
+        .transition(.opacity.combined(with: .scale(scale: 0.95)))
+    }
+
     // MARK: - Bottom Breakdown Cards
 
     private var bottomBreakdownCards: some View {
-        let awakeStr = averageAwakeMinutes > 0 ? "\(Int(averageAwakeMinutes))" : "-"
-        let remStr = averageRemMinutes > 0 ? formatHoursMins(mins: averageRemMinutes) : "-"
-        let coreStr = averageCoreMinutes > 0 ? formatHoursMins(mins: averageCoreMinutes) : "-"
-        let deepStr = averageDeepMinutes > 0 ? formatHoursMins(mins: averageDeepMinutes) : "-"
+        let selectedItem: DaySleepColumn? = {
+            if let idx = selectedIndex, idx >= 0, idx < currentSleepData.count {
+                return currentSleepData[idx]
+            }
+            return nil
+        }()
+
+        let titlePrefix = selectedItem != nil ? "Tahapan" : "Rerata"
+        let awakeMinutes = selectedItem != nil ? selectedItem!.awakeMinutes : averageAwakeMinutes
+        let remMinutes = selectedItem != nil ? selectedItem!.remMinutes : averageRemMinutes
+        let coreMinutes = selectedItem != nil ? selectedItem!.coreMinutes : averageCoreMinutes
+        let deepMinutes = selectedItem != nil ? selectedItem!.deepMinutes : averageDeepMinutes
+
+        let awakeStr = awakeMinutes > 0 ? "\(Int(awakeMinutes))" : "-"
+        let remStr = remMinutes > 0 ? formatHoursMins(mins: remMinutes) : "-"
+        let coreStr = coreMinutes > 0 ? formatHoursMins(mins: coreMinutes) : "-"
+        let deepStr = deepMinutes > 0 ? formatHoursMins(mins: deepMinutes) : "-"
 
         return VStack(spacing: AppSpacing.md) {
             stageInfoCard(
                 dotColor: awakeColor,
-                title: "Rerata terbangun",
+                title: "\(titlePrefix) terbangun",
                 value: awakeStr,
-                unit: averageAwakeMinutes > 0 ? "mnt" : ""
+                unit: awakeMinutes > 0 ? "mnt" : ""
             )
 
             stageInfoCard(
                 dotColor: remColor,
-                title: "Rerata REM",
+                title: "\(titlePrefix) REM",
                 value: remStr,
                 unit: ""
             )
 
             stageInfoCard(
                 dotColor: coreColor,
-                title: "Rerata Inti",
+                title: "\(titlePrefix) Inti",
                 value: coreStr,
                 unit: ""
             )
 
             stageInfoCard(
                 dotColor: deepColor,
-                title: "Rerata Dalam",
+                title: "\(titlePrefix) Dalam",
                 value: deepStr,
                 unit: ""
             )
@@ -534,3 +705,4 @@ struct SleepDetailView: View {
             .environment(SyncViewModel())
     }
 }
+

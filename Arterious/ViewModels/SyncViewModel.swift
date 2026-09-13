@@ -255,8 +255,12 @@ final class SyncViewModel {
             heartStatusBadge: overview.heart.status,
             insightOutput: self.insightOutput
         )
+        var fullHistory = history
+        if !fullHistory.contains(where: { Calendar.current.isDate($0.date, inSameDayAs: summary.date) }) {
+            fullHistory.append(summary)
+        }
         self.healthRecord = record
-        self.historicalSummaries = history
+        self.historicalSummaries = fullHistory
         self.lastSyncDate = Date()
         if let currentInsight = self.insightOutput {
             self.saveDailyInsight(currentInsight, for: summary.date)
@@ -665,7 +669,7 @@ final class SyncViewModel {
         let name = UIDevice.current.name.isEmpty ? "Orang Tua" : UIDevice.current.name
         let pName = (parentName.isEmpty || parentName == "Nama Ortu 1") ? name : parentName
 
-        let (overview, promptInput) = RuleEngine.shared.evaluate(
+        let (overview, _) = RuleEngine.shared.evaluate(
             today: summary,
             history: history,
             parentDisplayName: pName == "Saya" ? "anda" : pName
@@ -983,6 +987,8 @@ final class SyncViewModel {
                 date: dayDate,
                 latestHeartRate: hr,
                 restingHeartRate: hr,
+                minHeartRate24h: hr,
+                maxHeartRate24h: hr,
                 sleepHours: sleep,
                 stepCount: steps
             ))

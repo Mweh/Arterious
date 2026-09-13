@@ -102,7 +102,7 @@ final class HealthKitManager: @unchecked Sendable {
             isWorkoutActive: isWorkoutActive,
             recentWorkoutName: workoutName,
             restingHeartRate: heartData.restingHR,
-            minHeartRate24h: nil,
+            minHeartRate24h: heartData.minHR24h,
             meanHeartRate24h: heartData.meanHR24h,
             heartRateSD24h: heartData.sdHR24h,
             maxHeartRate24h: heartData.maxHR24h,
@@ -247,6 +247,7 @@ final class HealthKitManager: @unchecked Sendable {
     private struct HeartMetricsData {
         var latestHR: Double?
         var restingHR: Double?
+        var minHR24h: Double?
         var meanHR24h: Double?
         var sdHR24h: Double?
         var maxHR24h: Double?
@@ -277,6 +278,7 @@ final class HealthKitManager: @unchecked Sendable {
                 
                 let variance = values.reduce(0) { $0 + pow($1 - mean, 2) } / Double(values.count)
                 data.sdHR24h = sqrt(variance)
+                data.minHR24h = values.min()
                 data.maxHR24h = values.max()
             }
         }

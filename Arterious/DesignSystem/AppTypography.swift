@@ -63,6 +63,9 @@ enum AppTypography {
 
     // MARK: - Figma: Caption
 
+    /// Caption/Bold
+    static let captionBold: Font = .caption.weight(.bold)
+
     /// Caption/Regular
     static let captionRegular: Font = .caption.weight(.regular)
 
